@@ -131,7 +131,7 @@ fun ColorField(label: String, color: Color, onChange: (Color) -> Unit) {
             if (hexDialog) TextEntryDialog("Colour (#AARRGGBB or #RRGGBB)", initial = color.toHex(), label = "Hex",
                 onDone = { text -> parseColorOrNull(text)?.let(onChange); hexDialog = false },
                 onDismiss = { hexDialog = false })
-            fun channel(name: String, value: Float, rebuild: (Float) -> Color) =
+            @Composable fun channel(name: String, value: Float, rebuild: (Float) -> Color) =
                 LabeledSlider(name, value * 255f, 0f..255f, { it.toInt().toString() }) { onChange(rebuild(it / 255f)) }
             channel("Red", color.red) { Color(it, color.green, color.blue, color.alpha) }
             channel("Green", color.green) { Color(color.red, it, color.blue, color.alpha) }
