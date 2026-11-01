@@ -14,8 +14,9 @@ android {
         applicationId = "dev.horizon.launcher"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0-alpha"
+        // CI sets GITHUB_RUN_NUMBER so every build has a higher versionCode and can update the last one.
+        versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
+        versionName = System.getenv("HORIZON_VERSION_NAME") ?: "0.1.0-alpha"
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
@@ -39,9 +40,25 @@ android {
         jniLibs.useLegacyPackaging = true
     }
 
+    // Optional release signing: only active when the keystore env vars are present (see
+    // .github/workflows/android.yml). Without them `assembleRelease` yields an unsigned APK.
+    val releaseKeystore = System.getenv("HORIZON_KEYSTORE_PATH")
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("HORIZON_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("HORIZON_KEY_ALIAS")
+                keyPassword = System.getenv("HORIZON_KEY_PASSWORD")
+                    ?.takeIf { it.isNotEmpty() } ?: System.getenv("HORIZON_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
         }
     }
 
