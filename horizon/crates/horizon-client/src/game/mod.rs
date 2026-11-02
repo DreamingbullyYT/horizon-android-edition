@@ -15156,8 +15156,28 @@ impl Game<'_> {
     }
 }
 impl ApplicationHandler for Game<'_> {
+    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
+        // Android destroys the native window on pause (a file picker, the home button): the
+        // surface made for it is dead from here on.
+        if cfg!(target_os = "android")
+            && let Some(renderer) = self.renderer.as_mut()
+        {
+            renderer.drop_surface();
+        }
+    }
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
+            // Back from a pause on Android: the window has a new native surface.
+            if cfg!(target_os = "android") {
+                if let Some(renderer) = self.renderer.as_mut()
+                    && let Err(error) = renderer.recreate_surface()
+                {
+                    log::error!("Horizon Android: cannot recreate the surface: {error}");
+                }
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
             return;
         }
         // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
