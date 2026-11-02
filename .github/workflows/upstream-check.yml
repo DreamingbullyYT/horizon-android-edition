@@ -1,0 +1,60 @@
+name: Check upstream Horizon
+
+# Every day: does the newest horizon-rust/horizon still take our Android patch? If it applies
+# cleanly, a pull request moves android/UPSTREAM_PIN to it (the APK build on that PR is the test).
+# If it conflicts, nothing changes and an issue lists the conflicting files.
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Try the newest upstream
+        id: try
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git ls-remote https://github.com/horizon-rust/horizon.git HEAD | cut -f1 > /tmp/newest
+          newest=$(cat /tmp/newest)
+          pinned=$(tr -d '[:space:]' < android/UPSTREAM_PIN)
+          echo "newest=$newest" >> "$GITHUB_OUTPUT"
+          if [ "$newest" = "$pinned" ]; then echo "state=same" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if bash android/sync.sh "$newest" 2> /tmp/sync.err; then
+            echo "state=clean" >> "$GITHUB_OUTPUT"
+          else
+            echo "state=conflict" >> "$GITHUB_OUTPUT"
+          fi
+          rm -rf horizon .horizon-sync
+      - name: Open a pull request that moves the pin
+        if: steps.try.outputs.state == 'clean'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="upstream-${{ steps.try.outputs.newest }}"
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git checkout -b "$branch"
+          echo "${{ steps.try.outputs.newest }}" > android/UPSTREAM_PIN
+          git add android/UPSTREAM_PIN
+          git commit -m "Move upstream pin to ${{ steps.try.outputs.newest }}"
+          git push -f origin "$branch"
+          gh pr create --title "Upstream Horizon ${{ steps.try.outputs.newest }}" \
+            --body "The Android patch applies cleanly. Merge if the APK build on this PR is green." \
+            --base "${GITHUB_REF_NAME}" --head "$branch" || true
+      - name: Report a conflict
+        if: steps.try.outputs.state == 'conflict'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --title "Upstream ${{ steps.try.outputs.newest }} conflicts with the Android patch" \
+            --body "$(printf 'Files that conflict:\n\n```\n%s\n```\nThe build stays on the pinned commit.' "$(cat /tmp/sync.err)")" || true

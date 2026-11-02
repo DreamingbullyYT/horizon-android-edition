@@ -97,7 +97,7 @@ val rustBuildTasks = rustAndroidTargets.map { (abi, target, compilerPrefix) ->
         environment("CARGO_TARGET_${targetEnv}_LINKER", ndkBin.resolve("${compilerPrefix}26-clang").absolutePath)
         environment("CC_${target}", ndkBin.resolve("${compilerPrefix}26-clang").absolutePath)
         environment("AR_${target}", ndkBin.resolve("llvm-ar").absolutePath)
-        commandLine("cargo", "build", "--manifest-path", "core/Cargo.toml", "--target", target, "--release", "--locked", "--features", "audio")
+        commandLine("cargo", "build", "--manifest-path", "core/Cargo.toml", "--target", target, "--release", "--features", "audio")
         doLast {
             copy {
                 from(rustTargetDir.get().file("$target/release/libhorizon_core.so"))

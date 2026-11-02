@@ -1,0 +1,4948 @@
+diff --git a/.gitignore b/.gitignore
+index 6bdae649a..b1bd069ec 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,4 +1,5 @@
+-/.local/
++/.local/*
++!/.local/android/
+ /target/
+ **/__pycache__/
+ *.py[cod]
+diff --git a/Cargo.toml b/Cargo.toml
+index 788c0e564..6efcaa5b1 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -7,6 +7,8 @@ members = [
+     "crates/horizon-hdr",
+     "crates/horizon-world",
+     "crates/horizon-client",
++    "crates/horizon-android-game",
++    "crates/horizon-android-installer",
+     "crates/horizon-client-core",
+     "crates/horizon-client-input",
+     "crates/horizon-client-render",
+diff --git a/crates/horizon-android-game/Cargo.toml b/crates/horizon-android-game/Cargo.toml
+new file mode 100644
+index 000000000..027d51134
+--- /dev/null
++++ b/crates/horizon-android-game/Cargo.toml
+@@ -0,0 +1,20 @@
++[package]
++name = "horizon-android-game"
++version = "0.1.0"
++edition.workspace = true
++license.workspace = true
++publish = false
++
++[lib]
++crate-type = ["cdylib"]
++
++[dependencies]
++horizon-client = { path = "../horizon-client", default-features = false, features = ["audio"] }
++winit = { version = "0.30.13", features = ["android-native-activity"] }
++android_logger = "0.14"
++log = "0.4"
++serde_json = "1"
++jni = "0.21"
++
++[lints]
++workspace = true
+diff --git a/crates/horizon-android-game/src/lib.rs b/crates/horizon-android-game/src/lib.rs
+new file mode 100644
+index 000000000..5fbd65b38
+--- /dev/null
++++ b/crates/horizon-android-game/src/lib.rs
+@@ -0,0 +1,220 @@
++//! NativeActivity entry point that hosts Horizon's shared winit game loop.
++
++#[cfg(target_os = "android")]
++#[unsafe(no_mangle)]
++pub extern "system" fn Java_dev_horizon_launcher_game_GameInput_nativeSendControl(
++    mut env: jni::JNIEnv<'_>, _object: jni::objects::JObject<'_>, key: jni::objects::JString<'_>, pressed: jni::sys::jboolean,
++) {
++    if let Ok(key) = env.get_string(&key) {
++        horizon_client::game::send_android_control_event(key.into(), pressed != 0);
++    }
++}
++
++#[cfg(target_os = "android")]
++#[unsafe(no_mangle)]
++pub extern "system" fn Java_dev_horizon_launcher_game_GameInput_nativeLook(
++    _env: jni::JNIEnv<'_>, _object: jni::objects::JObject<'_>, dx: jni::sys::jfloat, dy: jni::sys::jfloat,
++) {
++    horizon_client::game::send_android_look(f64::from(dx), f64::from(dy));
++}
++
++#[cfg(target_os = "android")]
++#[unsafe(no_mangle)]
++pub extern "system" fn Java_dev_horizon_launcher_game_GameInput_nativeLookActive(
++    _env: jni::JNIEnv<'_>, _object: jni::objects::JObject<'_>, active: jni::sys::jboolean,
++) {
++    horizon_client::game::set_android_look_active(active != 0);
++}
++
++#[cfg(target_os = "android")]
++#[unsafe(no_mangle)]
++pub extern "system" fn Java_dev_horizon_launcher_game_GameInput_nativeCursorGrabbing(
++    _env: jni::JNIEnv<'_>, _object: jni::objects::JObject<'_>,
++) -> jni::sys::jboolean {
++    horizon_client::game::android_cursor_grabbing() as jni::sys::jboolean
++}
++
++#[cfg(target_os = "android")]
++#[unsafe(no_mangle)]
++pub extern "system" fn Java_dev_horizon_launcher_game_GameInput_nativeGameFps(
++    _env: jni::JNIEnv<'_>, _object: jni::objects::JObject<'_>,
++) -> jni::sys::jint {
++    horizon_client::game::android_game_fps().min(i32::MAX as u32) as jni::sys::jint
++}
++
++#[cfg(target_os = "android")]
++#[unsafe(no_mangle)]
++pub extern "system" fn Java_dev_horizon_launcher_game_GameInput_nativeSetImeAllowed(
++    _env: jni::JNIEnv<'_>, _object: jni::objects::JObject<'_>, allowed: jni::sys::jboolean,
++) {
++    horizon_client::game::set_android_ime_allowed(allowed != 0);
++}
++
++#[cfg(target_os = "android")]
++#[unsafe(no_mangle)]
++pub extern "system" fn Java_dev_horizon_launcher_game_GameInput_nativeMenuTouch(
++    _env: jni::JNIEnv<'_>, _object: jni::objects::JObject<'_>, id: jni::sys::jlong,
++    x: jni::sys::jfloat, y: jni::sys::jfloat, phase: jni::sys::jint,
++) {
++    if id >= 0 && (0..=3).contains(&phase) {
++        horizon_client::game::send_android_menu_touch(id as u64, f64::from(x), f64::from(y), phase as u8);
++    }
++}
++
++#[cfg(target_os = "android")]
++static ANDROID_APP: std::sync::OnceLock<winit::platform::android::activity::AndroidApp> =
++    std::sync::OnceLock::new();
++
++#[cfg(target_os = "android")]
++fn vibrate_touch() {
++    use jni::{
++        JavaVM,
++        objects::{JObject, JValue},
++    };
++    let Some(app) = ANDROID_APP.get() else {
++        return;
++    };
++    let result = (|| -> jni::errors::Result<()> {
++        // SAFETY: AndroidApp owns the VM and exposes its Activity as a global ref.
++        let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }?;
++        let mut env = vm.attach_current_thread()?;
++        let raw = app.activity_as_ptr();
++        if raw.is_null() {
++            return Ok(());
++        }
++        // SAFETY: this is an unowned JNI global reference owned by AndroidApp.
++        let activity = unsafe { JObject::from_raw(raw.cast()) };
++        let service = env.new_string("vibrator")?;
++        let vibrator = env
++            .call_method(
++                &activity,
++                "getSystemService",
++                "(Ljava/lang/String;)Ljava/lang/Object;",
++                &[JValue::Object(service.as_ref())],
++            )?
++            .l()?;
++        if vibrator.is_null() {
++            return Ok(());
++        }
++        let effect_class = env.find_class("android/os/VibrationEffect")?;
++        let effect = env
++            .call_static_method(
++                effect_class,
++                "createOneShot",
++                "(JI)Landroid/os/VibrationEffect;",
++                &[JValue::Long(16), JValue::Int(1)],
++            )?
++            .l()?;
++        env.call_method(
++            vibrator,
++            "vibrate",
++            "(Landroid/os/VibrationEffect;)V",
++            &[JValue::Object(&effect)],
++        )?;
++        Ok(())
++    })();
++    if let Err(error) = result {
++        log::debug!("Horizon Android: touch vibration unavailable: {error}");
++    }
++}
++
++#[cfg(target_os = "android")]
++fn system_property(name: &str) -> String {
++    std::process::Command::new("getprop")
++        .arg(name)
++        .output()
++        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_lowercase())
++        .unwrap_or_default()
++}
++
++/// Vulkan for MediaTek and other non-Qualcomm SoCs, GLES for Snapdragon.
++#[cfg(target_os = "android")]
++fn choose_graphics_api(launcher: &std::path::Path) -> &'static str {
++    if let Ok(text) = std::fs::read_to_string(launcher.join("graphics-api.txt")) {
++        match text.trim().to_lowercase().as_str() {
++            "vulkan" => return "vulkan",
++            "opengl" | "gles" => return "opengl",
++            "auto" => return "auto",
++            _ => {}
++        }
++    }
++    let marker = launcher.join("vulkan-pending");
++    if marker.exists() {
++        // The last Vulkan start died within its first seconds.
++        let _ = std::fs::remove_file(&marker);
++        log::warn!("Horizon Android: previous Vulkan start failed, using OpenGL");
++        return "opengl";
++    }
++    let ids = [
++        system_property("ro.soc.manufacturer"),
++        system_property("ro.hardware"),
++        system_property("ro.board.platform"),
++    ]
++    .join(" ");
++    let qualcomm = ["qualcomm", "qcom", "snapdragon"].iter().any(|k| ids.contains(k));
++    if qualcomm {
++        return "opengl";
++    }
++    // Survived 20 seconds: Vulkan works here.
++    let _ = std::fs::write(&marker, b"");
++    std::thread::spawn(move || {
++        std::thread::sleep(std::time::Duration::from_secs(20));
++        let _ = std::fs::remove_file(marker);
++    });
++    "vulkan"
++}
++
++#[cfg(target_os = "android")]
++#[unsafe(no_mangle)]
++pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
++    android_logger::init_once(
++        android_logger::Config::default().with_max_level(log::LevelFilter::Info),
++    );
++    let _ = ANDROID_APP.set(app.clone());
++    horizon_client::game::set_android_haptic_callback(vibrate_touch);
++    let Some(files) = app.internal_data_path() else {
++        log::error!("Horizon Android: app-private files directory is unavailable");
++        return;
++    };
++    let launcher = files.join("launcher");
++    let game_home = launcher.join("game");
++    if let Err(error) = std::fs::create_dir_all(&game_home) {
++        log::error!("Horizon Android: cannot create game directory: {error}");
++        return;
++    }
++    // The NativeActivity shares the launcher process. Set the game paths before Horizon starts
++    // worker threads so saves and logs stay in app-private storage.
++    unsafe {
++        std::env::set_var("HORIZON_LAUNCHER_HOME", &launcher);
++        std::env::set_var("HORIZON_HOME", &game_home);
++        // Qualcomm's Adreno Vulkan driver fails to link Horizon's sky pipeline during the
++        // first missing-resources frame, so Snapdragon stays on GLES. MediaTek/Mali and
++        // others get Vulkan (much faster than their GLES drivers). A `graphics-api.txt`
++        // beside the game folder (auto, vulkan or opengl) overrides the choice, and a
++        // Vulkan start that never got going falls back to GLES on the next launch.
++        if std::env::var_os("HORIZON_GRAPHICS_API").is_none() {
++            let api = choose_graphics_api(&launcher);
++            log::info!("Horizon Android: graphics API {api}");
++            std::env::set_var("HORIZON_GRAPHICS_API", api);
++        }
++    }
++    if let Err(error) = std::env::set_current_dir(&game_home) {
++        log::error!("Horizon Android: cannot enter game directory: {error}");
++        return;
++    }
++    if let Ok(accounts) = std::fs::read(launcher.join("accounts.json"))
++        && let Ok(value) = serde_json::from_slice::<serde_json::Value>(&accounts)
++        && let Some(name) = value.get("offline_selected").and_then(|v| v.as_str())
++    {
++        unsafe { std::env::set_var("HORIZON_PLAYER_NAME", name) };
++    }
++    if let Ok(controls) = std::fs::read(launcher.join("android-touch-controls.json"))
++        && let Ok(controls) = std::str::from_utf8(&controls)
++    {
++        unsafe { std::env::set_var("HORIZON_ANDROID_TOUCH_CONTROLS", controls) };
++    }
++    horizon_client::game::set_android_app(app);
++    if let Err(error) = horizon_client::game::run() {
++        log::error!("Horizon Android game stopped: {error}");
++    }
++}
+diff --git a/crates/horizon-android-installer/Cargo.toml b/crates/horizon-android-installer/Cargo.toml
+new file mode 100644
+index 000000000..0e581ef0f
+--- /dev/null
++++ b/crates/horizon-android-installer/Cargo.toml
+@@ -0,0 +1,24 @@
++[package]
++name = "horizon-android-installer"
++version = "0.1.0"
++edition.workspace = true
++license.workspace = true
++publish = false
++
++[features]
++default = []
++audio = []
++
++[dependencies]
++horizon-core = { path = "../horizon-core" }
++serde = { version = "1", features = ["derive"] }
++serde_json = { version = "1.0.151", features = ["raw_value"] }
++sha1 = "0.10"
++sha2 = "0.10.9"
++zip = { version = "2", default-features = false, features = ["deflate"] }
++ureq = { version = "2", default-features = false, features = ["tls"] }
++url = "2"
++log = "0.4"
++
++[lints]
++workspace = true
+diff --git a/crates/horizon-android-installer/src/android_resources.rs b/crates/horizon-android-installer/src/android_resources.rs
+new file mode 100644
+index 000000000..d9485a582
+--- /dev/null
++++ b/crates/horizon-android-installer/src/android_resources.rs
+@@ -0,0 +1,311 @@
++//! Reconstruct copied vanilla resources from the user's verified official download.
++use crate::Result;
++use std::{fs, path::Path};
++
++pub const WORLDGEN: &[(&str, &str)] = &[
++    ("noises", "worldgen/noise"),
++    ("densities", "worldgen/density_function"),
++    ("rules", "worldgen/material_rule"),
++    ("conditions", "worldgen/material_condition"),
++    ("settings", "worldgen/noise_settings"),
++    ("carvers", "worldgen/carver"),
++    ("biomes", "worldgen/biome"),
++    ("world_presets", "worldgen/world_preset"),
++    ("features", "worldgen/feature"),
++    ("placed_features", "worldgen/placed_feature"),
++    ("state_providers", "worldgen/block_state_provider"),
++    ("biome_tags", "tags/worldgen/biome"),
++    ("feature_tags", "tags/worldgen/feature"),
++    ("block_tags", "tags/block"),
++    ("fluid_tags", "tags/fluid"),
++    ("processor_lists", "worldgen/processor_list"),
++    ("template_pools", "worldgen/template_pool"),
++    ("structures", "worldgen/structure"),
++    ("structure_sets", "worldgen/structure_set"),
++];
++
++fn walk(root: &Path, files: &mut Vec<std::path::PathBuf>) -> Result<()> {
++    if !root.is_dir() {
++        return Ok(());
++    }
++    for item in fs::read_dir(root)? {
++        let path = item?.path();
++        if path.is_dir() {
++            walk(&path, files)?;
++        } else {
++            files.push(path);
++        }
++    }
++    Ok(())
++}
++
++fn aggregate(root: &Path, source: &str, target: &str) -> Result<()> {
++    let base = root.join("data/minecraft").join(source);
++    let mut files = Vec::new();
++    walk(&base, &mut files)?;
++    files.sort();
++    let mut values = serde_json::Map::new();
++    for file in files {
++        if file.extension().is_none_or(|v| v != "json") {
++            continue;
++        }
++        let relative = file.strip_prefix(&base)?.with_extension("");
++        values.insert(
++            format!(
++                "minecraft:{}",
++                relative.to_string_lossy().replace('\\', "/")
++            ),
++            serde_json::Value::String(fs::read_to_string(file)?),
++        );
++    }
++    let target = root.join(target);
++    fs::create_dir_all(target.parent().ok_or("Missing resource parent")?)?;
++    fs::write(target, serde_json::to_vec(&values)?)?;
++    Ok(())
++}
++
++pub fn rebuild(root: &Path) -> Result<()> {
++    for (name, source) in WORLDGEN {
++        aggregate(root, source, &format!("worldgen/{name}.json"))?;
++    }
++    for (name, source) in [
++        ("block-tags", "tags/block"),
++        ("damage-tags", "tags/damage_type"),
++        ("damage-types", "damage_type"),
++    ] {
++        aggregate(root, source, &format!("{name}.json"))?;
++    }
++    let base = root.join("data/minecraft/structure");
++    let mut files = Vec::new();
++    walk(&base, &mut files)?;
++    for file in files {
++        if file.extension().is_none_or(|v| v != "nbt") {
++            continue;
++        }
++        let target = root
++            .join("worldgen/structure/minecraft")
++            .join(file.strip_prefix(&base)?);
++        fs::create_dir_all(target.parent().ok_or("Missing structure parent")?)?;
++        fs::copy(file, target)?;
++    }
++    Ok(())
++}
++
++/// Repair the generated table omitted from earlier public APKs. Vanilla template
++/// NBT and JSON still come from the official download; only state transforms are
++/// read from this APK. Existing worlds and resource selections are untouched.
++pub fn repair_structure_transforms(engine: &Path, root: &Path) -> Result<()> {
++    let target = root.join("worldgen/blocks/structure-blocks.json");
++    if target.metadata().is_ok_and(|m| m.len() > 2) {
++        return Ok(());
++    }
++    let mut archive = zip::ZipArchive::new(fs::File::open(engine)?)?;
++    let mut entry = archive.by_name("worldgen/blocks/structure-blocks.json")?;
++    if entry.size() > 16 * 1024 * 1024 || entry.is_symlink() {
++        return Err("Invalid generated structure transform table".into());
++    }
++    use std::io::Read;
++    let mut bytes = Vec::new();
++    entry
++        .by_ref()
++        .take(16 * 1024 * 1024 + 1)
++        .read_to_end(&mut bytes)?;
++    if bytes.len() > 16 * 1024 * 1024 {
++        return Err("Generated structure transform table is too large".into());
++    }
++    let data: serde_json::Value = serde_json::from_slice(&bytes)?;
++    if data["rotate"].as_array().is_none_or(|v| v.is_empty())
++        || data["mirror"].as_array().is_none_or(|v| v.is_empty())
++    {
++        return Err("Generated structure transforms are missing".into());
++    }
++    fs::create_dir_all(target.parent().ok_or("Missing structure table directory")?)?;
++    let part = target.with_extension("partial");
++    fs::write(&part, bytes)?;
++    fs::rename(part, target)?;
++    Ok(())
++}
++
++/// The manifest contains only names, hashes and the pinned upstream revision.
++/// PNGs remain outside our APK and source repository.
++pub fn controls(root: &Path) -> Result<()> {
++    controls_with_progress(root, |_, _| {})
++}
++pub fn controls_with_progress(root: &Path, progress: impl Fn(u64, u64)) -> Result<()> {
++    use sha2::{Digest, Sha256};
++    use std::io::Read;
++    let manifest: serde_json::Value = serde_json::from_str(include_str!(
++        "../../../packaging/android/bedrock-controls.json"
++    ))?;
++    let revision = manifest["revision"]
++        .as_str()
++        .ok_or("Missing control revision")?;
++    let target = root.join("assets/minecraft/textures/gui/bedrock");
++    let agent = ureq::AgentBuilder::new()
++        .redirects(0)
++        .timeout_connect(std::time::Duration::from_secs(30))
++        .timeout_read(std::time::Duration::from_secs(60))
++        .build();
++    let entries = manifest["files"]
++        .as_array()
++        .ok_or("Missing control files")?;
++    progress(0, entries.len() as u64);
++    for (index, entry) in entries.iter().enumerate() {
++        let name = entry["path"].as_str().ok_or("Missing control path")?;
++        let hash = entry["sha256"].as_str().ok_or("Missing control checksum")?;
++        let size = entry["size"]
++            .as_u64()
++            .filter(|n| *n <= 1024 * 1024)
++            .ok_or("Invalid control size")?;
++        let relative = Path::new(name);
++        if relative
++            .components()
++            .any(|c| !matches!(c, std::path::Component::Normal(_)))
++        {
++            return Err("Invalid control destination".into());
++        }
++        let file = target.join(relative);
++        if fs::read(&file).is_ok_and(|data| {
++            data.len() as u64 == size && format!("{:x}", Sha256::digest(data)) == hash
++        }) {
++            progress(index as u64 + 1, entries.len() as u64);
++            continue;
++        }
++        let source = if name == "LICENSE.md" {
++            "LICENSE.md".into()
++        } else {
++            format!(
++                "resource_pack/textures/{}",
++                entry["source"].as_str().ok_or("Missing control source")?
++            )
++        };
++        let url =
++            format!("https://raw.githubusercontent.com/Mojang/bedrock-samples/{revision}/{source}");
++        let mut bytes = Vec::new();
++        agent
++            .get(&url)
++            .call()?
++            .into_reader()
++            .take(size + 1)
++            .read_to_end(&mut bytes)?;
++        if bytes.len() as u64 != size || format!("{:x}", Sha256::digest(&bytes)) != hash {
++            return Err(format!("Control texture checksum mismatch: {name}").into());
++        }
++        fs::create_dir_all(file.parent().ok_or("Missing texture parent")?)?;
++        fs::write(file, bytes)?;
++        progress(index as u64 + 1, entries.len() as u64);
++    }
++    Ok(())
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    fn temporary() -> std::path::PathBuf {
++        let dir = std::env::temp_dir().join(format!(
++            "horizon-android-data-{}-{}",
++            std::process::id(),
++            std::time::SystemTime::now()
++                .duration_since(std::time::UNIX_EPOCH)
++                .unwrap()
++                .as_nanos()
++        ));
++        fs::create_dir_all(&dir).unwrap();
++        dir
++    }
++    #[test]
++    fn repairs_only_missing_generated_transforms() {
++        use std::io::Write;
++        let root = temporary();
++        let archive = root.join("engine.zip");
++        let data = br#"{"rotate":[[0,0,0]],"mirror":[[0,0]]}"#;
++        let mut zip = zip::ZipWriter::new(fs::File::create(&archive).unwrap());
++        zip.start_file(
++            "worldgen/blocks/structure-blocks.json",
++            zip::write::SimpleFileOptions::default(),
++        )
++        .unwrap();
++        zip.write_all(data).unwrap();
++        zip.finish().unwrap();
++        let installed = root.join("installed");
++        repair_structure_transforms(&archive, &installed).unwrap();
++        let target = installed.join("worldgen/blocks/structure-blocks.json");
++        assert_eq!(fs::read(&target).unwrap(), data);
++        // Repair is local and does not reopen the archive on subsequent launches.
++        fs::remove_file(&archive).unwrap();
++        repair_structure_transforms(&archive, &installed).unwrap();
++        assert_eq!(fs::read(&target).unwrap(), data);
++        fs::remove_file(target).unwrap();
++        assert!(repair_structure_transforms(&archive, &installed).is_err());
++        fs::remove_dir_all(root).unwrap();
++    }
++    #[test]
++    fn reconstructs_namespaced_resources_and_nested_structures() {
++        let root = temporary();
++        let source = root.join("data/minecraft/worldgen/noise/sub");
++        fs::create_dir_all(&source).unwrap();
++        fs::write(source.join("test.json"), "{\"amplitude\":1}").unwrap();
++        let source = root.join("data/minecraft/structure/village");
++        fs::create_dir_all(&source).unwrap();
++        fs::write(source.join("test.nbt"), b"synthetic structure").unwrap();
++        rebuild(&root).unwrap();
++        let map: serde_json::Value =
++            serde_json::from_slice(&fs::read(root.join("worldgen/noises.json")).unwrap()).unwrap();
++        assert_eq!(map["minecraft:sub/test"], "{\"amplitude\":1}");
++        assert_eq!(
++            fs::read(root.join("worldgen/structure/minecraft/village/test.nbt")).unwrap(),
++            b"synthetic structure"
++        );
++        fs::remove_dir_all(root).unwrap();
++    }
++    #[test]
++    #[ignore = "requires the owner's pinned client fixture; optionally downloads controls"]
++    fn official_client_rebuild_matches_prepared_resources() {
++        use std::io::Read;
++        let client = std::env::var_os("HORIZON_ANDROID_TEST_CLIENT").expect("client fixture");
++        let prepared = std::path::PathBuf::from(
++            std::env::var_os("HORIZON_TEST_RESOURCES").expect("prepared fixture"),
++        );
++        let root = temporary();
++        let mut zip = zip::ZipArchive::new(fs::File::open(client).unwrap()).unwrap();
++        for i in 0..zip.len() {
++            let mut entry = zip.by_index(i).unwrap();
++            if entry.is_dir() || !entry.name().starts_with("data/minecraft/") {
++                continue;
++            }
++            let path = root.join(entry.enclosed_name().unwrap());
++            fs::create_dir_all(path.parent().unwrap()).unwrap();
++            let mut data = Vec::new();
++            entry.read_to_end(&mut data).unwrap();
++            fs::write(path, data).unwrap();
++        }
++        rebuild(&root).unwrap();
++        for (name, _) in WORLDGEN {
++            let path = format!("worldgen/{name}.json");
++            let read = |base: &Path| -> serde_json::Value {
++                serde_json::from_slice(&fs::read(base.join(&path)).unwrap()).unwrap()
++            };
++            assert_eq!(read(&root), read(&prepared), "{path}");
++        }
++        let mut templates = Vec::new();
++        walk(&prepared.join("worldgen/structure"), &mut templates).unwrap();
++        assert!(!templates.is_empty());
++        for file in &templates {
++            let relative = file.strip_prefix(&prepared).unwrap();
++            assert_eq!(
++                fs::read(root.join(relative)).unwrap(),
++                fs::read(file).unwrap(),
++                "{relative:?}"
++            );
++        }
++        if std::env::var_os("HORIZON_TEST_DOWNLOAD_CONTROLS").is_some() {
++            controls(&root).unwrap();
++        }
++        println!(
++            "Matched {} worldgen maps and {} templates",
++            WORLDGEN.len(),
++            templates.len()
++        );
++        fs::remove_dir_all(root).unwrap();
++    }
++}
+diff --git a/crates/horizon-android-installer/src/lib.rs b/crates/horizon-android-installer/src/lib.rs
+new file mode 100644
+index 000000000..f1a677abc
+--- /dev/null
++++ b/crates/horizon-android-installer/src/lib.rs
+@@ -0,0 +1,23 @@
++//! Mojang-verified resource installation for the Android launcher.
++
++pub use horizon_core;
++pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
++
++#[path = "../../horizon-client/src/android_resources.rs"]
++pub mod android_resources;
++#[path = "../../horizon-client/src/official_install.rs"]
++pub mod official_install;
++#[path = "../../horizon-client/src/resource_install.rs"]
++pub mod resource_install;
++
++/// File helpers whose errors say which path failed (a bare "No such file or directory" does not).
++pub(crate) fn open_file(path: &std::path::Path) -> Result<std::fs::File> {
++    std::fs::File::open(path).map_err(|e| format!("open {}: {e}", path.display()).into())
++}
++pub(crate) fn create_file(path: &std::path::Path) -> Result<std::fs::File> {
++    std::fs::File::create(path).map_err(|e| format!("create {}: {e}", path.display()).into())
++}
++pub(crate) fn copy_file(from: &std::path::Path, to: &std::path::Path) -> Result<u64> {
++    std::fs::copy(from, to)
++        .map_err(|e| format!("copy {} -> {}: {e}", from.display(), to.display()).into())
++}
+diff --git a/crates/horizon-android-installer/src/official_install.rs b/crates/horizon-android-installer/src/official_install.rs
+new file mode 100644
+index 000000000..d541bbc9b
+--- /dev/null
++++ b/crates/horizon-android-installer/src/official_install.rs
+@@ -0,0 +1,695 @@
++//! Native resource installation from Mojang HTTPS endpoints. No Java or LAN server.
++use crate::Result;
++use serde_json::Value;
++use sha1::{Digest, Sha1};
++use std::{
++    collections::HashSet,
++    fs,
++    io::{Read, Write},
++    path::{Component, Path, PathBuf},
++    sync::{
++        Mutex, OnceLock,
++        atomic::{AtomicU64, AtomicUsize, Ordering},
++    },
++};
++
++const CATALOG: &str = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
++const LOCK: &str = include_str!("../../../research-lock.json");
++static DOWNLOAD_CACHE_DIR: OnceLock<PathBuf> = OnceLock::new();
++
++/// Android supplies Context.getCacheDir(), keeping temporary downloads out of files/.
++pub fn configure_download_cache_dir(directory: PathBuf) {
++    let _ = DOWNLOAD_CACHE_DIR.set(directory.join("minecraft-downloads"));
++}
++
++fn download_cache(home: &Path) -> PathBuf {
++    DOWNLOAD_CACHE_DIR
++        .get()
++        .cloned()
++        .unwrap_or_else(|| home.join(".local/downloads"))
++        .join(horizon_core::VANILLA_VERSION)
++}
++
++/// Earlier Android packages installed textures only. An audio-capable APK must
++/// upgrade those resources before entering the game, not silently stay mute.
++pub fn ready(home: &Path) -> bool {
++    let root = home
++        .join(".local/horizon-client")
++        .join(horizon_core::VANILLA_VERSION);
++    crate::resource_install::ready(home)
++        && root.join("android-downloads-v2.json").is_file()
++        && (!cfg!(feature = "audio") || root.join("audio-complete.json").is_file())
++}
++
++/// Discard redundant installer inputs only after the prepared installation is complete.
++/// An interrupted download/preparation keeps its cache for the next attempt.
++pub fn cleanup_download_cache(home: &Path) -> Result<()> {
++    if !ready(home) {
++        return Ok(());
++    }
++    let root = fs::canonicalize(home)?;
++    let cache = root
++        .join(".local/downloads")
++        .join(horizon_core::VANILLA_VERSION);
++    let metadata = match fs::symlink_metadata(&cache) {
++        Ok(metadata) => metadata,
++        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
++        Err(error) => return Err(error.into()),
++    };
++    // Verify the final absolute target before recursive removal. Reject aliases
++    // of this path, including a redirected .local/downloads ancestor.
++    if !metadata.is_dir() || metadata.file_type().is_symlink() || fs::canonicalize(&cache)? != cache
++    {
++        return Err("Refusing redirected installer cache path".into());
++    }
++    fs::remove_dir_all(cache)?;
++    Ok(())
++}
++
++fn cleanup_system_download_cache() -> Result<()> {
++    let Some(directory) = DOWNLOAD_CACHE_DIR.get() else {
++        return Ok(());
++    };
++    if !directory.exists() {
++        return Ok(());
++    }
++    let root = fs::canonicalize(directory)?;
++    let cache = root.join(horizon_core::VANILLA_VERSION);
++    let metadata = match fs::symlink_metadata(&cache) {
++        Ok(metadata) => metadata,
++        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
++        Err(error) => return Err(error.into()),
++    };
++    if !metadata.is_dir() || metadata.file_type().is_symlink() || fs::canonicalize(&cache)? != cache
++    {
++        return Err("Refusing redirected system installer cache".into());
++    }
++    fs::remove_dir_all(cache)?;
++    Ok(())
++}
++
++/// Clean both old files/ downloads and the system cache when resources are complete.
++pub fn cleanup_completed_downloads(home: &Path) -> Result<()> {
++    if !ready(home) {
++        return Ok(());
++    }
++    cleanup_download_cache(home)?;
++    cleanup_system_download_cache()
++}
++
++fn official_url(text: &str) -> Result<()> {
++    let url = url::Url::parse(text)?;
++    if url.scheme() != "https"
++        || !url.username().is_empty()
++        || url.password().is_some()
++        || url.port().is_some_and(|p| p != 443)
++        || !matches!(
++            url.host_str(),
++            Some(
++                "piston-meta.mojang.com"
++                    | "piston-data.mojang.com"
++                    | "resources.download.minecraft.net"
++                    | "launcher.mojang.com"
++                    | "launchermeta.mojang.com"
++            )
++        )
++    {
++        return Err("Download URL is not an official Mojang HTTPS endpoint".into());
++    }
++    Ok(())
++}
++
++fn agent() -> ureq::Agent {
++    // Thousands of sound objects share a host; retain pooled TLS connections.
++    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
++    AGENT
++        .get_or_init(|| {
++            ureq::AgentBuilder::new()
++                .redirects(0)
++                .timeout_connect(std::time::Duration::from_secs(30))
++                .timeout_read(std::time::Duration::from_secs(120))
++                .build()
++        })
++        .clone()
++}
++
++fn json(url: &str) -> Result<Value> {
++    official_url(url)?;
++    let mut bytes = Vec::new();
++    agent()
++        .get(url)
++        .call()?
++        .into_reader()
++        .take(16 * 1024 * 1024)
++        .read_to_end(&mut bytes)?;
++    Ok(serde_json::from_slice(&bytes)?)
++}
++
++fn hash(path: &Path) -> Result<String> {
++    let mut file = fs::File::open(path)?;
++    let mut digest = Sha1::new();
++    let mut buffer = [0; 65536];
++    loop {
++        let n = file.read(&mut buffer)?;
++        if n == 0 {
++            break;
++        }
++        digest.update(&buffer[..n]);
++    }
++    Ok(format!("{:x}", digest.finalize()))
++}
++
++struct Download {
++    url: String,
++    sha1: String,
++    size: u64,
++    path: PathBuf,
++}
++
++impl Download {
++    fn from(value: &Value, path: PathBuf) -> Result<Self> {
++        let file = Self {
++            url: value["url"].as_str().ok_or("Missing download URL")?.into(),
++            sha1: value["sha1"]
++                .as_str()
++                .ok_or("Missing download hash")?
++                .into(),
++            size: value["size"].as_u64().ok_or("Missing download size")?,
++            path,
++        };
++        official_url(&file.url)?;
++        if file.sha1.len() != 40
++            || !file.sha1.bytes().all(|c| c.is_ascii_hexdigit())
++            || file.size > 1024 * 1024 * 1024
++        {
++            return Err("Invalid Mojang download metadata".into());
++        }
++        Ok(file)
++    }
++    fn get(&self) -> Result<()> {
++        if self.path.is_file()
++            && fs::metadata(&self.path)?.len() == self.size
++            && hash(&self.path)? == self.sha1
++        {
++            return Ok(());
++        }
++        fs::create_dir_all(self.path.parent().ok_or("Missing download directory")?)?;
++        let partial = self.path.with_extension("partial");
++        for attempt in 0..3 {
++            let result = (|| -> Result<()> {
++                let mut input = agent()
++                    .get(&self.url)
++                    .call()?
++                    .into_reader()
++                    .take(self.size + 1);
++                let mut output = fs::File::create(&partial)?;
++                let count = std::io::copy(&mut input, &mut output)?;
++                output.flush()?;
++                drop(output);
++                if count != self.size || hash(&partial)? != self.sha1 {
++                    return Err("Mojang file checksum or size mismatch".into());
++                }
++                fs::rename(&partial, &self.path)?;
++                Ok(())
++            })();
++            if result.is_ok() {
++                return result;
++            }
++            let _ = fs::remove_file(&partial);
++            if attempt == 2 {
++                return result;
++            }
++            std::thread::sleep(std::time::Duration::from_millis(500 * (attempt + 1)));
++        }
++        unreachable!()
++    }
++}
++
++fn relative(name: &str) -> Result<&Path> {
++    let path = Path::new(name);
++    if path
++        .components()
++        .any(|c| !matches!(c, Component::Normal(_)))
++        || name.contains('\\')
++    {
++        return Err("Unsafe asset path".into());
++    }
++    Ok(path)
++}
++
++#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
++pub enum InstallStage {
++    #[default]
++    Metadata,
++    Download,
++    Extract,
++    WorldData,
++    Controls,
++    Finalize,
++}
++impl InstallStage {
++    pub const ALL: [Self; 6] = [
++        Self::Metadata,
++        Self::Download,
++        Self::Extract,
++        Self::WorldData,
++        Self::Controls,
++        Self::Finalize,
++    ];
++    pub fn label(self) -> &'static str {
++        match self {
++            Self::Metadata => "Checking Minecraft version",
++            Self::Download => "Downloading game resources and sound",
++            Self::Extract => "Unpacking verified files",
++            Self::WorldData => "Preparing worlds and registries",
++            Self::Controls => "Downloading touch controls",
++            Self::Finalize => "Finishing installation",
++        }
++    }
++}
++#[derive(Clone, Copy, Debug, Default)]
++pub struct InstallProgress {
++    pub stage: InstallStage,
++    pub done: u64,
++    pub total: u64,
++}
++
++pub fn install(home: &Path, progress: impl Fn(u64, u64) + Sync) -> Result<()> {
++    install_with_progress(home, |p| {
++        if p.stage == InstallStage::Download {
++            progress(p.done, p.total)
++        }
++    })
++}
++/// Metadata may be reissued, but the engine's game version and JARs must match.
++fn validate_manifest(bytes: &[u8], checksum: &str, version: &str, pins: &Value) -> Result<Value> {
++    if format!("{:x}", Sha1::digest(bytes)) != checksum {
++        return Err("Version metadata checksum mismatch".into());
++    }
++    let manifest: Value = serde_json::from_slice(bytes)?;
++    if manifest["id"].as_str() != Some(version)
++        || ["client", "server"].iter().any(|side| {
++            let pinned = pins[format!("{side}_sha1")].as_str();
++            pinned.is_none() || manifest["downloads"][side]["sha1"].as_str() != pinned
++        })
++    {
++        return Err("Minecraft game files differ from this engine's pinned version".into());
++    }
++    Ok(manifest)
++}
++
++pub fn install_with_progress(home: &Path, progress: impl Fn(InstallProgress) + Sync) -> Result<()> {
++    let report = |stage, done, total| progress(InstallProgress { stage, done, total });
++    report(InstallStage::Metadata, 0, 0);
++    let version = horizon_core::VANILLA_VERSION;
++    let cache = download_cache(home);
++    let legacy = home.join(".local/downloads").join(version);
++    if cache != legacy && legacy.is_dir() && !cache.exists() {
++        let root = fs::canonicalize(home)?;
++        if fs::canonicalize(&legacy)? != root.join(".local/downloads").join(version) {
++            return Err("Refusing redirected legacy installer cache".into());
++        }
++        fs::create_dir_all(cache.parent().ok_or("Missing cache parent")?)?;
++        fs::rename(&legacy, &cache)?;
++    }
++    fs::create_dir_all(&cache)?;
++    let pins: Value = serde_json::from_str(LOCK)?;
++    let pins = &pins["minecraft"];
++    let catalog = json(CATALOG)?;
++    let entry = catalog["versions"]
++        .as_array()
++        .and_then(|vs| vs.iter().find(|v| v["id"] == version))
++        .ok_or("Pinned Minecraft version is not listed by Mojang")?;
++    let checksum = entry["sha1"]
++        .as_str()
++        .ok_or("Missing version metadata hash")?;
++    // Mojang may reissue metadata while Minecraft 26.3's game jars are unchanged.
++    // The downloaded JSON is still verified against the catalogue's SHA-1,
++    // and the actual client/server jar hashes remain engine-pinned.
++    let manifest_url = entry["url"]
++        .as_str()
++        .ok_or("Missing version metadata URL")?;
++    official_url(manifest_url)?;
++    let mut bytes = Vec::new();
++    agent()
++        .get(manifest_url)
++        .call()?
++        .into_reader()
++        .take(16 * 1024 * 1024)
++        .read_to_end(&mut bytes)?;
++    let manifest = validate_manifest(&bytes, checksum, version, pins)?;
++    let index = Download::from(&manifest["assetIndex"], cache.join("asset-index.json"))?;
++    index.get()?;
++    let index: Value = serde_json::from_reader(fs::File::open(&index.path)?)?;
++    let objects = index["objects"]
++        .as_object()
++        .ok_or("Missing asset objects")?;
++    let client = Download::from(&manifest["downloads"]["client"], cache.join("client.jar"))?;
++    let mut files = vec![client];
++    let mut assets = Vec::new();
++    let mut seen = HashSet::new();
++    for (name, object) in objects {
++        if !cfg!(feature = "audio")
++            && (name.starts_with("minecraft/sounds/") || name == "minecraft/sounds.json")
++        {
++            continue;
++        }
++        relative(name)?;
++        let checksum = object["hash"].as_str().ok_or("Missing asset hash")?;
++        if checksum.len() != 40 || !checksum.bytes().all(|c| c.is_ascii_hexdigit()) {
++            return Err("Invalid asset hash".into());
++        }
++        let path = cache.join("objects").join(checksum);
++        assets.push((name, path.clone()));
++        if seen.insert(checksum) {
++            files.push(Download::from(&serde_json::json!({"url":format!("https://resources.download.minecraft.net/{}/{checksum}", &checksum[..2]), "sha1":checksum, "size":object["size"]}), path)?);
++        }
++    }
++    let total: u64 = files.iter().map(|f| f.size).sum();
++    log::info!(
++        "Minecraft {version}: downloading {} files directly from Mojang ({} MiB)",
++        files.len(),
++        total / 1048576
++    );
++    report(InstallStage::Download, 0, total);
++    let next = AtomicUsize::new(0);
++    let done = AtomicU64::new(0);
++    let error = Mutex::new(None);
++    std::thread::scope(|scope| {
++        for _ in 0..8 {
++            scope.spawn(|| {
++                loop {
++                    if error.lock().unwrap().is_some() {
++                        break;
++                    }
++                    let i = next.fetch_add(1, Ordering::Relaxed);
++                    let Some(file) = files.get(i) else { break };
++                    if let Err(e) = file.get() {
++                        *error.lock().unwrap() = Some(e.to_string());
++                        break;
++                    }
++                    report(
++                        InstallStage::Download,
++                        done.fetch_add(file.size, Ordering::Relaxed) + file.size,
++                        total,
++                    );
++                }
++            });
++        }
++    });
++    if let Some(error) = error.into_inner().unwrap() {
++        return Err(error.into());
++    }
++    let versions = home.join(".local/horizon-client");
++    fs::create_dir_all(&versions)?;
++    let stage = versions.join("official.partial");
++    if stage.exists() {
++        fs::remove_dir_all(&stage)?;
++    }
++    fs::create_dir(&stage)?;
++    let result = (|| -> Result<()> {
++        report(InstallStage::Extract, 0, 0);
++        let mut zip = zip::ZipArchive::new(crate::open_file(&files[0].path)?)?;
++        for i in 0..zip.len() {
++            let mut entry = zip.by_index(i)?;
++            if !(entry.name().starts_with("assets/") || entry.name().starts_with("data/"))
++                || entry.is_dir()
++            {
++                continue;
++            }
++            let name = entry.enclosed_name().ok_or("Unsafe client resource path")?;
++            if entry.is_symlink() {
++                return Err("Symlink in client resources".into());
++            }
++            let path = stage.join(name);
++            fs::create_dir_all(path.parent().ok_or("Missing resource parent")?)?;
++            std::io::copy(&mut entry, &mut crate::create_file(&path)?)?;
++        }
++        for (name, from) in assets {
++            let path = stage.join("assets").join(relative(name)?);
++            fs::create_dir_all(path.parent().ok_or("Missing asset parent")?)?;
++            crate::copy_file(from, &path)?;
++        }
++        crate::resource_install::extract(&home.join("engine-data.zip"), &stage)?;
++        report(InstallStage::WorldData, 0, 0);
++        crate::android_resources::rebuild(&stage)?;
++        report(InstallStage::Controls, 0, 0);
++        crate::android_resources::controls_with_progress(&stage, |done, total| {
++            report(InstallStage::Controls, done, total)
++        })?;
++        report(InstallStage::Finalize, 0, 0);
++        fs::write(stage.join("android-downloads-v2.json"), b"{\"schema\":2}")?;
++        crate::copy_file(
++            &cache.join("asset-index.json"),
++            &stage.join("asset-index.json"),
++        )?;
++        if !stage.join("horizon-resources.json").is_file() {
++            return Err("APK has no engine data for this version".into());
++        }
++        if cfg!(feature = "audio") {
++            fs::write(stage.join("audio-complete.json"), b"{}")?;
++        }
++        let destination = versions.join(version);
++        let backup = versions.join(format!("{version}.previous"));
++        if backup.exists() && !destination.exists() {
++            fs::rename(&backup, &destination)?;
++        }
++        if backup.exists() {
++            fs::remove_dir_all(&backup)?;
++        }
++        if destination.exists() {
++            fs::rename(&destination, &backup)?;
++        }
++        if let Err(error) = fs::rename(&stage, &destination) {
++            if backup.exists() {
++                let _ = fs::rename(&backup, &destination);
++            }
++            return Err(error.into());
++        }
++        if backup.exists() {
++            let _ = fs::remove_dir_all(&backup);
++        }
++        Ok(())
++    })();
++    if stage.exists() {
++        let _ = fs::remove_dir_all(stage);
++    }
++    if result.is_ok()
++        && let Err(error) = cleanup_completed_downloads(home)
++    {
++        // Resources were committed successfully; failed housekeeping must not
++        // turn a working installation into a reported installation failure.
++        log::warn!("Could not clean completed Minecraft downloads: {error}");
++    }
++    result
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    struct CacheHome(PathBuf);
++    impl CacheHome {
++        fn path(&self) -> &Path {
++            &self.0
++        }
++    }
++    impl Drop for CacheHome {
++        fn drop(&mut self) {
++            let _ = fs::remove_dir_all(&self.0);
++        }
++    }
++    fn cache_home() -> CacheHome {
++        let stamp = std::time::SystemTime::now()
++            .duration_since(std::time::UNIX_EPOCH)
++            .unwrap()
++            .as_nanos();
++        let base = fs::canonicalize(std::env::temp_dir()).unwrap();
++        let path = base.join(format!(
++            "horizon-installer-cache-test-{}-{stamp}",
++            std::process::id()
++        ));
++        fs::create_dir(&path).unwrap();
++        let home = CacheHome(path);
++        let cache = home
++            .path()
++            .join(".local/downloads")
++            .join(horizon_core::VANILLA_VERSION);
++        fs::create_dir_all(&cache).unwrap();
++        fs::write(cache.join("client.jar"), b"download input").unwrap();
++        fs::create_dir_all(home.path().join("saves")).unwrap();
++        fs::write(home.path().join("saves/keep"), b"player world").unwrap();
++        home
++    }
++
++    fn mark_cache_install_ready(home: &Path) {
++        let root = home
++            .join(".local/horizon-client")
++            .join(horizon_core::VANILLA_VERSION);
++        fs::create_dir_all(&root).unwrap();
++        for marker in [
++            "horizon-resources.json",
++            "android-downloads-v2.json",
++            "audio-complete.json",
++        ] {
++            fs::write(root.join(marker), b"{}").unwrap();
++        }
++        fs::write(root.join("prepared-data"), b"runtime data").unwrap();
++    }
++
++    #[test]
++    fn completed_install_discards_only_its_download_cache() {
++        let home = cache_home();
++        mark_cache_install_ready(home.path());
++        cleanup_download_cache(home.path()).unwrap();
++        assert!(
++            !home
++                .path()
++                .join(".local/downloads")
++                .join(horizon_core::VANILLA_VERSION)
++                .exists()
++        );
++        assert!(home.path().join("saves/keep").is_file());
++        assert!(
++            home.path()
++                .join(".local/horizon-client")
++                .join(horizon_core::VANILLA_VERSION)
++                .join("prepared-data")
++                .is_file()
++        );
++        cleanup_download_cache(home.path()).unwrap();
++    }
++
++    #[test]
++    fn interrupted_install_keeps_inputs_for_retry() {
++        let home = cache_home();
++        cleanup_download_cache(home.path()).unwrap();
++        assert!(
++            home.path()
++                .join(".local/downloads")
++                .join(horizon_core::VANILLA_VERSION)
++                .join("client.jar")
++                .is_file()
++        );
++    }
++
++    #[test]
++    fn android_cache_location_is_disposable_after_preparation() {
++        let home = cache_home();
++        let android_cache = home.path().join("android-cache");
++        configure_download_cache_dir(android_cache.clone());
++        let cache = download_cache(home.path());
++        assert_eq!(
++            cache,
++            android_cache
++                .join("minecraft-downloads")
++                .join(horizon_core::VANILLA_VERSION)
++        );
++        fs::create_dir_all(&cache).unwrap();
++        fs::write(cache.join("client.jar"), b"download").unwrap();
++        cleanup_completed_downloads(home.path()).unwrap();
++        assert!(cache.is_dir());
++        mark_cache_install_ready(home.path());
++        cleanup_completed_downloads(home.path()).unwrap();
++        assert!(!cache.exists());
++        assert!(
++            !home
++                .path()
++                .join(".local/downloads")
++                .join(horizon_core::VANILLA_VERSION)
++                .exists()
++        );
++        assert!(home.path().join("saves/keep").is_file());
++    }
++
++    #[cfg(unix)]
++    #[test]
++    fn redirected_cache_cannot_remove_a_different_directory() {
++        let home = cache_home();
++        mark_cache_install_ready(home.path());
++        let cache = home
++            .path()
++            .join(".local/downloads")
++            .join(horizon_core::VANILLA_VERSION);
++        fs::remove_dir_all(&cache).unwrap();
++        std::os::unix::fs::symlink(home.path().join("saves"), &cache).unwrap();
++        assert!(cleanup_download_cache(home.path()).is_err());
++        assert!(home.path().join("saves/keep").is_file());
++    }
++    fn manifest_fixture() -> (Value, Value) {
++        let pins = serde_json::json!({
++            "manifest_sha1": "old-metadata-hash",
++            "client_sha1": "client-jar-hash",
++            "server_sha1": "server-jar-hash"
++        });
++        let manifest = serde_json::json!({
++            "id": "test-version",
++            "downloads": {
++                "client": {"sha1": "client-jar-hash"},
++                "server": {"sha1": "server-jar-hash"}
++            },
++            "releaseTime": "new-metadata"
++        });
++        (manifest, pins)
++    }
++    fn check_manifest(manifest: &Value, pins: &Value) -> Result<Value> {
++        let bytes = serde_json::to_vec(manifest)?;
++        let checksum = format!("{:x}", Sha1::digest(&bytes));
++        validate_manifest(&bytes, &checksum, "test-version", pins)
++    }
++    #[test]
++    fn republished_metadata_keeps_the_pinned_game_usable() {
++        let (manifest, pins) = manifest_fixture();
++        assert!(check_manifest(&manifest, &pins).is_ok());
++        let mut tampered = serde_json::to_vec(&manifest).unwrap();
++        let checksum = format!("{:x}", Sha1::digest(&tampered));
++        tampered.push(b' ');
++        assert!(validate_manifest(&tampered, &checksum, "test-version", &pins).is_err());
++    }
++    #[test]
++    fn metadata_cannot_replace_either_jar_or_the_game_version() {
++        let (manifest, pins) = manifest_fixture();
++        for side in ["client", "server"] {
++            let mut changed = manifest.clone();
++            changed["downloads"][side]["sha1"] = Value::String("other-jar".into());
++            assert!(check_manifest(&changed, &pins).is_err());
++            let mut missing = pins.clone();
++            missing
++                .as_object_mut()
++                .unwrap()
++                .remove(&format!("{side}_sha1"));
++            changed["downloads"][side]
++                .as_object_mut()
++                .unwrap()
++                .remove("sha1");
++            assert!(check_manifest(&changed, &missing).is_err());
++        }
++        let mut changed = manifest;
++        changed["id"] = Value::String("other-version".into());
++        assert!(check_manifest(&changed, &pins).is_err());
++    }
++    #[test]
++    fn only_mojang_https_is_accepted() {
++        assert!(official_url("https://piston-data.mojang.com/objects/game.jar").is_ok());
++        for url in [
++            "http://piston-data.mojang.com/game.jar",
++            "https://piston-data.mojang.com.evil.test/game.jar",
++            "https://piston-data.mojang.com@evil.test/game.jar",
++            "http://127.0.0.1:8123/game.zip",
++        ] {
++            assert!(official_url(url).is_err());
++        }
++    }
++    #[test]
++    fn asset_paths_cannot_escape_installation() {
++        assert!(relative("minecraft/lang/en_us.json").is_ok());
++        for name in [
++            "../escape",
++            "/absolute",
++            "minecraft/../escape",
++            "minecraft\\..\\escape",
++        ] {
++            assert!(relative(name).is_err());
++        }
++    }
++}
+diff --git a/crates/horizon-android-installer/src/resource_install.rs b/crates/horizon-android-installer/src/resource_install.rs
+new file mode 100644
+index 000000000..b7095a7dc
+--- /dev/null
++++ b/crates/horizon-android-installer/src/resource_install.rs
+@@ -0,0 +1,252 @@
++//! Installing the player's privately prepared resource bundle on a mobile device.
++use crate::Result;
++use serde::{Deserialize, Serialize};
++use sha2::{Digest, Sha256};
++use std::{
++    fs,
++    io::{Read, Write},
++    path::Path,
++};
++
++#[derive(Clone, Deserialize, Serialize)]
++pub struct Bundle {
++    pub version: String,
++    pub url: String,
++    pub sha256: String,
++    pub size: u64,
++}
++
++impl Bundle {
++    pub fn validate(&self) -> Result<()> {
++        if self.version != horizon_core::VANILLA_VERSION {
++            return Err(format!(
++                "This engine only implements Minecraft {}",
++                horizon_core::VANILLA_VERSION
++            )
++            .into());
++        }
++        let url = url::Url::parse(&self.url)?;
++        let loopback = matches!(url.host_str(), Some("127.0.0.1" | "localhost"));
++        if !(url.scheme() == "https" || url.scheme() == "http" && loopback)
++            || !url.username().is_empty()
++            || url.password().is_some()
++        {
++            return Err("Resource URL must use HTTPS (HTTP is allowed only on loopback)".into());
++        }
++        if self.sha256.len() != 64
++            || !self.sha256.bytes().all(|c| c.is_ascii_hexdigit())
++            || self.size == 0
++            || self.size > 4 * 1024 * 1024 * 1024
++        {
++            return Err("Invalid resource size or SHA-256".into());
++        }
++        Ok(())
++    }
++}
++
++pub fn ready(home: &Path) -> bool {
++    home.join(".local/horizon-client")
++        .join(horizon_core::VANILLA_VERSION)
++        .join("horizon-resources.json")
++        .is_file()
++}
++
++pub fn install(bundle: &Bundle, home: &Path, progress: impl Fn(u64, u64)) -> Result<()> {
++    bundle.validate()?;
++    let versions = home.join(".local/horizon-client");
++    fs::create_dir_all(&versions)?;
++    let download = versions.join("download.partial");
++    let staging = versions.join("install.partial");
++    let result = (|| -> Result<()> {
++        let agent = ureq::AgentBuilder::new()
++            .timeout_connect(std::time::Duration::from_secs(30))
++            .timeout_read(std::time::Duration::from_secs(120))
++            .redirects(0)
++            .build();
++        let mut response = agent.get(&bundle.url).call()?.into_reader();
++        let mut file = fs::File::create(&download)?;
++        let mut digest = Sha256::new();
++        let mut received = 0;
++        let mut buffer = [0u8; 65536];
++        loop {
++            let count = response.read(&mut buffer)?;
++            if count == 0 {
++                break;
++            }
++            received += count as u64;
++            if received > bundle.size {
++                return Err("Resource download exceeds expected size".into());
++            }
++            file.write_all(&buffer[..count])?;
++            digest.update(&buffer[..count]);
++            progress(received, bundle.size);
++        }
++        file.sync_all()?;
++        drop(file);
++        let checksum = format!("{:x}", digest.finalize());
++        if received != bundle.size || !checksum.eq_ignore_ascii_case(&bundle.sha256) {
++            return Err("Resource download checksum or size mismatch".into());
++        }
++        if staging.exists() {
++            fs::remove_dir_all(&staging)?;
++        }
++        fs::create_dir(&staging)?;
++        extract(&download, &staging)?;
++        if !staging.join("horizon-resources.json").is_file() {
++            return Err("Bundle has no Horizon resources manifest".into());
++        }
++        let target = versions.join(&bundle.version);
++        if target.exists() {
++            return Err("A resource version already exists; refusing to replace it".into());
++        }
++        fs::rename(&staging, target)?;
++        Ok(())
++    })();
++    let _ = fs::remove_file(download);
++    if staging.exists() {
++        let _ = fs::remove_dir_all(staging);
++    }
++    result
++}
++
++pub(crate) fn extract(archive: &Path, destination: &Path) -> Result<()> {
++    let mut zip = zip::ZipArchive::new(crate::open_file(archive)?)?;
++    let mut total = 0u64;
++    for i in 0..zip.len() {
++        let mut entry = zip.by_index(i)?;
++        let path = entry
++            .enclosed_name()
++            .ok_or("Resource archive contains an unsafe path")?;
++        if entry.is_symlink() {
++            return Err("Resource archive contains a symbolic link".into());
++        }
++        total = total
++            .checked_add(entry.size())
++            .ok_or("Resource archive is too large")?;
++        if total > 8 * 1024 * 1024 * 1024 {
++            return Err("Expanded resource archive exceeds 8 GiB".into());
++        }
++        let path = destination.join(path);
++        if entry.is_dir() {
++            fs::create_dir_all(path)?;
++        } else {
++            if let Some(parent) = path.parent() {
++                fs::create_dir_all(parent)?;
++            }
++            let mut file = crate::create_file(&path)?;
++            std::io::copy(&mut entry, &mut file)?;
++        }
++    }
++    Ok(())
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use std::{io::Cursor, net::TcpListener};
++
++    fn fixture() -> Vec<u8> {
++        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
++        zip.start_file(
++            "horizon-resources.json",
++            zip::write::SimpleFileOptions::default(),
++        )
++        .unwrap();
++        zip.write_all(b"{}").unwrap();
++        zip.start_file(
++            "assets/example.txt",
++            zip::write::SimpleFileOptions::default(),
++        )
++        .unwrap();
++        zip.write_all(b"private resource").unwrap();
++        zip.finish().unwrap().into_inner()
++    }
++
++    fn serve(bytes: Vec<u8>) -> (Bundle, std::thread::JoinHandle<()>) {
++        let server = TcpListener::bind("127.0.0.1:0").unwrap();
++        let bundle = Bundle {
++            version: horizon_core::VANILLA_VERSION.into(),
++            url: format!("http://{}/resources.zip", server.local_addr().unwrap()),
++            sha256: format!("{:x}", Sha256::digest(&bytes)),
++            size: bytes.len() as u64,
++        };
++        let handle = std::thread::spawn(move || {
++            let (mut stream, _) = server.accept().unwrap();
++            stream
++                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
++                .unwrap();
++            let mut request = [0; 4096];
++            stream.read(&mut request).unwrap();
++            write!(
++                stream,
++                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
++                bytes.len()
++            )
++            .unwrap();
++            stream.write_all(&bytes).unwrap();
++        });
++        (bundle, handle)
++    }
++
++    fn temporary(name: &str) -> std::path::PathBuf {
++        std::env::temp_dir().join(format!(
++            "horizon-install-{name}-{}-{}",
++            std::process::id(),
++            std::time::SystemTime::now()
++                .duration_since(std::time::UNIX_EPOCH)
++                .unwrap()
++                .as_nanos()
++        ))
++    }
++
++    #[test]
++    fn download_is_verified_before_resources_become_ready() {
++        let home = temporary("valid");
++        let (bundle, server) = serve(fixture());
++        assert!(!ready(&home));
++        install(&bundle, &home, |_, _| {}).unwrap();
++        server.join().unwrap();
++        assert!(ready(&home));
++        assert_eq!(
++            fs::read(
++                home.join(".local/horizon-client")
++                    .join(&bundle.version)
++                    .join("assets/example.txt")
++            )
++            .unwrap(),
++            b"private resource"
++        );
++        assert!(!home.join(".local/horizon-client/download.partial").exists());
++        fs::remove_dir_all(home).unwrap();
++    }
++
++    #[test]
++    fn a_corrupt_download_never_becomes_an_installed_version() {
++        let home = temporary("corrupt");
++        let (mut bundle, server) = serve(fixture());
++        bundle.sha256 = "0".repeat(64);
++        assert!(install(&bundle, &home, |_, _| {}).is_err());
++        server.join().unwrap();
++        assert!(!ready(&home));
++        assert!(!home.join(".local/horizon-client/download.partial").exists());
++        fs::remove_dir_all(home).unwrap();
++    }
++    #[test]
++    fn unsupported_versions_and_insecure_remote_urls_are_rejected() {
++        let mut bundle = Bundle {
++            version: "1.21".into(),
++            url: "https://example.com/resources.zip".into(),
++            sha256: "a".repeat(64),
++            size: 100,
++        };
++        assert!(bundle.validate().is_err());
++        bundle.version = horizon_core::VANILLA_VERSION.into();
++        assert!(bundle.validate().is_ok());
++        bundle.url = "http://example.com/resources.zip".into();
++        assert!(bundle.validate().is_err());
++        bundle.url = "http://127.0.0.1:8123/26.3.zip".into();
++        assert!(bundle.validate().is_ok());
++        bundle.url = "http://localhost:80@example.com/resources.zip".into();
++        assert!(bundle.validate().is_err());
++    }
++}
+diff --git a/crates/horizon-client-input/Cargo.toml b/crates/horizon-client-input/Cargo.toml
+index e1d7cf72b..47ec435b8 100644
+--- a/crates/horizon-client-input/Cargo.toml
++++ b/crates/horizon-client-input/Cargo.toml
+@@ -12,12 +12,14 @@ winit = "0.30.13"
+ # The window icon.
+ horizon-theme = { path = "../horizon-theme" }
+ png = "0.18"
+-arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"] }
+ # The DualSense's trigger effects (the `controllers` feature).
+ horizon-dualsense = { path = "../horizon-dualsense", optional = true }
+ 
+ [features]
+ controllers = ["dep:horizon-dualsense"]
+ 
++[target.'cfg(not(target_os = "android"))'.dependencies]
++arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"] }
++
+ [lints]
+ workspace = true
+diff --git a/crates/horizon-client-input/src/clipboard.rs b/crates/horizon-client-input/src/clipboard.rs
+index eaf2a2274..3c3199518 100644
+--- a/crates/horizon-client-input/src/clipboard.rs
++++ b/crates/horizon-client-input/src/clipboard.rs
+@@ -125,6 +125,7 @@ pub trait Clipboard {
+ /// game can still be pasted in the game.
+ #[derive(Default)]
+ pub struct SystemClipboard {
++    #[cfg(not(target_os = "android"))]
+     system: Option<arboard::Clipboard>,
+     /// The text Horizon last copied (`horizon-ctl status`).
+     copied: Option<String>,
+@@ -135,6 +136,7 @@ impl SystemClipboard {
+     pub fn copied(&self) -> Option<&str> {
+         self.copied.as_deref()
+     }
++    #[cfg(not(target_os = "android"))]
+     fn system(&mut self) -> Option<&mut arboard::Clipboard> {
+         if self.system.is_none() {
+             self.system = arboard::Clipboard::new().ok();
+@@ -145,16 +147,21 @@ impl SystemClipboard {
+ 
+ impl Clipboard for SystemClipboard {
+     fn get(&mut self) -> String {
+-        let Some(system) = self.system() else {
+-            return self.copied.clone().unwrap_or_default();
+-        };
+-        match system.get_text() {
+-            Ok(text) => text,
+-            Err(arboard::Error::ContentNotAvailable) => String::new(),
+-            Err(_) => {
+-                // A lost connection (a restarted compositor): reconnect next time.
+-                self.system = None;
+-                String::new()
++        #[cfg(target_os = "android")]
++        return self.copied.clone().unwrap_or_default();
++        #[cfg(not(target_os = "android"))]
++        {
++            let Some(system) = self.system() else {
++                return self.copied.clone().unwrap_or_default();
++            };
++            match system.get_text() {
++                Ok(text) => text,
++                Err(arboard::Error::ContentNotAvailable) => String::new(),
++                Err(_) => {
++                    // A lost connection (a restarted compositor): reconnect next time.
++                    self.system = None;
++                    String::new()
++                }
+             }
+         }
+     }
+@@ -163,6 +170,7 @@ impl Clipboard for SystemClipboard {
+             return;
+         }
+         self.copied = Some(text.to_owned());
++        #[cfg(not(target_os = "android"))]
+         if let Some(system) = self.system()
+             && system.set_text(text.to_owned()).is_err()
+         {
+diff --git a/crates/horizon-client-input/src/keybinds.rs b/crates/horizon-client-input/src/keybinds.rs
+index 3d1ec0a36..a8bd6af6d 100644
+--- a/crates/horizon-client-input/src/keybinds.rs
++++ b/crates/horizon-client-input/src/keybinds.rs
+@@ -288,6 +288,8 @@ pub use horizon_client_core::key_display::display_name;
+ /// that key from now on (`key_display::learn_layout`), so an AZERTY player's
+ /// Q key shows A.
+ pub fn learn_layout(event: &winit::event::KeyEvent) {
++    #[cfg(not(target_os = "android"))]
++    {
+     use winit::keyboard::{Key, PhysicalKey};
+     use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+     let PhysicalKey::Code(code) = event.physical_key else {
+@@ -302,6 +304,9 @@ pub fn learn_layout(event: &winit::event::KeyEvent) {
+         Key::Dead(Some(c)) => learn(name, c.encode_utf8(&mut [0; 4])),
+         _ => {}
+     }
++    }
++    #[cfg(target_os = "android")]
++    let _ = event;
+ }
+ 
+ /// Current bindings by mapping name.
+diff --git a/crates/horizon-client-render/src/audio.rs b/crates/horizon-client-render/src/audio.rs
+index fcd96f1f4..0b30758ea 100644
+--- a/crates/horizon-client-render/src/audio.rs
++++ b/crates/horizon-client-render/src/audio.rs
+@@ -820,34 +820,45 @@ impl Audio {
+             self.devices_seen = output_devices();
+             return true;
+         }
+-        self.device_ticks += 1;
+-        if self._stream.is_none() || self.device_ticks < 20 {
+-            return false;
+-        }
+-        self.device_ticks = 0;
+-        let default = default_output_name();
+-        let devices = output_devices();
+-        // Only a change in the device lists is looked at, as in vanilla: a
+-        // preferred device that is listed but cannot open is not retried.
+-        if default == self.default_seen && devices == self.devices_seen {
+-            return false;
+-        }
+-        self.default_seen = default.clone();
+-        let wanted = self.device_name.clone();
+-        let available = devices.contains(&wanted);
+-        self.devices_seen = devices;
+-        if wanted.is_empty() {
+-            let changed = default.as_deref().is_some_and(|d| d != current);
++        // Android's device enumeration crosses into the platform audio service.
++        // Doing that synchronously on the game tick every second can stall the
++        // render loop. Android routes an open stream when the system output
++        // changes, and the stream error callback above already flags a lost
++        // device, so only do periodic name-based discovery on desktop hosts.
++        #[cfg(target_os = "android")]
++        return false;
++
++        #[cfg(not(target_os = "android"))]
++        {
++            self.device_ticks += 1;
++            if self._stream.is_none() || self.device_ticks < 20 {
++                return false;
++            }
++            self.device_ticks = 0;
++            let default = default_output_name();
++            let devices = output_devices();
++            // Only a change in the device lists is looked at, as in vanilla: a
++            // preferred device that is listed but cannot open is not retried.
++            if default == self.default_seen && devices == self.devices_seen {
++                return false;
++            }
++            self.default_seen = default.clone();
++            let wanted = self.device_name.clone();
++            let available = devices.contains(&wanted);
++            self.devices_seen = devices;
++            if wanted.is_empty() {
++                let changed = default.as_deref().is_some_and(|d| d != current);
++                if changed {
++                    log::info!("Horizon: system default audio device has changed");
++                }
++                return changed;
++            }
++            let changed = current != wanted && available;
+             if changed {
+-                log::info!("Horizon: system default audio device has changed");
++                log::info!("Horizon: preferred audio device has become available");
+             }
+-            return changed;
+-        }
+-        let changed = current != wanted && available;
+-        if changed {
+-            log::info!("Horizon: preferred audio device has become available");
++            changed
+         }
+-        changed
+     }
+     /// `SoundManager.tick(paused)`, once per client tick.
+     pub fn tick(&mut self, paused: bool, ctx: &TickContext) {
+diff --git a/crates/horizon-client-render/src/gfx.rs b/crates/horizon-client-render/src/gfx.rs
+index 3b3ab1b41..b56dedeae 100644
+--- a/crates/horizon-client-render/src/gfx.rs
++++ b/crates/horizon-client-render/src/gfx.rs
+@@ -3010,6 +3010,15 @@ impl Renderer {
+             .get_mut()
+             .unwrap_or_else(std::sync::PoisonError::into_inner) = self.surface.take();
+     }
++    /// Drop the window surface and any spare: Android destroys the native window when the app
++    /// is paused, so a surface kept across that is dead and draws black.
++    pub fn drop_surface(&mut self) {
++        self.surface = None;
++        *self
++            .spare_surface
++            .get_mut()
++            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
++    }
+     /// Reattach a window after surface loss or a failed renderer replacement.
+     pub fn recreate_surface(&mut self) -> Result<()> {
+         if self.offscreen.is_some() {
+diff --git a/crates/horizon-client/Cargo.toml b/crates/horizon-client/Cargo.toml
+index 832250d1d..2a9e5e5f4 100644
+--- a/crates/horizon-client/Cargo.toml
++++ b/crates/horizon-client/Cargo.toml
+@@ -33,7 +33,7 @@ horizon-friends = { path = "../horizon-friends" }
+ # Their runtime is the `mods` feature.
+ horizon-mods = { path = "../horizon-mods", default-features = false, features = ["index"] }
+ wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "vulkan", "metal", "wgsl", "naga-ir"] }
+-winit = "0.30.13"
++winit = { version = "0.30.13", features = ["android-native-activity"] }
+ pollster = "0.4"
+ bytemuck = { version = "1.24", features = ["derive"] }
+ glam = "0.30"
+@@ -63,6 +63,7 @@ gilrs = { version = "0.11", optional = true }
+ horizon-dualsense = { path = "../horizon-dualsense", optional = true }
+ # HTTPS to the Minecraft services (online-mode session join).
+ ureq = { version = "2", default-features = false, features = ["tls"] }
++url = "2"
+ unicode-bidi = "0.3.18"
+ # `LevelStorageAccess.estimateDiskSpace`: usable disk space, without unsafe code on Windows.
+ fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
+@@ -71,6 +72,7 @@ fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
+ # The server thread's CPU time per tick (`HORIZON_SPIKES`, spans.rs).
+ rustix = { version = "1", default-features = false, features = ["std", "time", "process", "fs"] }
+ 
++
+ [target.'cfg(windows)'.dependencies]
+ # Use the registered URI handler without routing links through Explorer/cmd.
+ open = { version = "5.4.5", features = ["shellexecute-on-windows"] }
+diff --git a/crates/horizon-client/src/android_resources.rs b/crates/horizon-client/src/android_resources.rs
+new file mode 100644
+index 000000000..d9485a582
+--- /dev/null
++++ b/crates/horizon-client/src/android_resources.rs
+@@ -0,0 +1,311 @@
++//! Reconstruct copied vanilla resources from the user's verified official download.
++use crate::Result;
++use std::{fs, path::Path};
++
++pub const WORLDGEN: &[(&str, &str)] = &[
++    ("noises", "worldgen/noise"),
++    ("densities", "worldgen/density_function"),
++    ("rules", "worldgen/material_rule"),
++    ("conditions", "worldgen/material_condition"),
++    ("settings", "worldgen/noise_settings"),
++    ("carvers", "worldgen/carver"),
++    ("biomes", "worldgen/biome"),
++    ("world_presets", "worldgen/world_preset"),
++    ("features", "worldgen/feature"),
++    ("placed_features", "worldgen/placed_feature"),
++    ("state_providers", "worldgen/block_state_provider"),
++    ("biome_tags", "tags/worldgen/biome"),
++    ("feature_tags", "tags/worldgen/feature"),
++    ("block_tags", "tags/block"),
++    ("fluid_tags", "tags/fluid"),
++    ("processor_lists", "worldgen/processor_list"),
++    ("template_pools", "worldgen/template_pool"),
++    ("structures", "worldgen/structure"),
++    ("structure_sets", "worldgen/structure_set"),
++];
++
++fn walk(root: &Path, files: &mut Vec<std::path::PathBuf>) -> Result<()> {
++    if !root.is_dir() {
++        return Ok(());
++    }
++    for item in fs::read_dir(root)? {
++        let path = item?.path();
++        if path.is_dir() {
++            walk(&path, files)?;
++        } else {
++            files.push(path);
++        }
++    }
++    Ok(())
++}
++
++fn aggregate(root: &Path, source: &str, target: &str) -> Result<()> {
++    let base = root.join("data/minecraft").join(source);
++    let mut files = Vec::new();
++    walk(&base, &mut files)?;
++    files.sort();
++    let mut values = serde_json::Map::new();
++    for file in files {
++        if file.extension().is_none_or(|v| v != "json") {
++            continue;
++        }
++        let relative = file.strip_prefix(&base)?.with_extension("");
++        values.insert(
++            format!(
++                "minecraft:{}",
++                relative.to_string_lossy().replace('\\', "/")
++            ),
++            serde_json::Value::String(fs::read_to_string(file)?),
++        );
++    }
++    let target = root.join(target);
++    fs::create_dir_all(target.parent().ok_or("Missing resource parent")?)?;
++    fs::write(target, serde_json::to_vec(&values)?)?;
++    Ok(())
++}
++
++pub fn rebuild(root: &Path) -> Result<()> {
++    for (name, source) in WORLDGEN {
++        aggregate(root, source, &format!("worldgen/{name}.json"))?;
++    }
++    for (name, source) in [
++        ("block-tags", "tags/block"),
++        ("damage-tags", "tags/damage_type"),
++        ("damage-types", "damage_type"),
++    ] {
++        aggregate(root, source, &format!("{name}.json"))?;
++    }
++    let base = root.join("data/minecraft/structure");
++    let mut files = Vec::new();
++    walk(&base, &mut files)?;
++    for file in files {
++        if file.extension().is_none_or(|v| v != "nbt") {
++            continue;
++        }
++        let target = root
++            .join("worldgen/structure/minecraft")
++            .join(file.strip_prefix(&base)?);
++        fs::create_dir_all(target.parent().ok_or("Missing structure parent")?)?;
++        fs::copy(file, target)?;
++    }
++    Ok(())
++}
++
++/// Repair the generated table omitted from earlier public APKs. Vanilla template
++/// NBT and JSON still come from the official download; only state transforms are
++/// read from this APK. Existing worlds and resource selections are untouched.
++pub fn repair_structure_transforms(engine: &Path, root: &Path) -> Result<()> {
++    let target = root.join("worldgen/blocks/structure-blocks.json");
++    if target.metadata().is_ok_and(|m| m.len() > 2) {
++        return Ok(());
++    }
++    let mut archive = zip::ZipArchive::new(fs::File::open(engine)?)?;
++    let mut entry = archive.by_name("worldgen/blocks/structure-blocks.json")?;
++    if entry.size() > 16 * 1024 * 1024 || entry.is_symlink() {
++        return Err("Invalid generated structure transform table".into());
++    }
++    use std::io::Read;
++    let mut bytes = Vec::new();
++    entry
++        .by_ref()
++        .take(16 * 1024 * 1024 + 1)
++        .read_to_end(&mut bytes)?;
++    if bytes.len() > 16 * 1024 * 1024 {
++        return Err("Generated structure transform table is too large".into());
++    }
++    let data: serde_json::Value = serde_json::from_slice(&bytes)?;
++    if data["rotate"].as_array().is_none_or(|v| v.is_empty())
++        || data["mirror"].as_array().is_none_or(|v| v.is_empty())
++    {
++        return Err("Generated structure transforms are missing".into());
++    }
++    fs::create_dir_all(target.parent().ok_or("Missing structure table directory")?)?;
++    let part = target.with_extension("partial");
++    fs::write(&part, bytes)?;
++    fs::rename(part, target)?;
++    Ok(())
++}
++
++/// The manifest contains only names, hashes and the pinned upstream revision.
++/// PNGs remain outside our APK and source repository.
++pub fn controls(root: &Path) -> Result<()> {
++    controls_with_progress(root, |_, _| {})
++}
++pub fn controls_with_progress(root: &Path, progress: impl Fn(u64, u64)) -> Result<()> {
++    use sha2::{Digest, Sha256};
++    use std::io::Read;
++    let manifest: serde_json::Value = serde_json::from_str(include_str!(
++        "../../../packaging/android/bedrock-controls.json"
++    ))?;
++    let revision = manifest["revision"]
++        .as_str()
++        .ok_or("Missing control revision")?;
++    let target = root.join("assets/minecraft/textures/gui/bedrock");
++    let agent = ureq::AgentBuilder::new()
++        .redirects(0)
++        .timeout_connect(std::time::Duration::from_secs(30))
++        .timeout_read(std::time::Duration::from_secs(60))
++        .build();
++    let entries = manifest["files"]
++        .as_array()
++        .ok_or("Missing control files")?;
++    progress(0, entries.len() as u64);
++    for (index, entry) in entries.iter().enumerate() {
++        let name = entry["path"].as_str().ok_or("Missing control path")?;
++        let hash = entry["sha256"].as_str().ok_or("Missing control checksum")?;
++        let size = entry["size"]
++            .as_u64()
++            .filter(|n| *n <= 1024 * 1024)
++            .ok_or("Invalid control size")?;
++        let relative = Path::new(name);
++        if relative
++            .components()
++            .any(|c| !matches!(c, std::path::Component::Normal(_)))
++        {
++            return Err("Invalid control destination".into());
++        }
++        let file = target.join(relative);
++        if fs::read(&file).is_ok_and(|data| {
++            data.len() as u64 == size && format!("{:x}", Sha256::digest(data)) == hash
++        }) {
++            progress(index as u64 + 1, entries.len() as u64);
++            continue;
++        }
++        let source = if name == "LICENSE.md" {
++            "LICENSE.md".into()
++        } else {
++            format!(
++                "resource_pack/textures/{}",
++                entry["source"].as_str().ok_or("Missing control source")?
++            )
++        };
++        let url =
++            format!("https://raw.githubusercontent.com/Mojang/bedrock-samples/{revision}/{source}");
++        let mut bytes = Vec::new();
++        agent
++            .get(&url)
++            .call()?
++            .into_reader()
++            .take(size + 1)
++            .read_to_end(&mut bytes)?;
++        if bytes.len() as u64 != size || format!("{:x}", Sha256::digest(&bytes)) != hash {
++            return Err(format!("Control texture checksum mismatch: {name}").into());
++        }
++        fs::create_dir_all(file.parent().ok_or("Missing texture parent")?)?;
++        fs::write(file, bytes)?;
++        progress(index as u64 + 1, entries.len() as u64);
++    }
++    Ok(())
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    fn temporary() -> std::path::PathBuf {
++        let dir = std::env::temp_dir().join(format!(
++            "horizon-android-data-{}-{}",
++            std::process::id(),
++            std::time::SystemTime::now()
++                .duration_since(std::time::UNIX_EPOCH)
++                .unwrap()
++                .as_nanos()
++        ));
++        fs::create_dir_all(&dir).unwrap();
++        dir
++    }
++    #[test]
++    fn repairs_only_missing_generated_transforms() {
++        use std::io::Write;
++        let root = temporary();
++        let archive = root.join("engine.zip");
++        let data = br#"{"rotate":[[0,0,0]],"mirror":[[0,0]]}"#;
++        let mut zip = zip::ZipWriter::new(fs::File::create(&archive).unwrap());
++        zip.start_file(
++            "worldgen/blocks/structure-blocks.json",
++            zip::write::SimpleFileOptions::default(),
++        )
++        .unwrap();
++        zip.write_all(data).unwrap();
++        zip.finish().unwrap();
++        let installed = root.join("installed");
++        repair_structure_transforms(&archive, &installed).unwrap();
++        let target = installed.join("worldgen/blocks/structure-blocks.json");
++        assert_eq!(fs::read(&target).unwrap(), data);
++        // Repair is local and does not reopen the archive on subsequent launches.
++        fs::remove_file(&archive).unwrap();
++        repair_structure_transforms(&archive, &installed).unwrap();
++        assert_eq!(fs::read(&target).unwrap(), data);
++        fs::remove_file(target).unwrap();
++        assert!(repair_structure_transforms(&archive, &installed).is_err());
++        fs::remove_dir_all(root).unwrap();
++    }
++    #[test]
++    fn reconstructs_namespaced_resources_and_nested_structures() {
++        let root = temporary();
++        let source = root.join("data/minecraft/worldgen/noise/sub");
++        fs::create_dir_all(&source).unwrap();
++        fs::write(source.join("test.json"), "{\"amplitude\":1}").unwrap();
++        let source = root.join("data/minecraft/structure/village");
++        fs::create_dir_all(&source).unwrap();
++        fs::write(source.join("test.nbt"), b"synthetic structure").unwrap();
++        rebuild(&root).unwrap();
++        let map: serde_json::Value =
++            serde_json::from_slice(&fs::read(root.join("worldgen/noises.json")).unwrap()).unwrap();
++        assert_eq!(map["minecraft:sub/test"], "{\"amplitude\":1}");
++        assert_eq!(
++            fs::read(root.join("worldgen/structure/minecraft/village/test.nbt")).unwrap(),
++            b"synthetic structure"
++        );
++        fs::remove_dir_all(root).unwrap();
++    }
++    #[test]
++    #[ignore = "requires the owner's pinned client fixture; optionally downloads controls"]
++    fn official_client_rebuild_matches_prepared_resources() {
++        use std::io::Read;
++        let client = std::env::var_os("HORIZON_ANDROID_TEST_CLIENT").expect("client fixture");
++        let prepared = std::path::PathBuf::from(
++            std::env::var_os("HORIZON_TEST_RESOURCES").expect("prepared fixture"),
++        );
++        let root = temporary();
++        let mut zip = zip::ZipArchive::new(fs::File::open(client).unwrap()).unwrap();
++        for i in 0..zip.len() {
++            let mut entry = zip.by_index(i).unwrap();
++            if entry.is_dir() || !entry.name().starts_with("data/minecraft/") {
++                continue;
++            }
++            let path = root.join(entry.enclosed_name().unwrap());
++            fs::create_dir_all(path.parent().unwrap()).unwrap();
++            let mut data = Vec::new();
++            entry.read_to_end(&mut data).unwrap();
++            fs::write(path, data).unwrap();
++        }
++        rebuild(&root).unwrap();
++        for (name, _) in WORLDGEN {
++            let path = format!("worldgen/{name}.json");
++            let read = |base: &Path| -> serde_json::Value {
++                serde_json::from_slice(&fs::read(base.join(&path)).unwrap()).unwrap()
++            };
++            assert_eq!(read(&root), read(&prepared), "{path}");
++        }
++        let mut templates = Vec::new();
++        walk(&prepared.join("worldgen/structure"), &mut templates).unwrap();
++        assert!(!templates.is_empty());
++        for file in &templates {
++            let relative = file.strip_prefix(&prepared).unwrap();
++            assert_eq!(
++                fs::read(root.join(relative)).unwrap(),
++                fs::read(file).unwrap(),
++                "{relative:?}"
++            );
++        }
++        if std::env::var_os("HORIZON_TEST_DOWNLOAD_CONTROLS").is_some() {
++            controls(&root).unwrap();
++        }
++        println!(
++            "Matched {} worldgen maps and {} templates",
++            WORLDGEN.len(),
++            templates.len()
++        );
++        fs::remove_dir_all(root).unwrap();
++    }
++}
+diff --git a/crates/horizon-client/src/game/ime.rs b/crates/horizon-client/src/game/ime.rs
+index c31e66867..e8a950e5a 100644
+--- a/crates/horizon-client/src/game/ime.rs
++++ b/crates/horizon-client/src/game/ime.rs
+@@ -34,6 +34,8 @@ impl Game<'_> {
+     /// Allow the input method only while a text box has focus.
+     pub(super) fn sync_ime(&mut self) {
+         let want = self.text_field_focused();
++        #[cfg(target_os = "android")]
++        let want = want && super::android_ime_allowed();
+         if want != self.ime_allowed
+             && let Some(window) = &self.window
+         {
+diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game/mod.rs
+similarity index 95%
+rename from crates/horizon-client/src/game.rs
+rename to crates/horizon-client/src/game/mod.rs
+index e0a0aa10b..07c85f6d1 100644
+--- a/crates/horizon-client/src/game.rs
++++ b/crates/horizon-client/src/game/mod.rs
+@@ -335,17 +335,121 @@ use std::{
+     collections::{HashMap, HashSet},
+     path::PathBuf,
+     sync::{
+-        Arc,
+-        atomic::{AtomicU32, Ordering},
++        Arc, Mutex, OnceLock,
++        atomic::{AtomicBool, AtomicU32, Ordering},
+         mpsc::{Receiver, TryRecvError},
+     },
+     thread::JoinHandle,
+     time::{Duration, Instant},
+ };
++
++#[cfg(target_os = "android")]
++static ANDROID_CONTROL_INPUTS: OnceLock<Mutex<Vec<(String, bool)>>> = OnceLock::new();
++#[cfg(target_os = "android")]
++static ANDROID_LOOK_DELTA: OnceLock<Mutex<(f64, f64)>> = OnceLock::new();
++#[cfg(target_os = "android")]
++static ANDROID_LOOK_ACTIVE: AtomicBool = AtomicBool::new(false);
++#[cfg(target_os = "android")]
++static ANDROID_GAME_ACTIVE: AtomicBool = AtomicBool::new(false);
++#[cfg(target_os = "android")]
++static ANDROID_GAME_FPS: AtomicU32 = AtomicU32::new(0);
++#[cfg(target_os = "android")]
++static ANDROID_IME_ALLOWED: AtomicBool = AtomicBool::new(true);
++#[cfg(target_os = "android")]
++static ANDROID_MENU_TOUCHES: OnceLock<Mutex<Vec<(u64, f64, f64, u8)>>> = OnceLock::new();
++
++/// Queue a Zalith layout key or mouse button for the game-loop thread.
++#[cfg(target_os = "android")]
++pub fn send_android_control_event(key: String, pressed: bool) {
++    ANDROID_CONTROL_INPUTS.get_or_init(Default::default).lock().unwrap().push((key, pressed));
++}
++
++/// Accumulate relative touch-look motion from the Zalith overlay.
++#[cfg(target_os = "android")]
++pub fn send_android_look(dx: f64, dy: f64) {
++    let mut delta = ANDROID_LOOK_DELTA.get_or_init(Default::default).lock().unwrap();
++    delta.0 += dx;
++    delta.1 += dy;
++}
++
++#[cfg(target_os = "android")]
++pub fn set_android_look_active(active: bool) {
++    ANDROID_LOOK_ACTIVE.store(active, Ordering::Relaxed);
++}
++
++#[cfg(target_os = "android")]
++pub fn android_cursor_grabbing() -> bool {
++    ANDROID_GAME_ACTIVE.load(Ordering::Relaxed)
++}
++
++#[cfg(target_os = "android")]
++pub fn android_game_fps() -> u32 {
++    ANDROID_GAME_FPS.load(Ordering::Relaxed)
++}
++
++#[cfg(target_os = "android")]
++pub fn set_android_ime_allowed(allowed: bool) {
++    ANDROID_IME_ALLOWED.store(allowed, Ordering::Relaxed);
++}
++
++#[cfg(target_os = "android")]
++pub fn android_ime_allowed() -> bool {
++    ANDROID_IME_ALLOWED.load(Ordering::Relaxed)
++}
++
++#[cfg(target_os = "android")]
++pub fn send_android_menu_touch(id: u64, x: f64, y: f64, phase: u8) {
++    ANDROID_MENU_TOUCHES.get_or_init(Default::default).lock().unwrap().push((id, x, y, phase));
++}
++#[cfg(target_os = "android")]
++thread_local! {
++    static ANDROID_APP: RefCell<Option<winit::platform::android::activity::AndroidApp>> = const { RefCell::new(None) };
++    static ANDROID_HAPTIC: RefCell<Option<fn()>> = const { RefCell::new(None) };
++}
++
++/// Supplies NativeActivity state to Winit before entering the shared game loop.
++#[cfg(target_os = "android")]
++pub fn set_android_app(app: winit::platform::android::activity::AndroidApp) {
++    ANDROID_APP.with(|slot| *slot.borrow_mut() = Some(app));
++}
++
++#[cfg(target_os = "android")]
++pub fn set_android_haptic_callback(callback: fn()) {
++    ANDROID_HAPTIC.with(|slot| *slot.borrow_mut() = Some(callback));
++}
++
++fn android_haptic_feedback() {
++    #[cfg(target_os = "android")]
++    ANDROID_HAPTIC.with(|slot| {
++        if let Some(callback) = *slot.borrow() {
++            callback();
++        }
++    });
++}
++
++fn new_event_loop() -> Result<EventLoop<()>> {
++    #[cfg(target_os = "android")]
++    {
++        use winit::platform::android::EventLoopBuilderExtAndroid;
++        let mut builder = EventLoop::builder();
++        ANDROID_APP.with(|slot| {
++            if let Some(app) = slot.borrow().as_ref() {
++                builder.with_android_app(app.clone());
++            }
++        });
++        return Ok(builder.build()?);
++    }
++    #[cfg(not(target_os = "android"))]
++    {
++        Ok(EventLoop::new()?)
++    }
++}
+ use winit::{
+     application::ApplicationHandler,
+     error::EventLoopError,
+-    event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent},
++    event::{
++        DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent,
++    },
+     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+     keyboard::{KeyCode, PhysicalKey},
+     window::{CursorGrabMode, Window, WindowId},
+@@ -1920,6 +2024,7 @@ struct Game<'a> {
+     // Physical input is separate from remapped and toggled movement keys.
+     physical_keys: HashSet<KeyCode>,
+     physical_buttons: HashSet<MouseButton>,
++    android_touch: AndroidTouchState,
+     /// Control + left click as a right click (macOS).
+     right_click_emulation: horizon_client_input::mouse::RightClickEmulation,
+     left: bool,
+@@ -2512,6 +2617,236 @@ struct Game<'a> {
+     /// The local player as a model (third person, the inventory).
+     player_model: Option<Mob>,
+ }
++
++#[derive(Clone, Copy, Debug)]
++enum AndroidTouchRole {
++    Joystick { origin: (f64, f64) },
++    Look,
++    Key(KeyCode),
++    Mouse(MouseButton),
++    QuickSettings,
++    QuickHud,
++    QuickAutoJump,
++    QuickSensitivity(f32),
++    QuickClose,
++}
++
++#[derive(Clone, Debug, Default, serde::Deserialize)]
++struct AndroidTouchButton {
++    id: String,
++    label: String,
++    output: String,
++}
++
++#[derive(Clone, Copy, Debug, Default)]
++struct AndroidMenuTouch {
++    start: (f64, f64),
++    last: (f64, f64),
++    moved: bool,
++}
++
++#[derive(Default)]
++struct AndroidTouchState {
++    enabled: bool,
++    haptics: bool,
++    hold_to_sprint: bool,
++    opacity: f32,
++    button_size: f32,
++    look_sensitivity: f32,
++    left_handed: bool,
++    auto_jump: bool,
++    layout: String,
++    positions: HashMap<String, (f32, f32)>,
++    bindings: HashMap<String, String>,
++    custom_buttons: Vec<AndroidTouchButton>,
++    joystick_outputs: HashSet<String>,
++    active: HashMap<u64, AndroidTouchRole>,
++    last: HashMap<u64, (f64, f64)>,
++    menu_touches: HashMap<u64, AndroidMenuTouch>,
++    pending_menu_release: Option<DeviceId>,
++    quick_settings_open: bool,
++    hud_visible: bool,
++}
++
++impl AndroidTouchState {
++    fn position(&self, id: &str, default: (f32, f32)) -> (f32, f32) {
++        if let Some(point) = self.positions.get(id).copied() {
++            return point;
++        }
++        (
++            if self.left_handed {
++                1.0 - default.0
++            } else {
++                default.0
++            },
++            default.1,
++        )
++    }
++
++    fn output(&self, id: &str, fallback: AndroidTouchRole) -> AndroidTouchRole {
++        let Some(output) = self.bindings.get(id).map(String::as_str) else {
++            return fallback;
++        };
++        android_touch_output(output).unwrap_or(fallback)
++    }
++
++    fn from_environment() -> Self {
++        let Some(raw) = std::env::var_os("HORIZON_ANDROID_TOUCH_CONTROLS") else {
++            return Self::default();
++        };
++        let value: serde_json::Value =
++            serde_json::from_str(&raw.to_string_lossy()).unwrap_or_default();
++        let number = |key: &str, default: f32| {
++            value
++                .get(key)
++                .and_then(serde_json::Value::as_f64)
++                .filter(|v| v.is_finite())
++                .map(|v| v as f32)
++                .unwrap_or(default)
++        };
++        let mut positions = HashMap::new();
++        if let Some(object) = value
++            .get("positions")
++            .and_then(serde_json::Value::as_object)
++        {
++            for (key, point) in object {
++                if let Some(values) = point.as_array().filter(|v| v.len() >= 2) {
++                    if let (Some(x), Some(y)) = (values[0].as_f64(), values[1].as_f64()) {
++                        if x.is_finite() && y.is_finite() {
++                            positions.insert(key.clone(), (x as f32, y as f32));
++                        }
++                    }
++                }
++            }
++        }
++        let bindings = value
++            .get("bindings")
++            .and_then(serde_json::Value::as_object)
++            .map(|map| {
++                map.iter()
++                    .filter_map(|(key, value)| value.as_str().map(|v| (key.clone(), v.to_owned())))
++                    .collect()
++            })
++            .unwrap_or_default();
++        let custom_buttons: Vec<AndroidTouchButton> = value
++            .get("custom_buttons")
++            .and_then(|value| serde_json::from_value(value.clone()).ok())
++            .unwrap_or_default();
++        Self {
++            enabled: value
++                .get("enabled")
++                .and_then(serde_json::Value::as_bool)
++                .unwrap_or(true),
++            haptics: value
++                .get("haptics")
++                .and_then(serde_json::Value::as_bool)
++                .unwrap_or(true),
++            hold_to_sprint: value
++                .get("hold_to_sprint")
++                .and_then(serde_json::Value::as_bool)
++                .unwrap_or(false),
++            opacity: number("opacity", 0.72).clamp(0.3, 1.0),
++            button_size: number("button_size", 1.0).clamp(0.7, 1.5),
++            look_sensitivity: number("look_sensitivity", 1.0).clamp(0.25, 2.0),
++            left_handed: value
++                .get("left_handed")
++                .and_then(serde_json::Value::as_bool)
++                .unwrap_or(false),
++            auto_jump: value
++                .get("auto_jump")
++                .and_then(serde_json::Value::as_bool)
++                .unwrap_or(false),
++            layout: value
++                .get("layout")
++                .and_then(serde_json::Value::as_str)
++                .unwrap_or("classic")
++                .to_owned(),
++            positions,
++            bindings,
++            custom_buttons,
++            hud_visible: true,
++            ..Self::default()
++        }
++    }
++}
++
++fn android_touch_output(output: &str) -> Option<AndroidTouchRole> {
++    let key = match output {
++        "Space" => KeyCode::Space,
++        "ShiftLeft" => KeyCode::ShiftLeft,
++        "ControlLeft" => KeyCode::ControlLeft,
++        "AltLeft" => KeyCode::AltLeft,
++        "Tab" => KeyCode::Tab,
++        "Escape" => KeyCode::Escape,
++        "Enter" => KeyCode::Enter,
++        "Backspace" => KeyCode::Backspace,
++        "ArrowUp" => KeyCode::ArrowUp,
++        "ArrowDown" => KeyCode::ArrowDown,
++        "ArrowLeft" => KeyCode::ArrowLeft,
++        "ArrowRight" => KeyCode::ArrowRight,
++        "Home" => KeyCode::Home,
++        "End" => KeyCode::End,
++        "PageUp" => KeyCode::PageUp,
++        "PageDown" => KeyCode::PageDown,
++        "A" => KeyCode::KeyA,
++        "B" => KeyCode::KeyB,
++        "C" => KeyCode::KeyC,
++        "D" => KeyCode::KeyD,
++        "E" => KeyCode::KeyE,
++        "F" => KeyCode::KeyF,
++        "G" => KeyCode::KeyG,
++        "H" => KeyCode::KeyH,
++        "I" => KeyCode::KeyI,
++        "J" => KeyCode::KeyJ,
++        "K" => KeyCode::KeyK,
++        "L" => KeyCode::KeyL,
++        "M" => KeyCode::KeyM,
++        "N" => KeyCode::KeyN,
++        "O" => KeyCode::KeyO,
++        "P" => KeyCode::KeyP,
++        "Q" => KeyCode::KeyQ,
++        "R" => KeyCode::KeyR,
++        "S" => KeyCode::KeyS,
++        "T" => KeyCode::KeyT,
++        "U" => KeyCode::KeyU,
++        "V" => KeyCode::KeyV,
++        "W" => KeyCode::KeyW,
++        "X" => KeyCode::KeyX,
++        "Y" => KeyCode::KeyY,
++        "Z" => KeyCode::KeyZ,
++        "0" => KeyCode::Digit0,
++        "1" => KeyCode::Digit1,
++        "2" => KeyCode::Digit2,
++        "3" => KeyCode::Digit3,
++        "4" => KeyCode::Digit4,
++        "5" => KeyCode::Digit5,
++        "6" => KeyCode::Digit6,
++        "7" => KeyCode::Digit7,
++        "8" => KeyCode::Digit8,
++        "9" => KeyCode::Digit9,
++        "F1" => KeyCode::F1,
++        "F2" => KeyCode::F2,
++        "F3" => KeyCode::F3,
++        "F4" => KeyCode::F4,
++        "F5" => KeyCode::F5,
++        "F6" => KeyCode::F6,
++        "F7" => KeyCode::F7,
++        "F8" => KeyCode::F8,
++        "F9" => KeyCode::F9,
++        "F10" => KeyCode::F10,
++        "F11" => KeyCode::F11,
++        "F12" => KeyCode::F12,
++        _ => {
++            return Some(match output {
++                "MouseLeft" => AndroidTouchRole::Mouse(MouseButton::Left),
++                "MouseRight" => AndroidTouchRole::Mouse(MouseButton::Right),
++                "MouseMiddle" => AndroidTouchRole::Mouse(MouseButton::Middle),
++                _ => return None,
++            });
++        }
++    };
++    Some(AndroidTouchRole::Key(key))
++}
+ #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+ enum Dim {
+     Overworld,
+@@ -2873,7 +3208,7 @@ impl Game<'_> {
+         player.nudge = nudge;
+         player.yaw = self.yaw;
+         player.pitch = self.pitch;
+-        player.auto_jump_enabled = self.settings.auto_jump;
++        player.auto_jump_enabled = self.settings.auto_jump || self.android_touch.auto_jump;
+         player.item_use_speed = item_use_speed;
+         player.item_use_slows_sprint = item_use_slows_sprint;
+         player.respiration = respiration;
+@@ -6770,7 +7105,13 @@ impl Game<'_> {
+     fn apply_mouse_look(&mut self) {
+         let look = self.look_options();
+         let time = self.started.elapsed().as_secs_f64();
+-        let pointer = self.captured || self.agent_pointer;
++        // Android touch has no native cursor to capture. A finger held in the
++        // look region supplies relative motion instead, so treat that active
++        // pointer as captured for the duration of its gesture.
++        let touch_look = cfg!(target_os = "android")
++            && (ANDROID_LOOK_ACTIVE.load(Ordering::Relaxed)
++                || self.android_touch.active.values().any(|role| matches!(role, AndroidTouchRole::Look)));
++        let pointer = self.captured || self.agent_pointer || touch_look;
+         let grabbed = pointer && self.screen == Screen::Playing && self.player.is_some();
+         let active = self.focused || self.agent_pointer;
+         if let Some((xo, yo)) = self
+@@ -7478,6 +7819,404 @@ impl Game<'_> {
+         }
+         batch
+     }
++
++    fn touch_control_centres(&self, width: f32, height: f32) -> [(f32, f32, KeyCode); 3] {
++        let (jx, jy) = self.android_touch.position("jump", (0.90, 0.73));
++        let (sx, sy) = self.android_touch.position("sneak", (0.68, 0.87));
++        let (rx, ry) = self.android_touch.position("sprint", (0.51, 0.71));
++        [
++            (jx * width, jy * height, KeyCode::Space),
++            (sx * width, sy * height, KeyCode::ShiftLeft),
++            (rx * width, ry * height, KeyCode::ControlLeft),
++        ]
++    }
++
++    fn set_touch_output(
++        &mut self,
++        id: &str,
++        fallback: AndroidTouchRole,
++        pressed: bool,
++    ) -> Result<()> {
++        let role = self.android_touch.output(id, fallback);
++        match role {
++            AndroidTouchRole::Key(key) => self.mapped_key(key, pressed, false),
++            AndroidTouchRole::Mouse(button) => self.play_mouse(button, pressed),
++            _ => Ok(()),
++        }
++    }
++
++    fn touch_key(&mut self, id: &str, key: KeyCode, pressed: bool) -> Result<()> {
++        if id == "sprint" && self.android_touch.hold_to_sprint && key == KeyCode::ControlLeft {
++            let toggle = self.settings.toggle_sprint;
++            self.settings.toggle_sprint = false;
++            let result = self.mapped_key(key, pressed, false);
++            self.settings.toggle_sprint = toggle;
++            result
++        } else {
++            self.mapped_key(key, pressed, false)
++        }
++    }
++
++    fn draw_android_touch_controls(&self, batch: &mut HudBatch) {
++        if !cfg!(target_os = "android")
++            || self.screen != Screen::Playing
++            || self.title.is_some()
++            || self.player.is_none()
++        {
++            return;
++        }
++        let (w, h) = (batch.width, batch.height);
++        let alpha = (self.android_touch.opacity * 145.0) as u8;
++        let radius = 24.0 * self.android_touch.button_size;
++        let white = &self.gui.atlas;
++        if self.android_touch.quick_settings_open {
++            let x = w * 0.84;
++            batch.fill(
++                white,
++                x - 0.14 * w,
++                h * 0.13,
++                0.14 * w,
++                h * 0.41,
++                rgba(18, 23, 31, 220),
++            );
++        }
++        {
++            let mut button = |x: f32, y: f32, label: &str, scale: f32| {
++                let r = radius * scale;
++                batch.fill(
++                    white,
++                    x - r,
++                    y - r,
++                    r * 2.0,
++                    r * 2.0,
++                    rgba(25, 30, 38, alpha),
++                );
++                let text_width = HudBatch::text_width(&self.gui.atlas, label);
++                batch.text(
++                    &self.gui.atlas,
++                    label,
++                    x - text_width / 2.0,
++                    y - 4.0,
++                    rgba(255, 255, 255, 220),
++                    true,
++                );
++            };
++            // Zalith-style in-game quick access: this remains available when the
++            // virtual HUD is hidden so players can restore it without reopening
++            // launcher settings.
++            button(w * 0.95, h * 0.08, "SET", 0.82);
++            if self.android_touch.quick_settings_open {
++                button(
++                    w * 0.78,
++                    h * 0.20,
++                    if self.android_touch.hud_visible {
++                        "HUD ON"
++                    } else {
++                        "HUD OFF"
++                    },
++                    0.85,
++                );
++                button(
++                    w * 0.78,
++                    h * 0.29,
++                    if self.android_touch.auto_jump {
++                        "JUMP ON"
++                    } else {
++                        "JUMP OFF"
++                    },
++                    0.85,
++                );
++                button(w * 0.75, h * 0.39, "LOOK-", 0.75);
++                button(w * 0.88, h * 0.39, "LOOK+", 0.75);
++                button(w * 0.82, h * 0.49, "DONE", 0.75);
++            }
++        }
++        if !self.android_touch.enabled || !self.android_touch.hud_visible {
++            return;
++        }
++        let (move_x, move_y) = self.android_touch.position("move", (0.14, 0.77));
++        let joystick_x = move_x * w;
++        let joystick_y = move_y * h;
++        batch.fill(
++            white,
++            joystick_x - radius * 1.8,
++            joystick_y - radius * 1.8,
++            radius * 3.6,
++            radius * 3.6,
++            rgba(25, 30, 38, alpha),
++        );
++        batch.fill(
++            white,
++            joystick_x - radius * 0.55,
++            joystick_y - radius * 0.55,
++            radius * 1.1,
++            radius * 1.1,
++            rgba(220, 230, 240, alpha),
++        );
++        let factor = match self.android_touch.layout.as_str() {
++            "compact" => 0.82,
++            "minimal" => 0.68,
++            _ => 1.0,
++        };
++        let radius = radius * factor;
++        let mut button = |x: f32, y: f32, label: &str, scale: f32| {
++            let r = radius * scale;
++            batch.fill(
++                white,
++                x - r,
++                y - r,
++                r * 2.0,
++                r * 2.0,
++                rgba(25, 30, 38, alpha),
++            );
++            let text_width = HudBatch::text_width(&self.gui.atlas, label);
++            batch.text(
++                &self.gui.atlas,
++                label,
++                x - text_width / 2.0,
++                y - 4.0,
++                rgba(255, 255, 255, 220),
++                true,
++            );
++        };
++        let (jx, jy) = self.android_touch.position("jump", (0.90, 0.73));
++        let (sx, sy) = self.android_touch.position("sneak", (0.68, 0.87));
++        let (rx, ry) = self.android_touch.position("sprint", (0.51, 0.71));
++        let (ax, ay) = self.android_touch.position("attack", (0.78, 0.88));
++        let (ux, uy) = self.android_touch.position("use", (0.92, 0.90));
++        button(jx * w, jy * h, "Jump", 1.0);
++        button(sx * w, sy * h, "Sneak", 1.0);
++        button(rx * w, ry * h, "Run", 1.0);
++        button(ax * w, ay * h, "Hit", 1.0);
++        button(ux * w, uy * h, "Use", 1.0);
++        for (index, control) in self.android_touch.custom_buttons.iter().enumerate() {
++            let default = (
++                0.48 + (index % 4) as f32 * 0.08,
++                0.48 + (index / 4) as f32 * 0.12,
++            );
++            let (x, y) = self.android_touch.position(&control.id, default);
++            button(x * w, y * h, &control.label, 0.9);
++        }
++    }
++
++    fn android_touch_event(&mut self, touch: winit::event::Touch) -> Result<()> {
++        let Some(renderer) = &self.renderer else {
++            return Ok(());
++        };
++        let batch = HudBatch::new([renderer.config.width, renderer.config.height]);
++        let (w, h) = (batch.width as f64, batch.height as f64);
++        let scale = batch.scale as f64;
++        let point = (touch.location.x / scale, touch.location.y / scale);
++        match touch.phase {
++            TouchPhase::Started => {
++                let nx = point.0 / w;
++                let ny = point.1 / h;
++                let centers = self.touch_control_centres(w as f32, h as f32);
++                let mut role = None;
++                if self.android_touch.quick_settings_open
++                    && (0.64..=0.98).contains(&nx)
++                    && (0.14..=0.54).contains(&ny)
++                {
++                    role = Some(if ny < 0.25 {
++                        AndroidTouchRole::QuickHud
++                    } else if ny < 0.34 {
++                        AndroidTouchRole::QuickAutoJump
++                    } else if ny < 0.45 && nx < 0.82 {
++                        AndroidTouchRole::QuickSensitivity(-0.1)
++                    } else if ny < 0.45 {
++                        AndroidTouchRole::QuickSensitivity(0.1)
++                    } else {
++                        AndroidTouchRole::QuickClose
++                    });
++                }
++                if role.is_none() && nx > 0.90 && ny < 0.14 {
++                    role = Some(AndroidTouchRole::QuickSettings);
++                }
++                if role.is_none()
++                    && (!self.android_touch.enabled || !self.android_touch.hud_visible)
++                {
++                    self.android_touch
++                        .active
++                        .insert(touch.id, AndroidTouchRole::Look);
++                    self.android_touch.last.insert(touch.id, point);
++                    return Ok(());
++                }
++                for (index, (x, y, key)) in centers.into_iter().enumerate() {
++                    let dx = point.0 - f64::from(x);
++                    let dy = point.1 - f64::from(y);
++                    let radius = 30.0 * f64::from(self.android_touch.button_size);
++                    if dx * dx + dy * dy <= radius * radius {
++                        let id = ["jump", "sneak", "sprint"][index];
++                        role = Some(self.android_touch.output(id, AndroidTouchRole::Key(key)));
++                        break;
++                    }
++                }
++                for (id, default, button) in [
++                    ("attack", (0.78, 0.88), MouseButton::Left),
++                    ("use", (0.92, 0.90), MouseButton::Right),
++                ] {
++                    let (x, y) = self.android_touch.position(id, default);
++                    let dx = nx - f64::from(x);
++                    let dy = ny - f64::from(y);
++                    if dx * dx + dy * dy <= 0.0064 {
++                        role = Some(
++                            self.android_touch
++                                .output(id, AndroidTouchRole::Mouse(button)),
++                        );
++                        break;
++                    }
++                }
++                if role.is_none() {
++                    for (index, control) in self.android_touch.custom_buttons.iter().enumerate() {
++                        let default = (
++                            0.48 + (index % 4) as f32 * 0.08,
++                            0.48 + (index / 4) as f32 * 0.12,
++                        );
++                        let (x, y) = self.android_touch.position(&control.id, default);
++                        let dx = nx - f64::from(x);
++                        let dy = ny - f64::from(y);
++                        if dx * dx + dy * dy <= 0.0064 {
++                            role = Some(
++                                self.android_touch.output(
++                                    &control.id,
++                                    android_touch_output(&control.output)
++                                        .unwrap_or(AndroidTouchRole::Key(KeyCode::KeyE)),
++                                ),
++                            );
++                            break;
++                        }
++                    }
++                }
++                let (mx, my) = self.android_touch.position("move", (0.14, 0.77));
++                let joy_x = f64::from(mx);
++                if role.is_none()
++                    && ((nx - joy_x).powi(2) + (ny - f64::from(my)).powi(2) <= 0.035
++                        || (nx < 0.31 && ny > 0.58 && !self.android_touch.left_handed)
++                        || (nx > 0.69 && ny > 0.58 && self.android_touch.left_handed))
++                {
++                    role = Some(AndroidTouchRole::Joystick { origin: point });
++                }
++                let role = role.unwrap_or(AndroidTouchRole::Look);
++                if self.android_touch.haptics
++                    && !matches!(
++                        role,
++                        AndroidTouchRole::Look | AndroidTouchRole::Joystick { .. }
++                    )
++                {
++                    android_haptic_feedback();
++                }
++                match role {
++                    AndroidTouchRole::Key(key) if key == KeyCode::ControlLeft => {
++                        self.touch_key("sprint", key, true)?
++                    }
++                    AndroidTouchRole::Key(key) => self.mapped_key(key, true, false)?,
++                    AndroidTouchRole::Mouse(button) => self.play_mouse(button, true)?,
++                    AndroidTouchRole::QuickSettings => {
++                        self.android_touch.quick_settings_open =
++                            !self.android_touch.quick_settings_open
++                    }
++                    AndroidTouchRole::QuickHud => {
++                        self.android_touch.hud_visible = !self.android_touch.hud_visible
++                    }
++                    AndroidTouchRole::QuickAutoJump => {
++                        self.android_touch.auto_jump = !self.android_touch.auto_jump
++                    }
++                    AndroidTouchRole::QuickSensitivity(delta) => {
++                        self.android_touch.look_sensitivity =
++                            (self.android_touch.look_sensitivity + delta).clamp(0.25, 3.0)
++                    }
++                    AndroidTouchRole::QuickClose => self.android_touch.quick_settings_open = false,
++                    _ => {}
++                }
++                self.android_touch.active.insert(touch.id, role);
++                self.android_touch.last.insert(touch.id, point);
++            }
++            TouchPhase::Moved => {
++                if let Some(role) = self.android_touch.active.get(&touch.id).copied() {
++                    match role {
++                        AndroidTouchRole::Look => {
++                            if let Some(previous) = self.android_touch.last.get(&touch.id).copied()
++                            {
++                                self.mouse.add_motion(
++                                    (point.0 - previous.0)
++                                        * scale
++                                        * f64::from(self.android_touch.look_sensitivity),
++                                    (point.1 - previous.1)
++                                        * scale
++                                        * f64::from(self.android_touch.look_sensitivity),
++                                );
++                            }
++                        }
++                        AndroidTouchRole::Joystick { origin } => {
++                            let dx = point.0 - origin.0;
++                            let dy = point.1 - origin.1;
++                            let threshold = 18.0 * f64::from(self.android_touch.button_size);
++                            let mut directions = HashSet::new();
++                            if dx.abs() > threshold {
++                                directions.insert(if dx < 0.0 {
++                                    "move_left"
++                                } else {
++                                    "move_right"
++                                });
++                            }
++                            if dy.abs() > threshold {
++                                directions.insert(if dy < 0.0 { "move_up" } else { "move_down" });
++                            }
++                            for (id, key) in [
++                                ("move_up", KeyCode::KeyW),
++                                ("move_down", KeyCode::KeyS),
++                                ("move_left", KeyCode::KeyA),
++                                ("move_right", KeyCode::KeyD),
++                            ] {
++                                let pressed = directions.contains(id);
++                                if pressed && self.android_touch.joystick_outputs.insert(id.into())
++                                {
++                                    self.set_touch_output(id, AndroidTouchRole::Key(key), true)?;
++                                } else if !pressed && self.android_touch.joystick_outputs.remove(id)
++                                {
++                                    self.set_touch_output(id, AndroidTouchRole::Key(key), false)?;
++                                }
++                            }
++                        }
++                        _ => {}
++                    }
++                    self.android_touch.last.insert(touch.id, point);
++                }
++            }
++            TouchPhase::Ended | TouchPhase::Cancelled => {
++                if let Some(role) = self.android_touch.active.remove(&touch.id) {
++                    match role {
++                        AndroidTouchRole::Key(key) if key == KeyCode::ControlLeft => {
++                            self.touch_key("sprint", key, false)?
++                        }
++                        AndroidTouchRole::Key(key) => self.mapped_key(key, false, false)?,
++                        AndroidTouchRole::Mouse(button) => self.play_mouse(button, false)?,
++                        AndroidTouchRole::Joystick { .. } => {
++                            for (id, key) in [
++                                ("move_up", KeyCode::KeyW),
++                                ("move_down", KeyCode::KeyS),
++                                ("move_left", KeyCode::KeyA),
++                                ("move_right", KeyCode::KeyD),
++                            ] {
++                                if self.android_touch.joystick_outputs.remove(id) {
++                                    self.set_touch_output(id, AndroidTouchRole::Key(key), false)?;
++                                }
++                            }
++                        }
++                        AndroidTouchRole::Look
++                        | AndroidTouchRole::QuickSettings
++                        | AndroidTouchRole::QuickHud
++                        | AndroidTouchRole::QuickAutoJump
++                        | AndroidTouchRole::QuickSensitivity(_)
++                        | AndroidTouchRole::QuickClose => {}
++                    }
++                }
++                self.android_touch.last.remove(&touch.id);
++            }
++        }
++        self.last_input = Instant::now();
++        Ok(())
++    }
+     /// `CreativeModeInventoryScreen.hasPermissions` (`canUseGameMasterBlocks`
+     /// and the Operator Items Tab option) given to `tryRefreshInvalidatedTabs`,
+     /// as the screen's constructor and `containerTick` do.
+@@ -14417,8 +15156,28 @@ impl Game<'_> {
+     }
+ }
+ impl ApplicationHandler for Game<'_> {
++    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
++        // Android destroys the native window on pause (a file picker, the home button): the
++        // surface made for it is dead from here on.
++        if cfg!(target_os = "android")
++            && let Some(renderer) = self.renderer.as_mut()
++        {
++            renderer.drop_surface();
++        }
++    }
+     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+         if self.window.is_some() {
++            // Back from a pause on Android: the window has a new native surface.
++            if cfg!(target_os = "android") {
++                if let Some(renderer) = self.renderer.as_mut()
++                    && let Err(error) = renderer.recreate_surface()
++                {
++                    log::error!("Horizon Android: cannot recreate the surface: {error}");
++                }
++                if let Some(window) = &self.window {
++                    window.request_redraw();
++                }
++            }
+             return;
+         }
+         // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
+@@ -14469,6 +15228,120 @@ impl ApplicationHandler for Game<'_> {
+         if self.window.as_ref().is_none_or(|w| w.id() != id) {
+             return;
+         }
++        // Finish synthetic menu taps on the next native event, giving touch
++        // scroll gestures a clean press/release boundary.
++        if let Some(device_id) = self.android_touch.pending_menu_release.take() {
++            self.window_event(
++                event_loop,
++                id,
++                WindowEvent::MouseInput {
++                    device_id,
++                    state: ElementState::Released,
++                    button: MouseButton::Left,
++                },
++            );
++        }
++        // In-world Android touches use independent virtual controls; menu
++        // touches use the standard pointer UI path.
++        event = match event {
++            WindowEvent::Touch(touch) => {
++                if cfg!(target_os = "android")
++                    && self.android_touch.enabled
++                    && self.screen == Screen::Playing
++                    && self.title.is_none()
++                    && self.player.is_some()
++                {
++                    if let Err(error) = self.android_touch_event(touch) {
++                        self.error = Some(error);
++                        event_loop.exit();
++                    }
++                    return;
++                }
++                let position = touch.location;
++                let physical = (position.x, position.y);
++                if let Some(r) = &self.renderer {
++                    let batch = HudBatch::new([r.config.width, r.config.height]);
++                    self.cursor = (
++                        position.x as f32 / batch.scale,
++                        position.y as f32 / batch.scale,
++                    );
++                }
++                match touch.phase {
++                    TouchPhase::Started => {
++                        self.android_touch.menu_touches.insert(
++                            touch.id,
++                            AndroidMenuTouch {
++                                start: physical,
++                                last: physical,
++                                moved: false,
++                            },
++                        );
++                        WindowEvent::CursorMoved {
++                            device_id: touch.device_id,
++                            position,
++                        }
++                    }
++                    TouchPhase::Moved => {
++                        let Some(mut gesture) =
++                            self.android_touch.menu_touches.get(&touch.id).copied()
++                        else {
++                            return;
++                        };
++                        let dy = gesture.last.1 - physical.1;
++                        // Accumulate the total displacement for tap-vs-drag,
++                        // while sending every vertical delta to vanilla's
++                        // existing wheel handlers (world list, inventory,
++                        // dialogs, options and other scrollable menus).
++                        gesture.moved |= (physical.0 - gesture.start.0).abs() > 14.0
++                            || (physical.1 - gesture.start.1).abs() > 14.0;
++                        gesture.last = physical;
++                        self.android_touch.menu_touches.insert(touch.id, gesture);
++                        if gesture.moved && dy.abs() > 0.0 {
++                            WindowEvent::MouseWheel {
++                                device_id: touch.device_id,
++                                delta: MouseScrollDelta::PixelDelta(
++                                    winit::dpi::PhysicalPosition::new(0.0, dy),
++                                ),
++                                phase: winit::event::TouchPhase::Moved,
++                            }
++                        } else {
++                            WindowEvent::CursorMoved {
++                                device_id: touch.device_id,
++                                position,
++                            }
++                        }
++                    }
++                    TouchPhase::Ended => {
++                        let gesture = self
++                            .android_touch
++                            .menu_touches
++                            .remove(&touch.id)
++                            .unwrap_or_default();
++                        if gesture.moved {
++                            WindowEvent::CursorMoved {
++                                device_id: touch.device_id,
++                                position,
++                            }
++                        } else {
++                            self.android_touch.pending_menu_release = Some(touch.device_id);
++                            WindowEvent::MouseInput {
++                                device_id: touch.device_id,
++                                state: ElementState::Pressed,
++                                button: MouseButton::Left,
++                            }
++                        }
++                    }
++                    TouchPhase::Cancelled => {
++                        self.android_touch.menu_touches.remove(&touch.id);
++                        WindowEvent::CursorMoved {
++                            device_id: touch.device_id,
++                            position,
++                        }
++                    }
++                }
++            }
++            other => other,
++        };
+         follow_keymap(&mut event);
+         // MacosUtil.setCtrlClickEmulatesRightClick: Control + left click is a right click.
+         if let WindowEvent::MouseInput { state, button, .. } = &mut event
+@@ -15513,6 +16386,8 @@ impl ApplicationHandler for Game<'_> {
+                         horizon_client::crash::debug_crash_tick();
+                         if self.fps_at.elapsed() >= Duration::from_secs(1) {
+                             self.fps = self.fps_frames as f32 / self.fps_at.elapsed().as_secs_f32();
++                            #[cfg(target_os = "android")]
++                            ANDROID_GAME_FPS.store(self.fps.round().max(0.0) as u32, Ordering::Relaxed);
+                             self.fps_frames = 0;
+                             self.fps_at = Instant::now();
+                         }
+@@ -15551,6 +16426,71 @@ impl ApplicationHandler for Game<'_> {
+         }
+     }
+     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
++        #[cfg(target_os = "android")]
++        {
++            ANDROID_GAME_ACTIVE.store(
++                self.screen == Screen::Playing && self.title.is_none() && self.player.is_some(),
++                Ordering::Relaxed,
++            );
++            if let Some(inputs) = ANDROID_CONTROL_INPUTS.get() {
++                let queued = std::mem::take(&mut *inputs.lock().unwrap());
++                for (name, pressed) in queued {
++                    if let Some(button) = name.strip_prefix("GLFW_MOUSE_BUTTON_") {
++                        let button = match button {
++                            "LEFT" => Some(MouseButton::Left),
++                            "RIGHT" => Some(MouseButton::Right),
++                            "MIDDLE" => Some(MouseButton::Middle),
++                            _ => None,
++                        };
++                        if let Some(button) = button {
++                            if let Err(error) = self.play_mouse(button, pressed) { self.error = Some(error); }
++                        }
++                        continue;
++                    }
++                    let key = name.strip_prefix("GLFW_KEY_").unwrap_or(&name);
++                    let key = match key {
++                        "SPACE" => "Space", "LEFT_SHIFT" => "ShiftLeft", "RIGHT_SHIFT" => "ShiftRight",
++                        "LEFT_CONTROL" => "ControlLeft", "RIGHT_CONTROL" => "ControlRight",
++                        "LEFT_ALT" => "AltLeft", "RIGHT_ALT" => "AltRight", "ESCAPE" => "Escape",
++                        "ENTER" => "Enter", "BACKSPACE" => "Backspace", "TAB" => "Tab",
++                        "UP" => "ArrowUp", "DOWN" => "ArrowDown", "LEFT" => "ArrowLeft", "RIGHT" => "ArrowRight",
++                        "PAGE_UP" => "PageUp", "PAGE_DOWN" => "PageDown",
++                        other => other,
++                    };
++                    if let Some(AndroidTouchRole::Key(code)) = android_touch_output(key) {
++                        if let Err(error) = self.mapped_key(code, pressed, false) { self.error = Some(error); }
++                    }
++                }
++            }
++            if let Some(delta) = ANDROID_LOOK_DELTA.get() {
++                let (dx, dy) = std::mem::replace(&mut *delta.lock().unwrap(), (0.0, 0.0));
++                if dx != 0.0 || dy != 0.0 {
++                    self.mouse.on_move(0.0, 0.0, dx, dy, true, true);
++                    self.last_input = Instant::now();
++                }
++            }
++            if !ANDROID_GAME_ACTIVE.load(Ordering::Relaxed)
++                && let Some(touches) = ANDROID_MENU_TOUCHES.get()
++                && let Some(window_id) = self.window.as_ref().map(|window| window.id())
++            {
++                let queued = std::mem::take(&mut *touches.lock().unwrap());
++                for (id, x, y, phase) in queued {
++                    let touch = winit::event::Touch {
++                        device_id: DeviceId::dummy(),
++                        id,
++                        phase: match phase {
++                            0 => TouchPhase::Started,
++                            1 => TouchPhase::Moved,
++                            3 => TouchPhase::Cancelled,
++                            _ => TouchPhase::Ended,
++                        },
++                        location: winit::dpi::PhysicalPosition::new(x, y),
++                        force: None,
++                    };
++                    self.window_event(event_loop, window_id, WindowEvent::Touch(touch));
++                }
++            }
++        }
+         if horizon_threads::stop_requests() > 0
+             && self.pending_save.as_ref().is_none_or(|save| !save.quit)
+         {
+@@ -15760,6 +16700,7 @@ impl<'a> Game<'a> {
+             keys: HashSet::new(),
+             physical_keys: HashSet::new(),
+             physical_buttons: HashSet::new(),
++            android_touch: AndroidTouchState::from_environment(),
+             right_click_emulation: Default::default(),
+             left: false,
+             right: false,
+@@ -17374,7 +18315,7 @@ fn leave_fullscreen_after(
+ }
+ 
+ fn run_event_loop(mut game: Game<'_>) -> Result<()> {
+-    let result = EventLoop::new()?.run_app(&mut game);
++    let result = new_event_loop()?.run_app(&mut game);
+     leave_fullscreen_after(&result, &mut game.settings);
+     result?;
+     horizon_client::discord_presence::stop();
+@@ -17764,7 +18705,7 @@ fn run_loading(
+         error: None,
+     };
+     let mut app = App::Loading(Box::new(loading));
+-    let result = EventLoop::new()?.run_app(&mut app);
++    let result = new_event_loop()?.run_app(&mut app);
+     match &mut app {
+         App::Ready(game) => leave_fullscreen_after(&result, &mut game.settings),
+         App::Loading(loading) => leave_fullscreen_after(&result, &mut loading.settings),
+diff --git a/crates/horizon-client/src/game/no_resources.rs b/crates/horizon-client/src/game/no_resources.rs
+index 0b80957ae..47dd176bd 100644
+--- a/crates/horizon-client/src/game/no_resources.rs
++++ b/crates/horizon-client/src/game/no_resources.rs
+@@ -35,7 +35,7 @@ pub(super) fn show(looked_in: &std::path::Path, settings: &Settings) -> Result<(
+         error: None,
+     };
+     horizon_client::hud::GUI_SCALE.store(settings.gui_scale, Ordering::Relaxed);
+-    EventLoop::new()?.run_app(&mut app)?;
++    super::new_event_loop()?.run_app(&mut app)?;
+     app.error.map_or(Ok(()), Err)
+ }
+ 
+diff --git a/crates/horizon-client/src/lib.rs b/crates/horizon-client/src/lib.rs
+index fc3162bef..5fc8a398a 100644
+--- a/crates/horizon-client/src/lib.rs
++++ b/crates/horizon-client/src/lib.rs
+@@ -1,6 +1,8 @@
+ //! Horizon native client: resources, world streaming, rendering and the
+ //! bindings between the validated simulation pieces and the game loop.
+ #![forbid(unsafe_code)]
++extern crate self as horizon_client;
++pub mod game;
+ pub mod advancements;
+ pub mod ambience;
+ pub mod animate_tick;
+@@ -149,3 +151,9 @@ pub use horizon_items::enchant;
+ pub use horizon_items::item_data;
+ pub use horizon_items::items;
+ pub use horizon_items::random_sequences;
++
++
++
++pub mod android_resources;
++pub mod official_install;
++pub mod resource_install;
+diff --git a/crates/horizon-client/src/main.rs b/crates/horizon-client/src/main.rs
+index 216752677..d48e7a0fb 100644
+--- a/crates/horizon-client/src/main.rs
++++ b/crates/horizon-client/src/main.rs
+@@ -1,8 +1,6 @@
+ //! Horizon: native Rust client for Minecraft Java Edition 26.3 gameplay.
+ #![forbid(unsafe_code)]
+-mod game;
+-
+-use horizon_client::{crash, logging};
++use horizon_client::{crash, game, logging};
+ 
+ #[global_allocator]
+ static ALLOCATOR: horizon_threads::Allocator = horizon_threads::Allocator;
+diff --git a/crates/horizon-client/src/official_install.rs b/crates/horizon-client/src/official_install.rs
+new file mode 100644
+index 000000000..ccb15a6a1
+--- /dev/null
++++ b/crates/horizon-client/src/official_install.rs
+@@ -0,0 +1,695 @@
++//! Native resource installation from Mojang HTTPS endpoints. No Java or LAN server.
++use crate::Result;
++use serde_json::Value;
++use sha1::{Digest, Sha1};
++use std::{
++    collections::HashSet,
++    fs,
++    io::{Read, Write},
++    path::{Component, Path, PathBuf},
++    sync::{
++        Mutex, OnceLock,
++        atomic::{AtomicU64, AtomicUsize, Ordering},
++    },
++};
++
++const CATALOG: &str = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
++const LOCK: &str = include_str!("../../../research-lock.json");
++static DOWNLOAD_CACHE_DIR: OnceLock<PathBuf> = OnceLock::new();
++
++/// Android supplies Context.getCacheDir(), keeping temporary downloads out of files/.
++pub fn configure_download_cache_dir(directory: PathBuf) {
++    let _ = DOWNLOAD_CACHE_DIR.set(directory.join("minecraft-downloads"));
++}
++
++fn download_cache(home: &Path) -> PathBuf {
++    DOWNLOAD_CACHE_DIR
++        .get()
++        .cloned()
++        .unwrap_or_else(|| home.join(".local/downloads"))
++        .join(horizon_core::VANILLA_VERSION)
++}
++
++/// Earlier Android packages installed textures only. An audio-capable APK must
++/// upgrade those resources before entering the game, not silently stay mute.
++pub fn ready(home: &Path) -> bool {
++    let root = home
++        .join(".local/horizon-client")
++        .join(horizon_core::VANILLA_VERSION);
++    crate::resource_install::ready(home)
++        && root.join("android-downloads-v2.json").is_file()
++        && (!cfg!(feature = "audio") || root.join("audio-complete.json").is_file())
++}
++
++/// Discard redundant installer inputs only after the prepared installation is complete.
++/// An interrupted download/preparation keeps its cache for the next attempt.
++pub fn cleanup_download_cache(home: &Path) -> Result<()> {
++    if !ready(home) {
++        return Ok(());
++    }
++    let root = fs::canonicalize(home)?;
++    let cache = root
++        .join(".local/downloads")
++        .join(horizon_core::VANILLA_VERSION);
++    let metadata = match fs::symlink_metadata(&cache) {
++        Ok(metadata) => metadata,
++        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
++        Err(error) => return Err(error.into()),
++    };
++    // Verify the final absolute target before recursive removal. Reject aliases
++    // of this path, including a redirected .local/downloads ancestor.
++    if !metadata.is_dir() || metadata.file_type().is_symlink() || fs::canonicalize(&cache)? != cache
++    {
++        return Err("Refusing redirected installer cache path".into());
++    }
++    fs::remove_dir_all(cache)?;
++    Ok(())
++}
++
++fn cleanup_system_download_cache() -> Result<()> {
++    let Some(directory) = DOWNLOAD_CACHE_DIR.get() else {
++        return Ok(());
++    };
++    if !directory.exists() {
++        return Ok(());
++    }
++    let root = fs::canonicalize(directory)?;
++    let cache = root.join(horizon_core::VANILLA_VERSION);
++    let metadata = match fs::symlink_metadata(&cache) {
++        Ok(metadata) => metadata,
++        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
++        Err(error) => return Err(error.into()),
++    };
++    if !metadata.is_dir() || metadata.file_type().is_symlink() || fs::canonicalize(&cache)? != cache
++    {
++        return Err("Refusing redirected system installer cache".into());
++    }
++    fs::remove_dir_all(cache)?;
++    Ok(())
++}
++
++/// Clean both old files/ downloads and the system cache when resources are complete.
++pub fn cleanup_completed_downloads(home: &Path) -> Result<()> {
++    if !ready(home) {
++        return Ok(());
++    }
++    cleanup_download_cache(home)?;
++    cleanup_system_download_cache()
++}
++
++fn official_url(text: &str) -> Result<()> {
++    let url = url::Url::parse(text)?;
++    if url.scheme() != "https"
++        || !url.username().is_empty()
++        || url.password().is_some()
++        || url.port().is_some_and(|p| p != 443)
++        || !matches!(
++            url.host_str(),
++            Some(
++                "piston-meta.mojang.com"
++                    | "piston-data.mojang.com"
++                    | "resources.download.minecraft.net"
++                    | "launcher.mojang.com"
++                    | "launchermeta.mojang.com"
++            )
++        )
++    {
++        return Err("Download URL is not an official Mojang HTTPS endpoint".into());
++    }
++    Ok(())
++}
++
++fn agent() -> ureq::Agent {
++    // Thousands of sound objects share a host; retain pooled TLS connections.
++    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
++    AGENT
++        .get_or_init(|| {
++            ureq::AgentBuilder::new()
++                .redirects(0)
++                .timeout_connect(std::time::Duration::from_secs(30))
++                .timeout_read(std::time::Duration::from_secs(120))
++                .build()
++        })
++        .clone()
++}
++
++fn json(url: &str) -> Result<Value> {
++    official_url(url)?;
++    let mut bytes = Vec::new();
++    agent()
++        .get(url)
++        .call()?
++        .into_reader()
++        .take(16 * 1024 * 1024)
++        .read_to_end(&mut bytes)?;
++    Ok(serde_json::from_slice(&bytes)?)
++}
++
++fn hash(path: &Path) -> Result<String> {
++    let mut file = fs::File::open(path)?;
++    let mut digest = Sha1::new();
++    let mut buffer = [0; 65536];
++    loop {
++        let n = file.read(&mut buffer)?;
++        if n == 0 {
++            break;
++        }
++        digest.update(&buffer[..n]);
++    }
++    Ok(format!("{:x}", digest.finalize()))
++}
++
++struct Download {
++    url: String,
++    sha1: String,
++    size: u64,
++    path: PathBuf,
++}
++
++impl Download {
++    fn from(value: &Value, path: PathBuf) -> Result<Self> {
++        let file = Self {
++            url: value["url"].as_str().ok_or("Missing download URL")?.into(),
++            sha1: value["sha1"]
++                .as_str()
++                .ok_or("Missing download hash")?
++                .into(),
++            size: value["size"].as_u64().ok_or("Missing download size")?,
++            path,
++        };
++        official_url(&file.url)?;
++        if file.sha1.len() != 40
++            || !file.sha1.bytes().all(|c| c.is_ascii_hexdigit())
++            || file.size > 1024 * 1024 * 1024
++        {
++            return Err("Invalid Mojang download metadata".into());
++        }
++        Ok(file)
++    }
++    fn get(&self) -> Result<()> {
++        if self.path.is_file()
++            && fs::metadata(&self.path)?.len() == self.size
++            && hash(&self.path)? == self.sha1
++        {
++            return Ok(());
++        }
++        fs::create_dir_all(self.path.parent().ok_or("Missing download directory")?)?;
++        let partial = self.path.with_extension("partial");
++        for attempt in 0..3 {
++            let result = (|| -> Result<()> {
++                let mut input = agent()
++                    .get(&self.url)
++                    .call()?
++                    .into_reader()
++                    .take(self.size + 1);
++                let mut output = fs::File::create(&partial)?;
++                let count = std::io::copy(&mut input, &mut output)?;
++                output.flush()?;
++                drop(output);
++                if count != self.size || hash(&partial)? != self.sha1 {
++                    return Err("Mojang file checksum or size mismatch".into());
++                }
++                fs::rename(&partial, &self.path)?;
++                Ok(())
++            })();
++            if result.is_ok() {
++                return result;
++            }
++            let _ = fs::remove_file(&partial);
++            if attempt == 2 {
++                return result;
++            }
++            std::thread::sleep(std::time::Duration::from_millis(500 * (attempt + 1)));
++        }
++        unreachable!()
++    }
++}
++
++fn relative(name: &str) -> Result<&Path> {
++    let path = Path::new(name);
++    if path
++        .components()
++        .any(|c| !matches!(c, Component::Normal(_)))
++        || name.contains('\\')
++    {
++        return Err("Unsafe asset path".into());
++    }
++    Ok(path)
++}
++
++#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
++pub enum InstallStage {
++    #[default]
++    Metadata,
++    Download,
++    Extract,
++    WorldData,
++    Controls,
++    Finalize,
++}
++impl InstallStage {
++    pub const ALL: [Self; 6] = [
++        Self::Metadata,
++        Self::Download,
++        Self::Extract,
++        Self::WorldData,
++        Self::Controls,
++        Self::Finalize,
++    ];
++    pub fn label(self) -> &'static str {
++        match self {
++            Self::Metadata => "Checking Minecraft version",
++            Self::Download => "Downloading game resources and sound",
++            Self::Extract => "Unpacking verified files",
++            Self::WorldData => "Preparing worlds and registries",
++            Self::Controls => "Downloading touch controls",
++            Self::Finalize => "Finishing installation",
++        }
++    }
++}
++#[derive(Clone, Copy, Debug, Default)]
++pub struct InstallProgress {
++    pub stage: InstallStage,
++    pub done: u64,
++    pub total: u64,
++}
++
++pub fn install(home: &Path, progress: impl Fn(u64, u64) + Sync) -> Result<()> {
++    install_with_progress(home, |p| {
++        if p.stage == InstallStage::Download {
++            progress(p.done, p.total)
++        }
++    })
++}
++/// Metadata may be reissued, but the engine's game version and JARs must match.
++fn validate_manifest(bytes: &[u8], checksum: &str, version: &str, pins: &Value) -> Result<Value> {
++    if format!("{:x}", Sha1::digest(bytes)) != checksum {
++        return Err("Version metadata checksum mismatch".into());
++    }
++    let manifest: Value = serde_json::from_slice(bytes)?;
++    if manifest["id"].as_str() != Some(version)
++        || ["client", "server"].iter().any(|side| {
++            let pinned = pins[format!("{side}_sha1")].as_str();
++            pinned.is_none() || manifest["downloads"][side]["sha1"].as_str() != pinned
++        })
++    {
++        return Err("Minecraft game files differ from this engine's pinned version".into());
++    }
++    Ok(manifest)
++}
++
++pub fn install_with_progress(home: &Path, progress: impl Fn(InstallProgress) + Sync) -> Result<()> {
++    let report = |stage, done, total| progress(InstallProgress { stage, done, total });
++    report(InstallStage::Metadata, 0, 0);
++    let version = horizon_core::VANILLA_VERSION;
++    let cache = download_cache(home);
++    let legacy = home.join(".local/downloads").join(version);
++    if cache != legacy && legacy.is_dir() && !cache.exists() {
++        let root = fs::canonicalize(home)?;
++        if fs::canonicalize(&legacy)? != root.join(".local/downloads").join(version) {
++            return Err("Refusing redirected legacy installer cache".into());
++        }
++        fs::create_dir_all(cache.parent().ok_or("Missing cache parent")?)?;
++        fs::rename(&legacy, &cache)?;
++    }
++    fs::create_dir_all(&cache)?;
++    let pins: Value = serde_json::from_str(LOCK)?;
++    let pins = &pins["minecraft"];
++    let catalog = json(CATALOG)?;
++    let entry = catalog["versions"]
++        .as_array()
++        .and_then(|vs| vs.iter().find(|v| v["id"] == version))
++        .ok_or("Pinned Minecraft version is not listed by Mojang")?;
++    let checksum = entry["sha1"]
++        .as_str()
++        .ok_or("Missing version metadata hash")?;
++    // Mojang may reissue metadata while Minecraft 26.3's game jars are unchanged.
++    // The downloaded JSON is still verified against the catalogue's SHA-1,
++    // and the actual client/server jar hashes remain engine-pinned.
++    let manifest_url = entry["url"]
++        .as_str()
++        .ok_or("Missing version metadata URL")?;
++    official_url(manifest_url)?;
++    let mut bytes = Vec::new();
++    agent()
++        .get(manifest_url)
++        .call()?
++        .into_reader()
++        .take(16 * 1024 * 1024)
++        .read_to_end(&mut bytes)?;
++    let manifest = validate_manifest(&bytes, checksum, version, pins)?;
++    let index = Download::from(&manifest["assetIndex"], cache.join("asset-index.json"))?;
++    index.get()?;
++    let index: Value = serde_json::from_reader(fs::File::open(&index.path)?)?;
++    let objects = index["objects"]
++        .as_object()
++        .ok_or("Missing asset objects")?;
++    let client = Download::from(&manifest["downloads"]["client"], cache.join("client.jar"))?;
++    let mut files = vec![client];
++    let mut assets = Vec::new();
++    let mut seen = HashSet::new();
++    for (name, object) in objects {
++        if !cfg!(feature = "audio")
++            && (name.starts_with("minecraft/sounds/") || name == "minecraft/sounds.json")
++        {
++            continue;
++        }
++        relative(name)?;
++        let checksum = object["hash"].as_str().ok_or("Missing asset hash")?;
++        if checksum.len() != 40 || !checksum.bytes().all(|c| c.is_ascii_hexdigit()) {
++            return Err("Invalid asset hash".into());
++        }
++        let path = cache.join("objects").join(checksum);
++        assets.push((name, path.clone()));
++        if seen.insert(checksum) {
++            files.push(Download::from(&serde_json::json!({"url":format!("https://resources.download.minecraft.net/{}/{checksum}", &checksum[..2]), "sha1":checksum, "size":object["size"]}), path)?);
++        }
++    }
++    let total: u64 = files.iter().map(|f| f.size).sum();
++    log::info!(
++        "Minecraft {version}: downloading {} files directly from Mojang ({} MiB)",
++        files.len(),
++        total / 1048576
++    );
++    report(InstallStage::Download, 0, total);
++    let next = AtomicUsize::new(0);
++    let done = AtomicU64::new(0);
++    let error = Mutex::new(None);
++    std::thread::scope(|scope| {
++        for _ in 0..8 {
++            scope.spawn(|| {
++                loop {
++                    if error.lock().unwrap().is_some() {
++                        break;
++                    }
++                    let i = next.fetch_add(1, Ordering::Relaxed);
++                    let Some(file) = files.get(i) else { break };
++                    if let Err(e) = file.get() {
++                        *error.lock().unwrap() = Some(e.to_string());
++                        break;
++                    }
++                    report(
++                        InstallStage::Download,
++                        done.fetch_add(file.size, Ordering::Relaxed) + file.size,
++                        total,
++                    );
++                }
++            });
++        }
++    });
++    if let Some(error) = error.into_inner().unwrap() {
++        return Err(error.into());
++    }
++    let versions = home.join(".local/horizon-client");
++    fs::create_dir_all(&versions)?;
++    let stage = versions.join("official.partial");
++    if stage.exists() {
++        fs::remove_dir_all(&stage)?;
++    }
++    fs::create_dir(&stage)?;
++    let result = (|| -> Result<()> {
++        report(InstallStage::Extract, 0, 0);
++        let mut zip = zip::ZipArchive::new(fs::File::open(&files[0].path)?)?;
++        for i in 0..zip.len() {
++            let mut entry = zip.by_index(i)?;
++            if !(entry.name().starts_with("assets/") || entry.name().starts_with("data/"))
++                || entry.is_dir()
++            {
++                continue;
++            }
++            let name = entry.enclosed_name().ok_or("Unsafe client resource path")?;
++            if entry.is_symlink() {
++                return Err("Symlink in client resources".into());
++            }
++            let path = stage.join(name);
++            fs::create_dir_all(path.parent().ok_or("Missing resource parent")?)?;
++            std::io::copy(&mut entry, &mut fs::File::create(path)?)?;
++        }
++        for (name, from) in assets {
++            let path = stage.join("assets").join(relative(name)?);
++            fs::create_dir_all(path.parent().ok_or("Missing asset parent")?)?;
++            fs::copy(from, path)?;
++        }
++        crate::resource_install::extract(&home.join("engine-data.zip"), &stage)?;
++        report(InstallStage::WorldData, 0, 0);
++        crate::android_resources::rebuild(&stage)?;
++        report(InstallStage::Controls, 0, 0);
++        crate::android_resources::controls_with_progress(&stage, |done, total| {
++            report(InstallStage::Controls, done, total)
++        })?;
++        report(InstallStage::Finalize, 0, 0);
++        fs::write(stage.join("android-downloads-v2.json"), b"{\"schema\":2}")?;
++        fs::copy(
++            cache.join("asset-index.json"),
++            stage.join("asset-index.json"),
++        )?;
++        if !stage.join("horizon-resources.json").is_file() {
++            return Err("APK has no engine data for this version".into());
++        }
++        if cfg!(feature = "audio") {
++            fs::write(stage.join("audio-complete.json"), b"{}")?;
++        }
++        let destination = versions.join(version);
++        let backup = versions.join(format!("{version}.previous"));
++        if backup.exists() && !destination.exists() {
++            fs::rename(&backup, &destination)?;
++        }
++        if backup.exists() {
++            fs::remove_dir_all(&backup)?;
++        }
++        if destination.exists() {
++            fs::rename(&destination, &backup)?;
++        }
++        if let Err(error) = fs::rename(&stage, &destination) {
++            if backup.exists() {
++                let _ = fs::rename(&backup, &destination);
++            }
++            return Err(error.into());
++        }
++        if backup.exists() {
++            let _ = fs::remove_dir_all(&backup);
++        }
++        Ok(())
++    })();
++    if stage.exists() {
++        let _ = fs::remove_dir_all(stage);
++    }
++    if result.is_ok()
++        && let Err(error) = cleanup_completed_downloads(home)
++    {
++        // Resources were committed successfully; failed housekeeping must not
++        // turn a working installation into a reported installation failure.
++        log::warn!("Could not clean completed Minecraft downloads: {error}");
++    }
++    result
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    struct CacheHome(PathBuf);
++    impl CacheHome {
++        fn path(&self) -> &Path {
++            &self.0
++        }
++    }
++    impl Drop for CacheHome {
++        fn drop(&mut self) {
++            let _ = fs::remove_dir_all(&self.0);
++        }
++    }
++    fn cache_home() -> CacheHome {
++        let stamp = std::time::SystemTime::now()
++            .duration_since(std::time::UNIX_EPOCH)
++            .unwrap()
++            .as_nanos();
++        let base = fs::canonicalize(std::env::temp_dir()).unwrap();
++        let path = base.join(format!(
++            "horizon-installer-cache-test-{}-{stamp}",
++            std::process::id()
++        ));
++        fs::create_dir(&path).unwrap();
++        let home = CacheHome(path);
++        let cache = home
++            .path()
++            .join(".local/downloads")
++            .join(horizon_core::VANILLA_VERSION);
++        fs::create_dir_all(&cache).unwrap();
++        fs::write(cache.join("client.jar"), b"download input").unwrap();
++        fs::create_dir_all(home.path().join("saves")).unwrap();
++        fs::write(home.path().join("saves/keep"), b"player world").unwrap();
++        home
++    }
++
++    fn mark_cache_install_ready(home: &Path) {
++        let root = home
++            .join(".local/horizon-client")
++            .join(horizon_core::VANILLA_VERSION);
++        fs::create_dir_all(&root).unwrap();
++        for marker in [
++            "horizon-resources.json",
++            "android-downloads-v2.json",
++            "audio-complete.json",
++        ] {
++            fs::write(root.join(marker), b"{}").unwrap();
++        }
++        fs::write(root.join("prepared-data"), b"runtime data").unwrap();
++    }
++
++    #[test]
++    fn completed_install_discards_only_its_download_cache() {
++        let home = cache_home();
++        mark_cache_install_ready(home.path());
++        cleanup_download_cache(home.path()).unwrap();
++        assert!(
++            !home
++                .path()
++                .join(".local/downloads")
++                .join(horizon_core::VANILLA_VERSION)
++                .exists()
++        );
++        assert!(home.path().join("saves/keep").is_file());
++        assert!(
++            home.path()
++                .join(".local/horizon-client")
++                .join(horizon_core::VANILLA_VERSION)
++                .join("prepared-data")
++                .is_file()
++        );
++        cleanup_download_cache(home.path()).unwrap();
++    }
++
++    #[test]
++    fn interrupted_install_keeps_inputs_for_retry() {
++        let home = cache_home();
++        cleanup_download_cache(home.path()).unwrap();
++        assert!(
++            home.path()
++                .join(".local/downloads")
++                .join(horizon_core::VANILLA_VERSION)
++                .join("client.jar")
++                .is_file()
++        );
++    }
++
++    #[test]
++    fn android_cache_location_is_disposable_after_preparation() {
++        let home = cache_home();
++        let android_cache = home.path().join("android-cache");
++        configure_download_cache_dir(android_cache.clone());
++        let cache = download_cache(home.path());
++        assert_eq!(
++            cache,
++            android_cache
++                .join("minecraft-downloads")
++                .join(horizon_core::VANILLA_VERSION)
++        );
++        fs::create_dir_all(&cache).unwrap();
++        fs::write(cache.join("client.jar"), b"download").unwrap();
++        cleanup_completed_downloads(home.path()).unwrap();
++        assert!(cache.is_dir());
++        mark_cache_install_ready(home.path());
++        cleanup_completed_downloads(home.path()).unwrap();
++        assert!(!cache.exists());
++        assert!(
++            !home
++                .path()
++                .join(".local/downloads")
++                .join(horizon_core::VANILLA_VERSION)
++                .exists()
++        );
++        assert!(home.path().join("saves/keep").is_file());
++    }
++
++    #[cfg(unix)]
++    #[test]
++    fn redirected_cache_cannot_remove_a_different_directory() {
++        let home = cache_home();
++        mark_cache_install_ready(home.path());
++        let cache = home
++            .path()
++            .join(".local/downloads")
++            .join(horizon_core::VANILLA_VERSION);
++        fs::remove_dir_all(&cache).unwrap();
++        std::os::unix::fs::symlink(home.path().join("saves"), &cache).unwrap();
++        assert!(cleanup_download_cache(home.path()).is_err());
++        assert!(home.path().join("saves/keep").is_file());
++    }
++    fn manifest_fixture() -> (Value, Value) {
++        let pins = serde_json::json!({
++            "manifest_sha1": "old-metadata-hash",
++            "client_sha1": "client-jar-hash",
++            "server_sha1": "server-jar-hash"
++        });
++        let manifest = serde_json::json!({
++            "id": "test-version",
++            "downloads": {
++                "client": {"sha1": "client-jar-hash"},
++                "server": {"sha1": "server-jar-hash"}
++            },
++            "releaseTime": "new-metadata"
++        });
++        (manifest, pins)
++    }
++    fn check_manifest(manifest: &Value, pins: &Value) -> Result<Value> {
++        let bytes = serde_json::to_vec(manifest)?;
++        let checksum = format!("{:x}", Sha1::digest(&bytes));
++        validate_manifest(&bytes, &checksum, "test-version", pins)
++    }
++    #[test]
++    fn republished_metadata_keeps_the_pinned_game_usable() {
++        let (manifest, pins) = manifest_fixture();
++        assert!(check_manifest(&manifest, &pins).is_ok());
++        let mut tampered = serde_json::to_vec(&manifest).unwrap();
++        let checksum = format!("{:x}", Sha1::digest(&tampered));
++        tampered.push(b' ');
++        assert!(validate_manifest(&tampered, &checksum, "test-version", &pins).is_err());
++    }
++    #[test]
++    fn metadata_cannot_replace_either_jar_or_the_game_version() {
++        let (manifest, pins) = manifest_fixture();
++        for side in ["client", "server"] {
++            let mut changed = manifest.clone();
++            changed["downloads"][side]["sha1"] = Value::String("other-jar".into());
++            assert!(check_manifest(&changed, &pins).is_err());
++            let mut missing = pins.clone();
++            missing
++                .as_object_mut()
++                .unwrap()
++                .remove(&format!("{side}_sha1"));
++            changed["downloads"][side]
++                .as_object_mut()
++                .unwrap()
++                .remove("sha1");
++            assert!(check_manifest(&changed, &missing).is_err());
++        }
++        let mut changed = manifest;
++        changed["id"] = Value::String("other-version".into());
++        assert!(check_manifest(&changed, &pins).is_err());
++    }
++    #[test]
++    fn only_mojang_https_is_accepted() {
++        assert!(official_url("https://piston-data.mojang.com/objects/game.jar").is_ok());
++        for url in [
++            "http://piston-data.mojang.com/game.jar",
++            "https://piston-data.mojang.com.evil.test/game.jar",
++            "https://piston-data.mojang.com@evil.test/game.jar",
++            "http://127.0.0.1:8123/game.zip",
++        ] {
++            assert!(official_url(url).is_err());
++        }
++    }
++    #[test]
++    fn asset_paths_cannot_escape_installation() {
++        assert!(relative("minecraft/lang/en_us.json").is_ok());
++        for name in [
++            "../escape",
++            "/absolute",
++            "minecraft/../escape",
++            "minecraft\\..\\escape",
++        ] {
++            assert!(relative(name).is_err());
++        }
++    }
++}
+diff --git a/crates/horizon-client/src/resource_install.rs b/crates/horizon-client/src/resource_install.rs
+new file mode 100644
+index 000000000..ea5124fff
+--- /dev/null
++++ b/crates/horizon-client/src/resource_install.rs
+@@ -0,0 +1,252 @@
++//! Installing the player's privately prepared resource bundle on a mobile device.
++use crate::Result;
++use serde::{Deserialize, Serialize};
++use sha2::{Digest, Sha256};
++use std::{
++    fs,
++    io::{Read, Write},
++    path::Path,
++};
++
++#[derive(Clone, Deserialize, Serialize)]
++pub struct Bundle {
++    pub version: String,
++    pub url: String,
++    pub sha256: String,
++    pub size: u64,
++}
++
++impl Bundle {
++    pub fn validate(&self) -> Result<()> {
++        if self.version != horizon_core::VANILLA_VERSION {
++            return Err(format!(
++                "This engine only implements Minecraft {}",
++                horizon_core::VANILLA_VERSION
++            )
++            .into());
++        }
++        let url = url::Url::parse(&self.url)?;
++        let loopback = matches!(url.host_str(), Some("127.0.0.1" | "localhost"));
++        if !(url.scheme() == "https" || url.scheme() == "http" && loopback)
++            || !url.username().is_empty()
++            || url.password().is_some()
++        {
++            return Err("Resource URL must use HTTPS (HTTP is allowed only on loopback)".into());
++        }
++        if self.sha256.len() != 64
++            || !self.sha256.bytes().all(|c| c.is_ascii_hexdigit())
++            || self.size == 0
++            || self.size > 4 * 1024 * 1024 * 1024
++        {
++            return Err("Invalid resource size or SHA-256".into());
++        }
++        Ok(())
++    }
++}
++
++pub fn ready(home: &Path) -> bool {
++    home.join(".local/horizon-client")
++        .join(horizon_core::VANILLA_VERSION)
++        .join("horizon-resources.json")
++        .is_file()
++}
++
++pub fn install(bundle: &Bundle, home: &Path, progress: impl Fn(u64, u64)) -> Result<()> {
++    bundle.validate()?;
++    let versions = home.join(".local/horizon-client");
++    fs::create_dir_all(&versions)?;
++    let download = versions.join("download.partial");
++    let staging = versions.join("install.partial");
++    let result = (|| -> Result<()> {
++        let agent = ureq::AgentBuilder::new()
++            .timeout_connect(std::time::Duration::from_secs(30))
++            .timeout_read(std::time::Duration::from_secs(120))
++            .redirects(0)
++            .build();
++        let mut response = agent.get(&bundle.url).call()?.into_reader();
++        let mut file = fs::File::create(&download)?;
++        let mut digest = Sha256::new();
++        let mut received = 0;
++        let mut buffer = [0u8; 65536];
++        loop {
++            let count = response.read(&mut buffer)?;
++            if count == 0 {
++                break;
++            }
++            received += count as u64;
++            if received > bundle.size {
++                return Err("Resource download exceeds expected size".into());
++            }
++            file.write_all(&buffer[..count])?;
++            digest.update(&buffer[..count]);
++            progress(received, bundle.size);
++        }
++        file.sync_all()?;
++        drop(file);
++        let checksum = format!("{:x}", digest.finalize());
++        if received != bundle.size || !checksum.eq_ignore_ascii_case(&bundle.sha256) {
++            return Err("Resource download checksum or size mismatch".into());
++        }
++        if staging.exists() {
++            fs::remove_dir_all(&staging)?;
++        }
++        fs::create_dir(&staging)?;
++        extract(&download, &staging)?;
++        if !staging.join("horizon-resources.json").is_file() {
++            return Err("Bundle has no Horizon resources manifest".into());
++        }
++        let target = versions.join(&bundle.version);
++        if target.exists() {
++            return Err("A resource version already exists; refusing to replace it".into());
++        }
++        fs::rename(&staging, target)?;
++        Ok(())
++    })();
++    let _ = fs::remove_file(download);
++    if staging.exists() {
++        let _ = fs::remove_dir_all(staging);
++    }
++    result
++}
++
++pub(crate) fn extract(archive: &Path, destination: &Path) -> Result<()> {
++    let mut zip = zip::ZipArchive::new(fs::File::open(archive)?)?;
++    let mut total = 0u64;
++    for i in 0..zip.len() {
++        let mut entry = zip.by_index(i)?;
++        let path = entry
++            .enclosed_name()
++            .ok_or("Resource archive contains an unsafe path")?;
++        if entry.is_symlink() {
++            return Err("Resource archive contains a symbolic link".into());
++        }
++        total = total
++            .checked_add(entry.size())
++            .ok_or("Resource archive is too large")?;
++        if total > 8 * 1024 * 1024 * 1024 {
++            return Err("Expanded resource archive exceeds 8 GiB".into());
++        }
++        let path = destination.join(path);
++        if entry.is_dir() {
++            fs::create_dir_all(path)?;
++        } else {
++            if let Some(parent) = path.parent() {
++                fs::create_dir_all(parent)?;
++            }
++            let mut file = fs::File::create(path)?;
++            std::io::copy(&mut entry, &mut file)?;
++        }
++    }
++    Ok(())
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use std::{io::Cursor, net::TcpListener};
++
++    fn fixture() -> Vec<u8> {
++        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
++        zip.start_file(
++            "horizon-resources.json",
++            zip::write::SimpleFileOptions::default(),
++        )
++        .unwrap();
++        zip.write_all(b"{}").unwrap();
++        zip.start_file(
++            "assets/example.txt",
++            zip::write::SimpleFileOptions::default(),
++        )
++        .unwrap();
++        zip.write_all(b"private resource").unwrap();
++        zip.finish().unwrap().into_inner()
++    }
++
++    fn serve(bytes: Vec<u8>) -> (Bundle, std::thread::JoinHandle<()>) {
++        let server = TcpListener::bind("127.0.0.1:0").unwrap();
++        let bundle = Bundle {
++            version: horizon_core::VANILLA_VERSION.into(),
++            url: format!("http://{}/resources.zip", server.local_addr().unwrap()),
++            sha256: format!("{:x}", Sha256::digest(&bytes)),
++            size: bytes.len() as u64,
++        };
++        let handle = std::thread::spawn(move || {
++            let (mut stream, _) = server.accept().unwrap();
++            stream
++                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
++                .unwrap();
++            let mut request = [0; 4096];
++            stream.read(&mut request).unwrap();
++            write!(
++                stream,
++                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
++                bytes.len()
++            )
++            .unwrap();
++            stream.write_all(&bytes).unwrap();
++        });
++        (bundle, handle)
++    }
++
++    fn temporary(name: &str) -> std::path::PathBuf {
++        std::env::temp_dir().join(format!(
++            "horizon-install-{name}-{}-{}",
++            std::process::id(),
++            std::time::SystemTime::now()
++                .duration_since(std::time::UNIX_EPOCH)
++                .unwrap()
++                .as_nanos()
++        ))
++    }
++
++    #[test]
++    fn download_is_verified_before_resources_become_ready() {
++        let home = temporary("valid");
++        let (bundle, server) = serve(fixture());
++        assert!(!ready(&home));
++        install(&bundle, &home, |_, _| {}).unwrap();
++        server.join().unwrap();
++        assert!(ready(&home));
++        assert_eq!(
++            fs::read(
++                home.join(".local/horizon-client")
++                    .join(&bundle.version)
++                    .join("assets/example.txt")
++            )
++            .unwrap(),
++            b"private resource"
++        );
++        assert!(!home.join(".local/horizon-client/download.partial").exists());
++        fs::remove_dir_all(home).unwrap();
++    }
++
++    #[test]
++    fn a_corrupt_download_never_becomes_an_installed_version() {
++        let home = temporary("corrupt");
++        let (mut bundle, server) = serve(fixture());
++        bundle.sha256 = "0".repeat(64);
++        assert!(install(&bundle, &home, |_, _| {}).is_err());
++        server.join().unwrap();
++        assert!(!ready(&home));
++        assert!(!home.join(".local/horizon-client/download.partial").exists());
++        fs::remove_dir_all(home).unwrap();
++    }
++    #[test]
++    fn unsupported_versions_and_insecure_remote_urls_are_rejected() {
++        let mut bundle = Bundle {
++            version: "1.21".into(),
++            url: "https://example.com/resources.zip".into(),
++            sha256: "a".repeat(64),
++            size: 100,
++        };
++        assert!(bundle.validate().is_err());
++        bundle.version = horizon_core::VANILLA_VERSION.into();
++        assert!(bundle.validate().is_ok());
++        bundle.url = "http://example.com/resources.zip".into();
++        assert!(bundle.validate().is_err());
++        bundle.url = "http://127.0.0.1:8123/26.3.zip".into();
++        assert!(bundle.validate().is_ok());
++        bundle.url = "http://localhost:80@example.com/resources.zip".into();
++        assert!(bundle.validate().is_err());
++    }
++}
+diff --git a/launcher/Cargo.toml b/launcher/Cargo.toml
+index 41017007e..cf37b5ff1 100644
+--- a/launcher/Cargo.toml
++++ b/launcher/Cargo.toml
+@@ -8,7 +8,6 @@ description = "Downloads, prepares and starts Horizon builds"
+ [workspace]
+ 
+ [dependencies]
+-gpui = "0.2.2"
+ ureq = { version = "2", features = ["json", "tls"], default-features = false }
+ serde = { version = "1", features = ["derive"] }
+ serde_json = "1"
+@@ -43,7 +42,6 @@ horizon-telemetry = { path = "../crates/horizon-telemetry" }
+ # level.dat and servers.dat (the worlds and server lists of instances)
+ horizon-world = { path = "../crates/horizon-world" }
+ # Deleting a world moves it to the system's trash
+-trash = "5"
+ # Backup names carry the local time, as vanilla's do
+ base64 = "0.22"
+ chrono = { version = "0.4", default-features = false, features = ["clock"] }
+@@ -56,6 +54,10 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
+ # Microsoft account secrets in the OS keychain: the Secret Service on Linux through oo7 (the same
+ # build gpui uses), Keychain and Credential Manager through keyring.
+ # Native builds at low priority (rust_toolchain::low_priority); already in the lockfile.
++[target.'cfg(not(target_os = "android"))'.dependencies]
++gpui = "0.2.2"
++trash = "5"
++
+ [target.'cfg(unix)'.dependencies]
+ libc = "0.2"
+ [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+diff --git a/launcher/src/desktop_seams.rs b/launcher/src/desktop_seams.rs
+index 8767bfdb7..5cab8a4c8 100644
+--- a/launcher/src/desktop_seams.rs
++++ b/launcher/src/desktop_seams.rs
+@@ -37,6 +37,12 @@ pub fn to_folder(path: &Path, dir: &Path) -> Result<(), String> {
+     std::fs::rename(path, &target).map_err(|e| e.to_string())
+ }
+ 
++#[cfg(target_os = "android")]
++fn system_trash(_path: &Path) -> Result<(), String> {
++    Err("the trash is not available on Android".into())
++}
++
++#[cfg(not(target_os = "android"))]
+ fn system_trash(path: &Path) -> Result<(), String> {
+     // On Windows the crate starts COM on the calling thread and panics when that thread already
+     // runs it in the other mode (RPC_E_CHANGED_MODE). A worker of GPUI's thread pool can, and a
+@@ -56,6 +62,7 @@ fn system_trash(path: &Path) -> Result<(), String> {
+ }
+ 
+ /// Runs `f` on a new thread and waits for it; a panic there comes back as an error.
++#[cfg(not(target_os = "android"))]
+ fn on_own_thread<T: Send>(f: impl FnOnce() -> Result<T, String> + Send) -> Result<T, String> {
+     std::thread::scope(|s| s.spawn(f).join()).unwrap_or_else(|panic| {
+         let why = panic
+diff --git a/launcher/src/lib.rs b/launcher/src/lib.rs
+index 0edc0624e..3af17c00e 100644
+--- a/launcher/src/lib.rs
++++ b/launcher/src/lib.rs
+@@ -7,7 +7,7 @@ pub mod datapacks;
+ pub mod desktop;
+ pub mod desktop_seams;
+ pub mod export;
+-#[cfg(unix)]
++#[cfg(all(unix, not(target_os = "android")))]
+ pub mod game_app;
+ pub mod game_log;
+ pub mod github_mods;
+diff --git a/packaging/android/bedrock-controls.json b/packaging/android/bedrock-controls.json
+new file mode 100644
+index 000000000..2f97af93b
+--- /dev/null
++++ b/packaging/android/bedrock-controls.json
+@@ -0,0 +1,424 @@
++{
++  "revision": "46ba6ea985fb5a92d79a9419198f10dda14c199d",
++  "files": [
++    {
++      "path": "controls/dismount.png",
++      "source": "gui/controls/dismount.png",
++      "git_blob": "b217090443ea130c8e0ca9080c614e84128aa296",
++      "sha256": "c39e1717abf0db66ab6d371968a2fc8b3cf05ea98edc5565005c473921f6ad13",
++      "size": 219
++    },
++    {
++      "path": "controls/dismount_pressed.png",
++      "source": "gui/controls/dismount_pressed.png",
++      "git_blob": "9b11516001c2bd8949dfa9612b9f707680e75483",
++      "sha256": "9333c01ae69d45c088d14be0b304da2572691ec57c684b86e6aea7be45613fff",
++      "size": 224
++    },
++    {
++      "path": "controls/down.png",
++      "source": "gui/controls/down.png",
++      "git_blob": "c505ec42adf8af62bbd5365013fd247c43e26a48",
++      "sha256": "8bd75eb0cd3c2f4b1190186c9c3af33eb308b5a4403b9b5773410caeb544cda7",
++      "size": 289
++    },
++    {
++      "path": "controls/down_left.png",
++      "source": "gui/controls/down_left.png",
++      "git_blob": "e3f934b03e550739e8118ade7a9047146b8a2a98",
++      "sha256": "4fe8378aaf72f3164a932d4c324bf1e86038ab33712b8c7f10f09f88166207cb",
++      "size": 198
++    },
++    {
++      "path": "controls/down_left_pressed.png",
++      "source": "gui/controls/down_left_pressed.png",
++      "git_blob": "4e69ac5ecbd8e7bae0222daa90c86a4e2c3cb769",
++      "sha256": "35fd2f90e1b76f6471714243c763ce1fb2d945feac89578e4a6184940c11d2e1",
++      "size": 198
++    },
++    {
++      "path": "controls/down_pressed.png",
++      "source": "gui/controls/down_pressed.png",
++      "git_blob": "8e0de1b0bb6da51cb8bb810c7f4809993fd0a6e1",
++      "sha256": "5063b4957b363a19b257dd702b8866a075e1b369c7d011c0467b01c07e2b2751",
++      "size": 252
++    },
++    {
++      "path": "controls/down_right.png",
++      "source": "gui/controls/down_right.png",
++      "git_blob": "97b6182ec934da1d06d93f3f88fd29fb8f6ade7e",
++      "sha256": "748d2b1753e2d7f75d40f7e3efaa25c5eb776fc734838850767b6ba681e1ec73",
++      "size": 200
++    },
++    {
++      "path": "controls/down_right_pressed.png",
++      "source": "gui/controls/down_right_pressed.png",
++      "git_blob": "c91183321927cac2ed08b6ffa92e04de5b30db94",
++      "sha256": "95f8d94972916372e5eca1d1e9063227f67d1b2d23d713f491d6f2eaa61b4e37",
++      "size": 196
++    },
++    {
++      "path": "controls/flyingascend.png",
++      "source": "gui/controls/flyingascend.png",
++      "git_blob": "eaaed7140f0757ca16e8ff6e801be771af89fb33",
++      "sha256": "546b8b85af6888c6183112bfc03572e30649e8529d001106dd706dbaf44cc943",
++      "size": 696
++    },
++    {
++      "path": "controls/flyingascend_pressed.png",
++      "source": "gui/controls/flyingascend_pressed.png",
++      "git_blob": "2ae71ea2309423ad6d0ca049bdcd7fe6250425c3",
++      "sha256": "ddc6a307855dc1db3624d3faf371410c9fb68e5a37656a9130d2e09c1c14e51f",
++      "size": 696
++    },
++    {
++      "path": "controls/flyingdescend.png",
++      "source": "gui/controls/flyingdescend.png",
++      "git_blob": "b2b82e2f2c10be7e38cc84dbe15577f666fb12f8",
++      "sha256": "10463eb341019b5c02d962b37e5e261b821a20566ba54e2553436c059e139d56",
++      "size": 696
++    },
++    {
++      "path": "controls/flyingdescend_pressed.png",
++      "source": "gui/controls/flyingdescend_pressed.png",
++      "git_blob": "69a60b16e8b5313132957ade97d1a22128232cfe",
++      "sha256": "7cb0dda7c09cbef72fcb0e2d6b8ee78de60660f3aa5fe4b1dabbdde96c15e730",
++      "size": 696
++    },
++    {
++      "path": "controls/jump.png",
++      "source": "gui/controls/jump.png",
++      "git_blob": "c680defa5618a55cc9319008b6839bc310f4c048",
++      "sha256": "fe455f0193dd2061cace38f46815e417108a0155a39b107f5b68eccac9e0db9b",
++      "size": 696
++    },
++    {
++      "path": "controls/jump_dpad.png",
++      "source": "gui/controls/jump_dpad.png",
++      "git_blob": "e47714fa62d35de4c97a5ac64d1363c9a888eb51",
++      "sha256": "150dc0f8e06dfb40d22b4e555240ad1c69c9b9d40b31dd578536b9cf490b5ec7",
++      "size": 232
++    },
++    {
++      "path": "controls/jump_dpad_pressed.png",
++      "source": "gui/controls/jump_dpad_pressed.png",
++      "git_blob": "01491ffa2f5b44eda1d05a49ff32183514e7e89a",
++      "sha256": "879023333892b807f95362d0d341abca91dbf8a158804b293582698281ab4cff",
++      "size": 235
++    },
++    {
++      "path": "controls/jump_pressed.png",
++      "source": "gui/controls/jump_pressed.png",
++      "git_blob": "80491cfcefca3d10a4c55716131f4819c920b960",
++      "sha256": "bfae2246af37c35f89f41b73b7c33b44d8c9409882dbf5d44d7c5a51cb6d7c8c",
++      "size": 696
++    },
++    {
++      "path": "controls/large_button.png",
++      "source": "gui/controls/large_button.png",
++      "git_blob": "63d7c55c558345d62d861b1ea1ddb307bedd5c5e",
++      "sha256": "cb21e7b304fd7ff341198b698529146d25032637e784256434c3551466a1fcf5",
++      "size": 274
++    },
++    {
++      "path": "controls/large_button_pressed.png",
++      "source": "gui/controls/large_button_pressed.png",
++      "git_blob": "c6ae863f64a26c9186b5b6da07bd2d846f770047",
++      "sha256": "06b11995543ff5d76c6283cbcc64f0d6a4d77a87b5c3b7ffc1b2c9bde7aae5be",
++      "size": 290
++    },
++    {
++      "path": "controls/left.png",
++      "source": "gui/controls/left.png",
++      "git_blob": "95f60e6921581522c8af579aad392e29a451d6cd",
++      "sha256": "9e237804563765a8845d416fa0ad420bd8c3a3d634fb60d9fbf0933f2b4146f1",
++      "size": 287
++    },
++    {
++      "path": "controls/left_pressed.png",
++      "source": "gui/controls/left_pressed.png",
++      "git_blob": "43fbd103b15fec82929d20831f76635ab701fcc0",
++      "sha256": "4acaf31a1b3c66cf8c7432544b26d3b064aca3e4a7a94374c1ab4ed04cc8fa65",
++      "size": 259
++    },
++    {
++      "path": "controls/right.png",
++      "source": "gui/controls/right.png",
++      "git_blob": "7e483e8f73d9dcf00eea3055c28bd130d8ea1c9b",
++      "sha256": "44e25a90580a8dff49431c009a1940ecb3bed6ee82eafff16323e98ed7fdee28",
++      "size": 291
++    },
++    {
++      "path": "controls/right_pressed.png",
++      "source": "gui/controls/right_pressed.png",
++      "git_blob": "db24e6ddd4415080bc53ddbfbb69547df47990f2",
++      "sha256": "a5f30f5e78fd2bcfb0a6cfadcb0110f50fa7a83f3a05cdc09d5650bbb3a2408f",
++      "size": 255
++    },
++    {
++      "path": "controls/sneak.png",
++      "source": "gui/controls/sneak.png",
++      "git_blob": "54dcafe7873219e82d9bf7e189bfe10122562512",
++      "sha256": "df329b7904dfbaf95d6f541db5d635d09504d544c7f8bad7ea2cbe7aa85f30fe",
++      "size": 291
++    },
++    {
++      "path": "controls/sneak_dpad.png",
++      "source": "gui/controls/sneak_dpad.png",
++      "git_blob": "1b2457438707bfa8a8e1a41aec10372eead0fc65",
++      "sha256": "36fed0c175518af5b7a8b729d4de31be2a51c598255eb5e1d382bc9c0d20f1b1",
++      "size": 242
++    },
++    {
++      "path": "controls/sneak_dpad_pressed.png",
++      "source": "gui/controls/sneak_dpad_pressed.png",
++      "git_blob": "43a47534be17b99090a1fa3070b2d346240db1e5",
++      "sha256": "84c6d43bd275ff504053b73c601af7dba9ce45eecedb877aaf0861da8c371757",
++      "size": 245
++    },
++    {
++      "path": "controls/sneak_pressed.png",
++      "source": "gui/controls/sneak_pressed.png",
++      "git_blob": "7ccf29444d99a144382f038e3463f744633f732b",
++      "sha256": "883b1820840a7188c8c5f2bf8c8d8cf9fe4fe0ee926c5fbac3dc693766538882",
++      "size": 696
++    },
++    {
++      "path": "controls/up.png",
++      "source": "gui/controls/up.png",
++      "git_blob": "c9af5691a4dfb7c619b64357b3e532480ddc5d54",
++      "sha256": "42d95a9c0e7a134a4a018290d3838c4aef118fb701a3e3be8e8e517526ae7280",
++      "size": 284
++    },
++    {
++      "path": "controls/up_left.png",
++      "source": "gui/controls/up_left.png",
++      "git_blob": "db73c3b3d25b1708899bcd8a4f0446ac8cf61243",
++      "sha256": "d5913dc0f53ccccdbd5c59a046740ce37ba2a84f11eb10d46d6be84bc28a0ce1",
++      "size": 197
++    },
++    {
++      "path": "controls/up_left_pressed.png",
++      "source": "gui/controls/up_left_pressed.png",
++      "git_blob": "33754ea218888ee04dd0bf3e6defd04050dc1e82",
++      "sha256": "5a9a744eaddeff9dc20e638a031ac0e150707f12f730712357f6c9139cdddfce",
++      "size": 196
++    },
++    {
++      "path": "controls/up_pressed.png",
++      "source": "gui/controls/up_pressed.png",
++      "git_blob": "ffccffb0b0b6600c29b9c09b9d19f6345d12e41c",
++      "sha256": "c1475c544cf9d2584358924048f46bc783d13e3236925de6e9d3e8b6feaf172a",
++      "size": 314
++    },
++    {
++      "path": "controls/up_right.png",
++      "source": "gui/controls/up_right.png",
++      "git_blob": "051f8285d4a560c5b5125df3c2246a9e0a34de25",
++      "sha256": "4f99a00e6c88d57498107f463cd35b2d487bc60aeb044bde77a341609ee5274c",
++      "size": 200
++    },
++    {
++      "path": "controls/up_right_pressed.png",
++      "source": "gui/controls/up_right_pressed.png",
++      "git_blob": "1e9a226697bb0519aaba85b7ccf1236ad4c59c70",
++      "sha256": "c0cd8157cf6d73bae365cf09b3a11240ebb3193b0ce1ace1457d66e7da30de4a",
++      "size": 200
++    },
++    {
++      "path": "controls/waterascend.png",
++      "source": "gui/controls/waterascend.png",
++      "git_blob": "7cb9dbc730c3256013718b8b37faa6f180d32c90",
++      "sha256": "f8dad9878094c9623983474de9b739bd98f3542c8870e975b5df0dfefc3188e0",
++      "size": 696
++    },
++    {
++      "path": "controls/waterascend_pressed.png",
++      "source": "gui/controls/waterascend_pressed.png",
++      "git_blob": "fb44fb92c0f29dc806e9c03df44974aefe48722d",
++      "sha256": "23181424ab6934b78421410793b9d85abf5943fcb45bffdb5e44414a2a6dd79c",
++      "size": 696
++    },
++    {
++      "path": "controls/waterdescend.png",
++      "source": "gui/controls/waterdescend.png",
++      "git_blob": "30bf6a797ad31247a79424be5a5ca0f35abcb248",
++      "sha256": "6b3d07a966464d3c86f89dc656c2e7bb5d1f6e9f485b3e668d815a4589f284e6",
++      "size": 696
++    },
++    {
++      "path": "controls/waterdescend_pressed.png",
++      "source": "gui/controls/waterdescend_pressed.png",
++      "git_blob": "54d97c92698e0602fd25003686d79227c28a44e3",
++      "sha256": "770cfa63189fe54f404e54710df4002706d9ed4752de594526ad2cb8136bf886",
++      "size": 696
++    },
++    {
++      "path": "gui.png",
++      "source": "gui/gui.png",
++      "git_blob": "5d04a69162490540ed07849f926ff434f06294c5",
++      "sha256": "4ca9d1f0a4bd02301cd7ced69c3ea8a62a622016a8b8b018283339983c0eb7dd",
++      "size": 30919
++    },
++    {
++      "path": "touchgui.png",
++      "source": "gui/touchgui.png",
++      "git_blob": "4198ce116b7c9519cc60e89131e913d7107d3873",
++      "sha256": "c80ae0390d06577a775f0c33a27fd315b8b0a819f5b58f918d4295e26e4f6994",
++      "size": 13201
++    },
++    {
++      "path": "touchgui2.png",
++      "source": "gui/touchgui2.png",
++      "git_blob": "f8513bb1742759f100300c258ddf77bd57bac815",
++      "sha256": "cdb0d3bec84befc0b8311a90e0f4e7ca3b79988ee9ef59e309b1d6bb29bc8ace",
++      "size": 3050
++    },
++    {
++      "path": "ui/attack.png",
++      "source": "ui/attack.png",
++      "git_blob": "851e5e076366e6f328fc452d94269fcd39b14b76",
++      "sha256": "72e422880e85f0b57818b7024a8602d9ef875c40b9d437a22c34c313b09e02fb",
++      "size": 696
++    },
++    {
++      "path": "ui/attack_pressed.png",
++      "source": "ui/attack_pressed.png",
++      "git_blob": "6e0b72f47dc819ee3e34735d4f9f10519a0acd5d",
++      "sha256": "6f72c27298ab5473f6ffb01b58d46b1e4a874e20f9b484bb5dab46b53c468e50",
++      "size": 696
++    },
++    {
++      "path": "ui/button_borderless_light.png",
++      "source": "ui/button_borderless_light.png",
++      "git_blob": "e407be537858e72f7e0969a91ad698f93f30a94c",
++      "sha256": "313b607889ba3d224cf599420087876ccb3f4572b304dc1ba6c25825f7d2c376",
++      "size": 131
++    },
++    {
++      "path": "ui/gear.png",
++      "source": "ui/gear.png",
++      "git_blob": "51702eb09569a005895eba2f2e6a06f7c83fcaf3",
++      "sha256": "e67c88fe5e446091b02696357c486e41b666fe6efef909da7573a048215ddff4",
++      "size": 310
++    },
++    {
++      "path": "ui/interact.png",
++      "source": "ui/interact.png",
++      "git_blob": "75d677e3346003c489d9aeb45e5b612cef157e95",
++      "sha256": "db7dbe03bab193c907987ebb386f955920a4e1b077ccd96532bd0b88aa22a965",
++      "size": 2958
++    },
++    {
++      "path": "ui/interact_pressed.png",
++      "source": "ui/interact_pressed.png",
++      "git_blob": "c1253f5994d9b834c5c9c2cd8bb4d2242d4e4ffc",
++      "sha256": "6ac8b9d8f3f1a74e43d93362644e03e5bbf5a5a0277148002aaed7b199a785d1",
++      "size": 273
++    },
++    {
++      "path": "ui/joystick_frame.png",
++      "source": "ui/joystick_frame.png",
++      "git_blob": "79a291966875ffe9dbe726cef6cdb460b4cb6475",
++      "sha256": "286218c5385c4d0f63384637180bcf96d327dd3ffc94c380dc1f03fac21fc987",
++      "size": 3256
++    },
++    {
++      "path": "ui/joystick_knob.png",
++      "source": "ui/joystick_knob.png",
++      "git_blob": "d6a6e22c6317bf2a6212309a9bb3d5d2bfcb4dd1",
++      "sha256": "31a00ef5aa2c829a8afca3e00716687a593fa5d7973d14f4cdf7d97ea94bea73",
++      "size": 215
++    },
++    {
++      "path": "ui/jump.png",
++      "source": "ui/jump.png",
++      "git_blob": "c680defa5618a55cc9319008b6839bc310f4c048",
++      "sha256": "fe455f0193dd2061cace38f46815e417108a0155a39b107f5b68eccac9e0db9b",
++      "size": 696
++    },
++    {
++      "path": "ui/jump_pressed.png",
++      "source": "ui/jump_pressed.png",
++      "git_blob": "80491cfcefca3d10a4c55716131f4819c920b960",
++      "sha256": "bfae2246af37c35f89f41b73b7c33b44d8c9409882dbf5d44d7c5a51cb6d7c8c",
++      "size": 696
++    },
++    {
++      "path": "ui/more-dots.png",
++      "source": "ui/more-dots.png",
++      "git_blob": "db8fe214873e731c978f10772e30d2fc89afec5a",
++      "sha256": "19bd1876dbcdfea5d7697dead0eb89083dce16428454540da46c03f42612f106",
++      "size": 125
++    },
++    {
++      "path": "ui/pause_icon.png",
++      "source": "ui/pause_icon.png",
++      "git_blob": "440c5d29902b31496b5f3862cad78eb487f4c59d",
++      "sha256": "d0fe7ac313eb4096054c02876a88b4f93ffda76b64f94d99a6c23518bc3ca817",
++      "size": 142
++    },
++    {
++      "path": "ui/slider_background.png",
++      "source": "ui/slider_background.png",
++      "git_blob": "86c5b86e1837c16ebc2551a28f4c3d7179b56658",
++      "sha256": "2b073c092b631fd3ed3fadbf75d63445de04a8d4eb632ab5f931e55ea225736d",
++      "size": 80
++    },
++    {
++      "path": "ui/slider_button_default.png",
++      "source": "ui/slider_button_default.png",
++      "git_blob": "d3ec0e55fea8401369b0ce5f220603c141d62ec1",
++      "sha256": "6bb35793c1b8ff4be20d8530f5c2e48971eecab5b6b108fbbe646894dc5ca546",
++      "size": 132
++    },
++    {
++      "path": "ui/sneak.png",
++      "source": "ui/sneak.png",
++      "git_blob": "10a83b2ab415da2f12dd156452563069e0d21f79",
++      "sha256": "2fcc63048e74cb4eb4c4e52e0de6312b48fd54b9626a347f1aece13b1d8a9229",
++      "size": 696
++    },
++    {
++      "path": "ui/sneak_pressed.png",
++      "source": "ui/sneak_pressed.png",
++      "git_blob": "7ccf29444d99a144382f038e3463f744633f732b",
++      "sha256": "883b1820840a7188c8c5f2bf8c8d8cf9fe4fe0ee926c5fbac3dc693766538882",
++      "size": 696
++    },
++    {
++      "path": "ui/sprint.png",
++      "source": "ui/sprint.png",
++      "git_blob": "feac835b4cfefcae57cc7f40810bdda039a5b14c",
++      "sha256": "9e5abcb76a60d34ecfe291b19c66008a525844ecb20434ec66a91b0294e4775b",
++      "size": 696
++    },
++    {
++      "path": "ui/sprint_pressed.png",
++      "source": "ui/sprint_pressed.png",
++      "git_blob": "811d438b7e8c433bfff9bf3c9e20b21450d8dd21",
++      "sha256": "de862fd3122540d9fa73fb8dd8e68ad79295fe08a78ae79d5b1837ae3eeb55da",
++      "size": 696
++    },
++    {
++      "path": "ui/text_label_box.png",
++      "source": "ui/text_label_box.png",
++      "git_blob": "6973cb028801371582b05aa762043bac58262563",
++      "sha256": "3e97f09cef95d5d42d557d4971233a46f12a0e754a6c0e445dfb8f56a5b13b42",
++      "size": 74
++    },
++    {
++      "path": "ui/wysiwyg_reset.png",
++      "source": "ui/wysiwyg_reset.png",
++      "git_blob": "5f09c849debd3f654c1aa8a1adbb454a6b957910",
++      "sha256": "497913d80541ea6bbabcf01b3fb52c80753c38d1686f18a53560be75d8e6c49f",
++      "size": 680
++    },
++    {
++      "path": "LICENSE.md",
++      "source": "../../LICENSE.md",
++      "sha256": "ca18c0dede68ce24ea1cd6f9df0813579b6f9f979787983a50baec99345f975d",
++      "size": 222
++    }
++  ]
++}
+diff --git a/tools/android_engine_data.py b/tools/android_engine_data.py
+new file mode 100644
+index 000000000..123e6e73a
+--- /dev/null
++++ b/tools/android_engine_data.py
+@@ -0,0 +1,33 @@
++#!/usr/bin/env python3
++"""Package the prepared engine tables as .local/android/engine-data.zip (what the APK bundles).
++
++Run tools/android_prepare.py first. Same file selection as Vasysik/horizon-android's android_build.py
++(developer build): the .json/.nbt tables plus worldgen/ and biome-parameters/.
++"""
++import json
++import zipfile
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++
++
++def main():
++    version = json.loads((ROOT / 'research-lock.json').read_text())['minecraft']['version']
++    resources = ROOT / '.local/horizon-client' / version
++    if not (resources / 'horizon-resources.json').is_file():
++        raise SystemExit('Prepared resources missing: run tools/android_prepare.py first')
++    files = [p for p in resources.iterdir()
++             if p.is_file() and p.suffix in ('.json', '.nbt') and p.name != 'asset-index.json']
++    for name in ('worldgen', 'biome-parameters'):
++        files.extend(p for p in (resources / name).rglob('*') if p.is_file())
++    files.sort()
++    output = ROOT / '.local/android/engine-data.zip'
++    output.parent.mkdir(parents=True, exist_ok=True)
++    with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
++        for file in files:
++            archive.write(file, file.relative_to(resources).as_posix())
++    print(f'{output}: {len(files)} files, {output.stat().st_size // 1024} KiB')
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/tools/android_prepare.py b/tools/android_prepare.py
+new file mode 100644
+index 000000000..964ebb9db
+--- /dev/null
++++ b/tools/android_prepare.py
+@@ -0,0 +1,164 @@
++#!/usr/bin/env python3
++"""Download the pinned vanilla inputs and prepare private Android resources on a PC.
++
++Mojang's exporters require a desktop JDK. Game inputs stay outside Git;
++local development APKs currently embed generated engine tables.
++All downloads are checked against Mojang's hashes and the repository's pins.
++"""
++import argparse
++from concurrent.futures import ThreadPoolExecutor
++import json
++import os
++from pathlib import Path
++import subprocess
++import time
++import urllib.request
++import hashlib
++import zipfile
++import tempfile
++
++import lab
++
++ROOT = Path(__file__).resolve().parents[1]
++MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
++RUNTIMES = "https://launchermeta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json"
++
++
++def fetch_json(url):
++    with urllib.request.urlopen(url, timeout=120) as response:
++        return json.load(response)
++
++
++def relative(base, value):
++    path = (base / value).resolve()
++    if not path.is_relative_to(base.resolve()):
++        raise ValueError(f"Path escapes download directory: {value}")
++    return path
++
++
++def parallel_download(files):
++    def one(item):
++        url, path, checksum = item
++        for attempt in range(4):
++            try:
++                lab.download(url, path, checksum)
++                return
++            except (OSError, ValueError):
++                if attempt == 3:
++                    raise
++                time.sleep(1 + attempt)
++    with ThreadPoolExecutor(max_workers=8) as pool:
++        for _ in pool.map(one, files):
++            pass
++
++
++def download_game(version, directory):
++    pins = json.loads((ROOT / 'research-lock.json').read_text())['minecraft']
++    if version != pins['version']:
++        raise ValueError(f"This engine implements {pins['version']}; {version} is unsupported")
++    entry = next((v for v in fetch_json(MANIFEST)['versions'] if v['id'] == version), None)
++    if entry is None:
++        raise ValueError(f"Mojang does not list Minecraft {version}")
++    # Mojang metadata may be republished: lab.download checks the catalog SHA-1,
++    # and client/server jar hashes are checked against the engine pins below.
++    versions = directory / 'versions' / version
++    manifest_path = versions / f'{version}.json'
++    lab.download(entry['url'], manifest_path, entry['sha1'])
++    manifest = json.loads(manifest_path.read_text())
++    files = []
++    for side in ['client', 'server']:
++        artifact = manifest['downloads'][side]
++        if artifact['sha1'] != pins[f'{side}_sha1']:
++            raise ValueError(f'{side} jar differs from the engine pin')
++        files.append((artifact['url'], versions / f'{version}{"-server" if side == "server" else ""}.jar', artifact['sha1']))
++    for artifact in lab.client_library_artifacts(manifest):
++        files.append((artifact['url'], relative(directory / 'libraries', artifact['path']), artifact['sha1']))
++    index = manifest['assetIndex']
++    index_path = relative(directory / 'assets/indexes', f"{index['id']}.json")
++    lab.download(index['url'], index_path, index['sha1'])
++    objects = json.loads(index_path.read_text())['objects']
++    for value in objects.values():
++        checksum = value['hash']
++        name = f'{checksum[:2]}/{checksum}'
++        files.append((f'https://resources.download.minecraft.net/{name}', directory / 'assets/objects' / name, checksum))
++    print(f'Downloading Minecraft {version}: {len(files)} verified files', flush=True)
++    parallel_download(files)
++    return manifest, versions / f'{version}-server.jar'
++
++
++def download_jdk(manifest, directory):
++    import platform
++    key = {'Windows': 'windows-x64', 'Linux': 'linux', 'Darwin': 'mac-os-arm64' if platform.machine() == 'arm64' else 'mac-os'}[platform.system()]
++    component = manifest['javaVersion']['component']
++    entry = fetch_json(RUNTIMES)[key][component][0]['manifest']
++    metadata = directory / 'runtime.json'
++    lab.download(entry['url'], metadata, entry['sha1'])
++    files = json.loads(metadata.read_text())['files']
++    home = directory / component
++    downloads = []
++    for name, info in files.items():
++        path = relative(home, name)
++        if info['type'] == 'file':
++            artifact = info['downloads']['raw']
++            downloads.append((artifact['url'], path, artifact['sha1']))
++    print(f'Downloading Mojang JDK: {component} ({len(downloads)} files)', flush=True)
++    parallel_download(downloads)
++    for name, info in files.items():
++        path = relative(home, name)
++        if info['type'] == 'file' and info.get('executable'):
++            path.chmod(path.stat().st_mode | 0o111)
++        elif info['type'] == 'link' and not path.exists():
++            relative(home, str(Path(name).parent / info['target']))
++            path.parent.mkdir(parents=True, exist_ok=True)
++            path.symlink_to(info['target'])
++    return home
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('--version', default=lab.pinned_version())
++    parser.add_argument('--java-home', type=Path)
++    parser.add_argument('--bundle-only', action='store_true', help='Package already prepared resources without downloading or exporting again')
++    args = parser.parse_args()
++    private = ROOT / '.local/android'
++    if args.bundle_only:
++        package_resources(args.version, private)
++        return
++    minecraft = private / 'minecraft'
++    manifest, server = download_game(args.version, minecraft)
++    java_home = args.java_home or download_jdk(manifest, private / 'jdk')
++    environment = dict(os.environ, JAVA_HOME=str(java_home.resolve()))
++    isolated = Path(tempfile.mkdtemp(prefix='prepare-', dir=private))
++    for key in ['HORIZON_HOME', 'HORIZON_LAUNCHER_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME']:
++        environment[key] = str(isolated / key.lower())
++    environment.update(HORIZON_LAUNCHER_NO_SELF_UPDATE='1', HORIZON_NO_AUDIO='1')
++    subprocess.run(['cargo', 'run', '-p', 'horizon-prepare', '--', '--root', str(ROOT), '--prepare',
++                    '--minecraft-dir', str(minecraft), '--server-jar', str(server)],
++                   cwd=ROOT, env=environment, check=True)
++    package_resources(args.version, private)
++
++
++def package_resources(version, private):
++    if version != lab.pinned_version():
++        raise ValueError('Only the engine-pinned Minecraft version is supported')
++    resources = ROOT / '.local/horizon-client' / version
++    if not (resources / 'horizon-resources.json').is_file():
++        raise FileNotFoundError('Prepare the resources before packaging them')
++    serve = private / 'serve'
++    serve.mkdir(parents=True, exist_ok=True)
++    bundle = serve / f'{version}.zip'
++    temporary = bundle.with_suffix('.partial')
++    with zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=1) as archive:
++        for path in sorted(resources.rglob('*')):
++            if path.is_file():
++                archive.write(path, path.relative_to(resources).as_posix())
++    temporary.replace(bundle)
++    with bundle.open('rb') as stream:
++        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
++    config = {'version': version, 'url': f'http://127.0.0.1:8123/{bundle.name}', 'sha256': digest, 'size': bundle.stat().st_size}
++    (serve / 'bootstrap.json').write_text(json.dumps(config, indent=2))
++    print(f'Private resource bundle: {bundle}\nStart: python -m http.server 8123 --bind 127.0.0.1 --directory "{serve}"', flush=True)
++
++
++if __name__ == '__main__':
++    main()
