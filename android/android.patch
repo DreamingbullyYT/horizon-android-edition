@@ -1,3 +1,9 @@
+diff --git a/.githooks/pre-commit b/.githooks/pre-commit
+old mode 100755
+new mode 100644
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+old mode 100755
+new mode 100644
 diff --git a/.gitignore b/.gitignore
 index 6bdae649a..b1bd069ec 100644
 --- a/.gitignore
@@ -652,10 +658,10 @@ index 000000000..f1a677abc
 +}
 diff --git a/crates/horizon-android-installer/src/official_install.rs b/crates/horizon-android-installer/src/official_install.rs
 new file mode 100644
-index 000000000..d541bbc9b
+index 000000000..ecd7aea32
 --- /dev/null
 +++ b/crates/horizon-android-installer/src/official_install.rs
-@@ -0,0 +1,695 @@
+@@ -0,0 +1,716 @@
 +//! Native resource installation from Mojang HTTPS endpoints. No Java or LAN server.
 +use crate::Result;
 +use serde_json::Value;
@@ -960,6 +966,27 @@ index 000000000..d541bbc9b
 +    let report = |stage, done, total| progress(InstallProgress { stage, done, total });
 +    report(InstallStage::Metadata, 0, 0);
 +    let version = horizon_core::VANILLA_VERSION;
++    // New engine tables (in-app update) over an installed game: the vanilla files it was
++    // installed from are still there, so only the tables and what derives from them are redone,
++    // with no Mojang download. The app leaves `.engine-refresh` to ask for this.
++    let installed = home.join(".local/horizon-client").join(version);
++    let flag = home.join(".engine-refresh");
++    if flag.is_file()
++        && installed.join("horizon-resources.json").is_file()
++        && installed.join("assets").is_dir()
++        && installed.join("data").is_dir()
++    {
++        report(InstallStage::Extract, 0, 0);
++        let marker = installed.join("android-downloads-v2.json");
++        let _ = fs::remove_file(&marker);
++        crate::resource_install::extract(&home.join("engine-data.zip"), &installed)?;
++        report(InstallStage::WorldData, 0, 0);
++        crate::android_resources::rebuild(&installed)?;
++        report(InstallStage::Finalize, 0, 0);
++        fs::write(marker, b"{\"schema\":2}")?;
++        let _ = fs::remove_file(&flag);
++        return Ok(());
++    }
 +    let cache = download_cache(home);
 +    let legacy = home.join(".local/downloads").join(version);
 +    if cache != legacy && legacy.is_dir() && !cache.exists() {
@@ -4737,6 +4764,18 @@ index 000000000..2f97af93b
 +    }
 +  ]
 +}
+diff --git a/packaging/macos/keychain.sh b/packaging/macos/keychain.sh
+old mode 100755
+new mode 100644
+diff --git a/packaging/macos/notarize.sh b/packaging/macos/notarize.sh
+old mode 100755
+new mode 100644
+diff --git a/packaging/macos/package.sh b/packaging/macos/package.sh
+old mode 100755
+new mode 100644
+diff --git a/packaging/server/install.sh b/packaging/server/install.sh
+old mode 100755
+new mode 100644
 diff --git a/tools/android_engine_data.py b/tools/android_engine_data.py
 new file mode 100644
 index 000000000..123e6e73a
@@ -4946,3 +4985,90 @@ index 000000000..964ebb9db
 +
 +if __name__ == '__main__':
 +    main()
+diff --git a/tools/ci/linux-runner.sh b/tools/ci/linux-runner.sh
+old mode 100755
+new mode 100644
+diff --git a/tools/ci/new_release_key.sh b/tools/ci/new_release_key.sh
+old mode 100755
+new mode 100644
+diff --git a/tools/ci/protect_pipeline.sh b/tools/ci/protect_pipeline.sh
+old mode 100755
+new mode 100644
+diff --git a/tools/ci/runner-env.sh b/tools/ci/runner-env.sh
+old mode 100755
+new mode 100644
+diff --git a/tools/ci/runner-gc.sh b/tools/ci/runner-gc.sh
+old mode 100755
+new mode 100644
+diff --git a/tools/ci/runner_pause.py b/tools/ci/runner_pause.py
+old mode 100755
+new mode 100644
+diff --git a/tools/ci/sign_release.sh b/tools/ci/sign_release.sh
+old mode 100755
+new mode 100644
+diff --git a/tools/ci/vanilla-data.sh b/tools/ci/vanilla-data.sh
+old mode 100755
+new mode 100644
+diff --git a/tools/ci/version-port-daily.sh b/tools/ci/version-port-daily.sh
+old mode 100755
+new mode 100644
+diff --git a/tools/hdr_gallery.py b/tools/hdr_gallery.py
+old mode 100755
+new mode 100644
+diff --git a/tools/lan_e2e.py b/tools/lan_e2e.py
+old mode 100755
+new mode 100644
+diff --git a/tools/mod_browser_harness.py b/tools/mod_browser_harness.py
+old mode 100755
+new mode 100644
+diff --git a/tools/parity_shim.py b/tools/parity_shim.py
+old mode 100755
+new mode 100644
+diff --git a/tools/pr_ready.py b/tools/pr_ready.py
+old mode 100755
+new mode 100644
+diff --git a/tools/prepare_output.py b/tools/prepare_output.py
+old mode 100755
+new mode 100644
+diff --git a/tools/remote.sh b/tools/remote.sh
+old mode 100755
+new mode 100644
+diff --git a/tools/server_bench.py b/tools/server_bench.py
+old mode 100755
+new mode 100644
+diff --git a/tools/singleplayer_end_cargo_audit.py b/tools/singleplayer_end_cargo_audit.py
+old mode 100755
+new mode 100644
+diff --git a/tools/test_block_entity_anim_parity.py b/tools/test_block_entity_anim_parity.py
+old mode 100755
+new mode 100644
+diff --git a/tools/test_block_removal_parity.py b/tools/test_block_removal_parity.py
+old mode 100755
+new mode 100644
+diff --git a/tools/test_environment_render_parity.py b/tools/test_environment_render_parity.py
+old mode 100755
+new mode 100644
+diff --git a/tools/test_forced_end_parity.py b/tools/test_forced_end_parity.py
+old mode 100755
+new mode 100644
+diff --git a/tools/test_item_wire_parity.py b/tools/test_item_wire_parity.py
+old mode 100755
+new mode 100644
+diff --git a/tools/test_light_parity.py b/tools/test_light_parity.py
+old mode 100755
+new mode 100644
+diff --git a/tools/test_mob_attributes_parity.py b/tools/test_mob_attributes_parity.py
+old mode 100755
+new mode 100644
+diff --git a/tools/test_random_tick_parity.py b/tools/test_random_tick_parity.py
+old mode 100755
+new mode 100644
+diff --git a/tools/test_redstone_parity.py b/tools/test_redstone_parity.py
+old mode 100755
+new mode 100644
+diff --git a/tools/test_structure_start_nbt_parity.py b/tools/test_structure_start_nbt_parity.py
+old mode 100755
+new mode 100644
+diff --git a/tools/upgrade_world.py b/tools/upgrade_world.py
+old mode 100755
+new mode 100644

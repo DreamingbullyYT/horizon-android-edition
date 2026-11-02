@@ -54,6 +54,11 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     private val currentLayoutFile: File get() = File(File(filesDir, "launcher"), "touch-layout.json")
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // NativeActivity loads the game inside super.onCreate: tell the boot stub which one.
+        dev.horizon.launcher.data.Updater.gamePath(filesDir)?.let {
+            runCatching { android.system.Os.setenv("HORIZON_GAME_LIB", it, true) }
+        }
+        dev.horizon.launcher.data.Updater.armGuard(filesDir)
         super.onCreate(savedInstanceState)
         savedStateController.performAttach()
         savedStateController.performRestore(savedInstanceState)

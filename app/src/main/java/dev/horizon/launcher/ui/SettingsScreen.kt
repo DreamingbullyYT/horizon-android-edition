@@ -61,6 +61,12 @@ import dev.horizon.launcher.data.TelemetryInfo
 import dev.horizon.launcher.data.TouchControlsInfo
 import dev.horizon.launcher.data.CustomTouchButtonInfo
 import org.json.JSONObject
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import dev.horizon.launcher.data.Updater
 
 @Composable
 fun SettingsScreen(
@@ -82,6 +88,9 @@ fun SettingsScreen(
     onMessage: (String) -> Unit,
 ) {
     val c = LocalHorizon.current
+    val appContext = LocalContext.current
+    val updateScope = rememberCoroutineScope()
+    var updateStatus by remember { mutableStateOf("Tap to check") }
     val coreVersion = platform?.version ?: "0.2.0"
     val dataDir = platform?.dataDir ?: homeDir
     val builds = (releases as? ReleasesState.Ready)?.items?.size
@@ -526,6 +535,24 @@ fun SettingsScreen(
                 InfoRow(icon = Icons.Outlined.Info, title = "Launcher", subtitle = "Android preview", trailing = "0.1.0-alpha")
                 HorizontalDivider(color = c.stroke)
                 InfoRow(icon = Icons.Outlined.Info, title = "Rust core", subtitle = "horizon-launcher, native", trailing = coreVersion)
+                HorizontalDivider(color = c.stroke)
+                InfoRow(
+                    icon = Icons.Filled.Refresh,
+                    title = "Engine updates",
+                    subtitle = "Downloads the newest native libraries; applies after restarting the app",
+                    trailing = updateStatus,
+                    onClick = {
+                        updateStatus = "Checking…"
+                        updateScope.launch {
+                            val result = withContext(Dispatchers.IO) { Updater.checkAndInstall(appContext) }
+                            updateStatus = when (result) {
+                                is Updater.Result.UpToDate -> "Up to date (#${result.build})"
+                                is Updater.Result.Installed -> "Installed #${result.build}: restart the app"
+                                is Updater.Result.Failed -> "Failed: ${result.message}"
+                            }
+                        }
+                    },
+                )
                 HorizontalDivider(color = c.stroke)
                 InfoRow(
                     icon = Icons.Outlined.Info,

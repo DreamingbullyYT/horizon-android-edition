@@ -4,15 +4,32 @@ package dev.horizon.launcher.core
  * The JNI surface of the Horizon launcher core (Rust). Every method is blocking; the app calls
  * them from Dispatchers.IO. Strings are JSON (or plain text) so the bridge stays small.
  */
+/** Path of an updated libhorizon_core.so (set by Updater.prepare before Native is first used). */
+object NativeLoader {
+    @Volatile var corePath: String? = null
+}
+
 object Native {
     var loadError: String? = null
         private set
 
     init {
-        try {
-            System.loadLibrary("horizon_core")
-        } catch (t: Throwable) {
-            loadError = t.message ?: t.javaClass.simpleName
+        val updated = NativeLoader.corePath
+        var loaded = false
+        if (updated != null) {
+            try {
+                System.load(updated)
+                loaded = true
+            } catch (_: Throwable) {
+                // fall back to the library packaged in the APK
+            }
+        }
+        if (!loaded) {
+            try {
+                System.loadLibrary("horizon_core")
+            } catch (t: Throwable) {
+                loadError = t.message ?: t.javaClass.simpleName
+            }
         }
     }
 

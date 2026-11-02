@@ -1270,3 +1270,66 @@ pub extern "system" fn Java_dev_horizon_launcher_core_Native_nativeSetTelemetry(
         .to_string())
     })
 }
+
+
+// ----- Updatable game runtime ------------------------------------------------------------------
+//
+// NativeActivity loads this library (manifest lib_name = horizon_core) and calls
+// `ANativeActivity_onCreate`. We forward it to the game library: the one the in-app updater
+// downloaded (path in HORIZON_GAME_LIB, set by HorizonGameActivity) when it loads, else the one
+// packaged in the APK. A failing update therefore never prevents the bundled game from starting.
+
+mod boot {
+    use std::ffi::{c_char, c_int, c_void, CString};
+
+    unsafe extern "C" {
+        fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
+        fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+    }
+    const RTLD_NOW: c_int = 2;
+    const BUNDLED: &str = "libhorizon_android_game.so";
+
+    type OnCreate = unsafe extern "C" fn(*mut c_void, *mut c_void, usize);
+
+    unsafe fn entry(path: &str) -> Option<OnCreate> {
+        let path = CString::new(path).ok()?;
+        let handle = unsafe { dlopen(path.as_ptr(), RTLD_NOW) };
+        if handle.is_null() {
+            return None;
+        }
+        let symbol = unsafe { dlsym(handle, c"ANativeActivity_onCreate".as_ptr()) };
+        if symbol.is_null() {
+            None
+        } else {
+            Some(unsafe { std::mem::transmute::<*mut c_void, OnCreate>(symbol) })
+        }
+    }
+
+    pub unsafe fn start(activity: *mut c_void, saved: *mut c_void, size: usize) {
+        let updated = std::env::var("HORIZON_GAME_LIB")
+            .ok()
+            .filter(|p| !p.is_empty() && std::path::Path::new(p).is_file());
+        let function = updated
+            .and_then(|path| {
+                let f = unsafe { entry(&path) };
+                if f.is_none() {
+                    log::warn!("updated game library did not load: {path}");
+                }
+                f
+            })
+            .or_else(|| unsafe { entry(BUNDLED) });
+        match function {
+            Some(f) => unsafe { f(activity, saved, size) },
+            None => log::error!("no game library could be loaded"),
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ANativeActivity_onCreate(
+    activity: *mut std::ffi::c_void,
+    saved_state: *mut std::ffi::c_void,
+    saved_state_size: usize,
+) {
+    unsafe { boot::start(activity, saved_state, saved_state_size) }
+}

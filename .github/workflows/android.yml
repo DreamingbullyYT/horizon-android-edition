@@ -163,6 +163,34 @@ jobs:
           (cd dist && sha256sum *.apk > SHA256SUMS.txt)
           ls -lh dist
 
+      # In-app updates: the app downloads these from the rolling release "libs".
+      - name: Publish native libraries for in-app updates
+        if: ${{ github.event_name == 'push' && github.ref_name == github.event.repository.default_branch }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          libs=app/build/generated/jniLibs/arm64-v8a
+          mkdir -p updates
+          cp "$libs/libhorizon_core.so" "$libs/libhorizon_android_game.so" updates/
+          cp horizon/.local/android/engine-data.zip updates/engine-data.zip
+          python3 - <<'PY'
+          import hashlib, json, os
+          def sha(p): return hashlib.sha256(open(p, 'rb').read()).hexdigest()
+          manifest = {
+              "abi_level": int(open("android/ABI_LEVEL").read()),
+              "build": int(os.environ["GITHUB_RUN_NUMBER"]),
+              "upstream": open("android/.upstream-built").read().strip(),
+              "arm64-v8a": {
+                  "core": {"file": "libhorizon_core.so", "sha256": sha("updates/libhorizon_core.so")},
+                  "game": {"file": "libhorizon_android_game.so", "sha256": sha("updates/libhorizon_android_game.so")},
+                  "data": {"file": "engine-data.zip", "sha256": sha("updates/engine-data.zip")},
+              },
+          }
+          json.dump(manifest, open("updates/manifest.json", "w"), indent=2)
+          PY
+          gh release view libs >/dev/null 2>&1 || gh release create libs --title "Native libraries (in-app updates)" --notes "Rolling release the app updates from." --prerelease
+          gh release upload libs updates/libhorizon_core.so updates/libhorizon_android_game.so updates/engine-data.zip updates/manifest.json --clobber
+
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:

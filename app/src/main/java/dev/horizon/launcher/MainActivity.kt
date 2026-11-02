@@ -12,6 +12,7 @@ import java.io.File
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        dev.horizon.launcher.data.Updater.prepare(filesDir)
         enableEdgeToEdge()
         WindowCompat.getInsetsController(window, window.decorView).apply {
             isAppearanceLightStatusBars = false
@@ -20,14 +21,14 @@ class MainActivity : ComponentActivity() {
 
         val home = File(filesDir, "launcher").apply { mkdirs() }
         val gameHome = File(home, "game").apply { mkdirs() }
-        val bundledData = File(gameHome, "engine-data.zip")
         val resourceError = runCatching {
-            if (!bundledData.isFile) assets.open("engine-data.zip").use { input -> bundledData.outputStream().use(input::copyTo) }
+            dev.horizon.launcher.data.Updater.syncEngineData(this, gameHome)
         }.exceptionOrNull()?.message
         val initError = runCatching { Native.nativeInit(home.absolutePath) }
             .exceptionOrNull()
             ?.message ?: resourceError
         val error = Native.loadError ?: initError
+        dev.horizon.launcher.data.Updater.armGuard(filesDir)
         val start = intent?.getStringExtra("screen") ?: "home"
 
         setContent {
