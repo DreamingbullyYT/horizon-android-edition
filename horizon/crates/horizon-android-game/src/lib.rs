@@ -119,6 +119,52 @@ fn vibrate_touch() {
 }
 
 #[cfg(target_os = "android")]
+fn system_property(name: &str) -> String {
+    std::process::Command::new("getprop")
+        .arg(name)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_lowercase())
+        .unwrap_or_default()
+}
+
+/// Vulkan for MediaTek and other non-Qualcomm SoCs, GLES for Snapdragon.
+#[cfg(target_os = "android")]
+fn choose_graphics_api(launcher: &std::path::Path) -> &'static str {
+    if let Ok(text) = std::fs::read_to_string(launcher.join("graphics-api.txt")) {
+        match text.trim().to_lowercase().as_str() {
+            "vulkan" => return "vulkan",
+            "opengl" | "gles" => return "opengl",
+            "auto" => return "auto",
+            _ => {}
+        }
+    }
+    let marker = launcher.join("vulkan-pending");
+    if marker.exists() {
+        // The last Vulkan start died within its first seconds.
+        let _ = std::fs::remove_file(&marker);
+        log::warn!("Horizon Android: previous Vulkan start failed, using OpenGL");
+        return "opengl";
+    }
+    let ids = [
+        system_property("ro.soc.manufacturer"),
+        system_property("ro.hardware"),
+        system_property("ro.board.platform"),
+    ]
+    .join(" ");
+    let qualcomm = ["qualcomm", "qcom", "snapdragon"].iter().any(|k| ids.contains(k));
+    if qualcomm {
+        return "opengl";
+    }
+    // Survived 20 seconds: Vulkan works here.
+    let _ = std::fs::write(&marker, b"");
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(20));
+        let _ = std::fs::remove_file(marker);
+    });
+    "vulkan"
+}
+
+#[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
     android_logger::init_once(
@@ -141,10 +187,16 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
     unsafe {
         std::env::set_var("HORIZON_LAUNCHER_HOME", &launcher);
         std::env::set_var("HORIZON_HOME", &game_home);
-        // The phone's Adreno Vulkan driver fails to link Horizon's sky
-        // pipeline during the first missing-resources frame. Use the GLES
-        // backend on Android so startup and the game share a stable path.
-        std::env::set_var("HORIZON_GRAPHICS_API", "opengl");
+        // Qualcomm's Adreno Vulkan driver fails to link Horizon's sky pipeline during the
+        // first missing-resources frame, so Snapdragon stays on GLES. MediaTek/Mali and
+        // others get Vulkan (much faster than their GLES drivers). A `graphics-api.txt`
+        // beside the game folder (auto, vulkan or opengl) overrides the choice, and a
+        // Vulkan start that never got going falls back to GLES on the next launch.
+        if std::env::var_os("HORIZON_GRAPHICS_API").is_none() {
+            let api = choose_graphics_api(&launcher);
+            log::info!("Horizon Android: graphics API {api}");
+            std::env::set_var("HORIZON_GRAPHICS_API", api);
+        }
     }
     if let Err(error) = std::env::set_current_dir(&game_home) {
         log::error!("Horizon Android: cannot enter game directory: {error}");
