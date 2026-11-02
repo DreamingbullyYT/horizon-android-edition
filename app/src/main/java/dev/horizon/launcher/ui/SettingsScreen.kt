@@ -1,5 +1,10 @@
 package dev.horizon.launcher.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.FileUpload
+import dev.horizon.launcher.MinecraftBackup
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
@@ -86,11 +91,25 @@ fun SettingsScreen(
     onAccounts: () -> Unit,
     onTelemetry: (Boolean) -> Unit,
     onMessage: (String) -> Unit,
+    onGameFilesChanged: () -> Unit = {},
 ) {
     val c = LocalHorizon.current
     val appContext = LocalContext.current
     val updateScope = rememberCoroutineScope()
     var updateStatus by remember { mutableStateOf("Tap to check") }
+    var backupStatus by remember { mutableStateOf("") }
+    var backupRunning by remember { mutableStateOf(false) }
+    val restorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: android.net.Uri? ->
+        if (uri != null && !backupRunning) {
+            backupRunning = true
+            updateScope.launch {
+                runCatching { MinecraftBackup.restore(appContext, uri) { backupStatus = it } }
+                    .onSuccess { backupStatus = "Restored"; onGameFilesChanged(); onMessage("Minecraft restored from backup. No download needed.") }
+                    .onFailure { backupStatus = "Failed"; onMessage(it.message ?: "Could not restore the backup") }
+                backupRunning = false
+            }
+        }
+    }
     val coreVersion = platform?.version ?: "0.2.0"
     val dataDir = platform?.dataDir ?: homeDir
     val builds = (releases as? ReleasesState.Ready)?.items?.size
@@ -577,6 +596,42 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
             )
+        }
+
+        item {
+            Plate {
+                SectionLabel("Minecraft files")
+                Spacer(Modifier.height(8.dp))
+                InfoRow(
+                    icon = Icons.Outlined.FileUpload,
+                    title = "Export Minecraft to Downloads",
+                    subtitle = "Saves the installed game as ${MinecraftBackup.FILE_NAME} so you never have to download it again",
+                    trailing = backupStatus.ifBlank { "Export" },
+                    onClick = {
+                        if (backupRunning) return@InfoRow
+                        if (MinecraftBackup.installedVersions(appContext).isEmpty()) {
+                            onMessage("Install Minecraft first, then export it.")
+                            return@InfoRow
+                        }
+                        backupRunning = true
+                        backupStatus = "Starting…"
+                        updateScope.launch {
+                            runCatching { MinecraftBackup.exportToDownloads(appContext) { backupStatus = it } }
+                                .onSuccess { backupStatus = "Saved"; onMessage("Saved to $it") }
+                                .onFailure { backupStatus = "Failed"; onMessage(it.message ?: "Could not export Minecraft") }
+                            backupRunning = false
+                        }
+                    },
+                )
+                HorizontalDivider(color = c.stroke)
+                InfoRow(
+                    icon = Icons.Outlined.FileDownload,
+                    title = "Restore Minecraft from backup",
+                    subtitle = "Pick ${MinecraftBackup.FILE_NAME} from Downloads after a reinstall",
+                    trailing = "Restore",
+                    onClick = { if (!backupRunning) restorePicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
+                )
+            }
         }
     }
 }
