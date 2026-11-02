@@ -33,8 +33,8 @@ jobs:
             echo "state=clean" >> "$GITHUB_OUTPUT"
           else
             echo "state=conflict" >> "$GITHUB_OUTPUT"
+            bash android/conflict-bundle.sh
           fi
-          rm -rf horizon .horizon-sync
       - name: Open a pull request that moves the pin
         if: steps.try.outputs.state == 'clean'
         env:
@@ -51,10 +51,18 @@ jobs:
           gh pr create --title "Upstream Horizon ${{ steps.try.outputs.newest }}" \
             --body "The Android patch applies cleanly. Merge if the APK build on this PR is green." \
             --base "${GITHUB_REF_NAME}" --head "$branch" || true
+      - name: Keep the conflict files
+        if: steps.try.outputs.state == 'conflict'
+        uses: actions/upload-artifact@v4
+        with:
+          name: conflict-bundle
+          path: conflict-bundle.zip
+          retention-days: 30
+
       - name: Report a conflict
         if: steps.try.outputs.state == 'conflict'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh issue create --title "Upstream ${{ steps.try.outputs.newest }} conflicts with the Android patch" \
-            --body "$(printf 'Files that conflict:\n\n```\n%s\n```\nThe build stays on the pinned commit.' "$(cat /tmp/sync.err)")" || true
+            --body "$(printf 'Files that conflict:\n\n```\n%s\n```\nThe build stays on the pinned commit.\n\nDownload the conflict-bundle artifact of this run (Actions tab) and send conflict-bundle.zip to Claude.' "$(cat /tmp/sync.err)")" || true

@@ -7,6 +7,11 @@ cd "$(dirname "$0")/.."
 ref=${1:-$(tr -d '[:space:]' < android/UPSTREAM_PIN)}
 rm -rf .horizon-sync
 git clone -q --filter=blob:none https://github.com/horizon-rust/horizon.git .horizon-sync
+pin=$(tr -d '[:space:]' < android/UPSTREAM_PIN)
+if [ "$ref" != "$pin" ]; then
+  # 3-way merging needs the files the patch was made against: check them out once so git fetches them.
+  git -C .horizon-sync checkout -q "$pin"
+fi
 git -C .horizon-sync checkout -q "$ref"
 git -C .horizon-sync config core.fileMode false
 if ! git -C .horizon-sync apply --3way --whitespace=nowarn "$PWD/android/android.patch"; then
