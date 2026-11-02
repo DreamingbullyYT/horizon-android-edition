@@ -50,10 +50,10 @@ index 000000000..027d51134
 +workspace = true
 diff --git a/crates/horizon-android-game/src/lib.rs b/crates/horizon-android-game/src/lib.rs
 new file mode 100644
-index 000000000..5a4da2659
+index 000000000..619178c2f
 --- /dev/null
 +++ b/crates/horizon-android-game/src/lib.rs
-@@ -0,0 +1,220 @@
+@@ -0,0 +1,235 @@
 +//! NativeActivity entry point that hosts Horizon's shared winit game loop.
 +
 +#[cfg(target_os = "android")]
@@ -96,6 +96,21 @@ index 000000000..5a4da2659
 +    _env: jni::JNIEnv<'_>, _object: jni::objects::JObject<'_>,
 +) -> jni::sys::jint {
 +    horizon_client::game::android_game_fps().min(i32::MAX as u32) as jni::sys::jint
++}
++
++#[cfg(target_os = "android")]
++#[unsafe(no_mangle)]
++pub extern "system" fn Java_dev_horizon_launcher_game_GameInput_nativeHotbarRect<'a>(
++    env: jni::JNIEnv<'a>, _object: jni::objects::JObject<'a>,
++) -> jni::sys::jfloatArray {
++    let rect = horizon_client::game::android_hotbar_rect();
++    match env.new_float_array(4) {
++        Ok(array) => {
++            let _ = env.set_float_array_region(&array, 0, &rect);
++            array.into_raw()
++        }
++        Err(_) => std::ptr::null_mut(),
++    }
 +}
 +
 +#[cfg(target_os = "android")]
@@ -1847,10 +1862,10 @@ index 2d970daf9..388d6981a 100644
  # Use the registered URI handler without routing links through Explorer/cmd.
  open = { version = "5.4.5", features = ["shellexecute-on-windows"] }
 diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.rs
-index 25e3d344a..1df023917 100644
+index 25e3d344a..33d78db7d 100644
 --- a/crates/horizon-client/src/game.rs
 +++ b/crates/horizon-client/src/game.rs
-@@ -404,17 +404,121 @@ use std::{
+@@ -404,17 +404,135 @@ use std::{
      collections::{HashMap, HashSet},
      path::PathBuf,
      sync::{
@@ -1876,6 +1891,14 @@ index 25e3d344a..1df023917 100644
 +static ANDROID_GAME_FPS: AtomicU32 = AtomicU32::new(0);
 +#[cfg(target_os = "android")]
 +static ANDROID_IME_ALLOWED: AtomicBool = AtomicBool::new(true);
++/// Hotbar rectangle in physical pixels (f32 bits): left, top, slot width, height.
++#[cfg(target_os = "android")]
++static ANDROID_HOTBAR: [AtomicU32; 4] = [
++    AtomicU32::new(0),
++    AtomicU32::new(0),
++    AtomicU32::new(0),
++    AtomicU32::new(0),
++];
 +#[cfg(target_os = "android")]
 +static ANDROID_MENU_TOUCHES: OnceLock<Mutex<Vec<(u64, f64, f64, u8)>>> = OnceLock::new();
 +
@@ -1906,6 +1929,12 @@ index 25e3d344a..1df023917 100644
 +#[cfg(target_os = "android")]
 +pub fn android_game_fps() -> u32 {
 +    ANDROID_GAME_FPS.load(Ordering::Relaxed)
++}
++
++/// `[left, top, slot_width, height]` of the on-screen hotbar in physical pixels, or zeros before the first frame.
++#[cfg(target_os = "android")]
++pub fn android_hotbar_rect() -> [f32; 4] {
++    std::array::from_fn(|i| f32::from_bits(ANDROID_HOTBAR[i].load(Ordering::Relaxed)))
 +}
 +
 +#[cfg(target_os = "android")]
@@ -1975,7 +2004,7 @@ index 25e3d344a..1df023917 100644
      event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
      keyboard::{KeyCode, PhysicalKey},
      window::{CursorGrabMode, Window, WindowId},
-@@ -2412,6 +2516,7 @@ struct Game<'a> {
+@@ -2412,6 +2530,7 @@ struct Game<'a> {
      physical_keys: HashSet<KeyCode>,
      physical_buttons: HashSet<MouseButton>,
      drag_button: Option<MouseButton>,
@@ -1983,7 +2012,7 @@ index 25e3d344a..1df023917 100644
      /// Control + left click as a right click (macOS).
      right_click_emulation: horizon_client_input::mouse::RightClickEmulation,
      left: bool,
-@@ -3148,6 +3253,236 @@ struct Game<'a> {
+@@ -3148,6 +3267,236 @@ struct Game<'a> {
      /// The local player as a model (third person, the inventory).
      player_model: Option<Mob>,
  }
@@ -2220,7 +2249,7 @@ index 25e3d344a..1df023917 100644
  #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
  enum Dim {
      Overworld,
-@@ -3617,7 +3952,7 @@ impl Game<'_> {
+@@ -3617,7 +3966,7 @@ impl Game<'_> {
          player.mobility_restricted = blind;
          player.yaw = self.yaw;
          player.pitch = self.pitch;
@@ -2229,7 +2258,7 @@ index 25e3d344a..1df023917 100644
          player.item_use_speed = item_use_speed;
          player.item_use_slows_sprint = item_use_slows_sprint;
          player.respiration = respiration;
-@@ -8047,7 +8382,15 @@ impl Game<'_> {
+@@ -8047,7 +8396,15 @@ impl Game<'_> {
      fn apply_mouse_look(&mut self) {
          let look = self.look_options();
          let time = self.started.elapsed().as_secs_f64();
@@ -2246,7 +2275,7 @@ index 25e3d344a..1df023917 100644
          let grabbed = pointer && self.screen == Screen::Playing && self.player.is_some();
          let active = self.focused || self.agent_pointer;
          if let Some((xo, yo)) = self
-@@ -8888,6 +9231,404 @@ impl Game<'_> {
+@@ -8888,6 +9245,404 @@ impl Game<'_> {
          let view = self.screen_view(batch, screen);
          self.native_screen_render_post(batch, &view);
      }
@@ -2651,7 +2680,7 @@ index 25e3d344a..1df023917 100644
      /// `CreativeModeInventoryScreen.hasPermissions` (`canUseGameMasterBlocks`
      /// and the Operator Items Tab option) given to `tryRefreshInvalidatedTabs`,
      /// as the screen's constructor and `containerTick` do.
-@@ -16829,8 +17570,28 @@ impl Game<'_> {
+@@ -16829,8 +17584,28 @@ impl Game<'_> {
      }
  }
  impl ApplicationHandler for Game<'_> {
@@ -2680,7 +2709,7 @@ index 25e3d344a..1df023917 100644
              return;
          }
          // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
-@@ -16917,6 +17678,8 @@ impl ApplicationHandler for Game<'_> {
+@@ -16917,6 +17692,8 @@ impl ApplicationHandler for Game<'_> {
          }
      }
      fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -2689,7 +2718,7 @@ index 25e3d344a..1df023917 100644
          self.idle(event_loop);
      }
      /// The application is ending. On macOS, Quit (Cmd+Q) ends it through
-@@ -16948,6 +17711,121 @@ impl Game<'_> {
+@@ -16948,6 +17725,121 @@ impl Game<'_> {
          if !ours {
              return;
          }
@@ -2811,7 +2840,28 @@ index 25e3d344a..1df023917 100644
          follow_keymap(&mut event);
          // MacosUtil.setCtrlClickEmulatesRightClick: Control + left click is a right click.
          if let WindowEvent::MouseInput { state, button, .. } = &mut event
-@@ -18334,6 +19212,8 @@ impl Game<'_> {
+@@ -18331,9 +19223,29 @@ impl Game<'_> {
+                         }
+                         self.frames += 1;
+                         self.fps_frames += 1;
++                        #[cfg(target_os = "android")]
++                        if self.frames == 1 || self.fps_at.elapsed() >= Duration::from_secs(1) {
++                            if let Some(renderer) = &self.renderer {
++                                let size = [renderer.config.width, renderer.config.height];
++                                let batch = HudBatch::new(size);
++                                let (scale, w, h) = (batch.scale, batch.width as i32, batch.height as i32);
++                                // `Hud.extractItemHotbar`: 182x22 sprite centred, slots 20 wide from +1.
++                                let rect = [
++                                    (w / 2 - 91) as f32 * scale,
++                                    (h - 22) as f32 * scale,
++                                    20.0 * scale,
++                                    22.0 * scale,
++                                ];
++                                for (slot, v) in ANDROID_HOTBAR.iter().zip(rect) {
++                                    slot.store(v.to_bits(), Ordering::Relaxed);
++                                }
++                            }
++                        }
                          horizon_client::crash::debug_crash_tick();
                          if self.fps_at.elapsed() >= Duration::from_secs(1) {
                              self.fps = self.fps_frames as f32 / self.fps_at.elapsed().as_secs_f32();
@@ -2820,7 +2870,7 @@ index 25e3d344a..1df023917 100644
                              self.fps_frames = 0;
                              self.fps_at = Instant::now();
                          }
-@@ -18369,6 +19249,71 @@ impl Game<'_> {
+@@ -18369,6 +19281,71 @@ impl Game<'_> {
          }
          self.finish_perf();
      }
@@ -2892,7 +2942,7 @@ index 25e3d344a..1df023917 100644
      /// winit's `about_to_wait`: what happens between frames (stop requests, the closing
      /// save, world entry, the control socket, pads), then the next frame.
      pub(super) fn idle(&mut self, event_loop: &dyn EventLoopCtl) {
-@@ -18603,6 +19548,7 @@ impl<'a> Game<'a> {
+@@ -18603,6 +19580,7 @@ impl<'a> Game<'a> {
              physical_keys: HashSet::new(),
              physical_buttons: HashSet::new(),
              drag_button: None,
@@ -2900,7 +2950,7 @@ index 25e3d344a..1df023917 100644
              right_click_emulation: Default::default(),
              left: false,
              right: false,
-@@ -20587,7 +21533,7 @@ fn run_event_loop(mut game: Game<'_>) -> Result<()> {
+@@ -20587,7 +21565,7 @@ fn run_event_loop(mut game: Game<'_>) -> Result<()> {
          return game.error.take().map_or(Ok(()), Err);
      }
      let mut split = split::Split::new(game);
@@ -2909,7 +2959,7 @@ index 25e3d344a..1df023917 100644
      game = split.host;
      narrator::stop();
      leave_fullscreen_after(&result, &mut game.settings);
-@@ -20642,8 +21588,27 @@ impl Loading {
+@@ -20642,8 +21620,27 @@ impl Loading {
              || self.menu.pending.is_some()
              || self.ui_at.is_none_or(|at| at.elapsed() >= TITLE_FRAME_WAIT)
      }
@@ -2937,7 +2987,7 @@ index 25e3d344a..1df023917 100644
              return;
          }
          // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
-@@ -20929,6 +21894,12 @@ enum App {
+@@ -20929,6 +21926,12 @@ enum App {
      Ready(Box<split::Split<'static>>),
  }
  impl ApplicationHandler for App {
@@ -2950,7 +3000,7 @@ index 25e3d344a..1df023917 100644
      fn resumed(&mut self, event_loop: &ActiveEventLoop) {
          match self {
              App::Loading(loading) => loading.resumed(event_loop),
-@@ -21054,7 +22025,7 @@ fn run_loading(
+@@ -21054,7 +22057,7 @@ fn run_loading(
          error: None,
      };
      let mut app = App::Loading(Box::new(loading));

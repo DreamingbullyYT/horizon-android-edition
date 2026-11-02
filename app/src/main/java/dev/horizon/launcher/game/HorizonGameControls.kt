@@ -144,6 +144,7 @@ internal fun HorizonGameControls(
     var fpsMode by remember { mutableIntStateOf(prefs.getInt("fps_mode", 0)) }
     var quickButtonOpacity by remember { mutableFloatStateOf(prefs.getFloat("quick_button_opacity", 0.88f)) }
     var autoKeyboard by remember { mutableStateOf(prefs.getBoolean("auto_keyboard", true)) }
+    var hotbarTouch by remember { mutableStateOf(prefs.getBoolean("hotbar_touch", true)) }
     var currentFps by remember { mutableIntStateOf(0) }
     var currentMemoryMb by remember { mutableIntStateOf(0) }
     val fpsHistory = remember { mutableStateListOf<Float>() }
@@ -327,6 +328,16 @@ internal fun HorizonGameControls(
                 val downAt = mutableMapOf<Long, Long>()
                 val lookPointers = mutableSetOf<Long>()
                 val ignored = mutableSetOf<Long>()
+                val hotbarPointers = mutableSetOf<Long>()
+                /** Zalith-style hotbar: index 0..8 of the slot under [p], or -1. Geometry comes from the game's HUD. */
+                fun hotbarSlotAt(p: Offset): Int {
+                    val r = runCatching { GameInput.nativeHotbarRect() }.getOrNull() ?: return -1
+                    if (r.size < 4 || r[2] <= 0f) return -1
+                    val pad = r[3] * 0.25f
+                    if (p.y < r[1] - pad || p.y > r[1] + r[3] + pad) return -1
+                    val slot = ((p.x - r[0] - r[2] * 0.05f) / r[2]).toInt()
+                    return if (p.x >= r[0] && slot in 0..8) slot else -1
+                }
                 while (true) {
                     val event = awaitPointerEvent(PointerEventPass.Final)
                     if (editing) {
@@ -338,6 +349,16 @@ internal fun HorizonGameControls(
                     event.changes.forEach { change ->
                         val id = change.id.value
                         if (change.pressed && !change.isConsumed && id !in occupied) {
+                            if (id in hotbarPointers) return@forEach
+                            if (hotbarTouch && grabbing && id !in positions) {
+                                val slot = hotbarSlotAt(change.position)
+                                if (slot >= 0) {
+                                    hotbarPointers += id; ignored += id; positions[id] = change.position
+                                    GameInput.nativeSendControl("GLFW_KEY_${slot + 1}", true)
+                                    GameInput.nativeSendControl("GLFW_KEY_${slot + 1}", false)
+                                    return@forEach
+                                }
+                            }
                             val prior = positions.put(id, change.position)
                             if (prior == null) {
                                 starts[id] = change.position
@@ -360,6 +381,7 @@ internal fun HorizonGameControls(
                                 GameInput.nativeMenuTouch(id, change.position.x, change.position.y, if (prior == null) 0 else 1)
                             }
                         } else if (!change.pressed && positions.remove(id) != null) {
+                            hotbarPointers.remove(id)
                             occupied.remove(id)
                             val start = starts.remove(id)
                             val duration = SystemClock.elapsedRealtime() - (downAt.remove(id) ?: 0L)
@@ -526,6 +548,7 @@ internal fun HorizonGameControls(
                                     OutlinedButton(onClick = {
                                         activity?.chooseTouchLayout { imported -> swapLayout(imported); save(imported); profiles.activeName = "" }
                                     }) { Text("Import layout file") }
+                                    ToggleRow("Tap hotbar slots directly", hotbarTouch) { hotbarTouch = it; prefs.edit().putBoolean("hotbar_touch", it).apply() }
                                     ToggleRow("Auto-show keyboard in text fields", autoKeyboard) { autoKeyboard = it; prefs.edit().putBoolean("auto_keyboard", it).apply() }
                                     OutlinedButton(onClick = {
                                         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()

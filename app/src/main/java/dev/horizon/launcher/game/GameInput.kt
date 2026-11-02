@@ -9,6 +9,8 @@ object GameInput {
     external fun nativeLookActive(active: Boolean)
     external fun nativeCursorGrabbing(): Boolean
     external fun nativeGameFps(): Int
+    /** [left, top, slotWidth, height] of the hotbar in physical pixels; zeros until the first frame. */
+    external fun nativeHotbarRect(): FloatArray
     external fun nativeSetImeAllowed(allowed: Boolean)
     external fun nativeMenuTouch(id: Long, x: Float, y: Float, phase: Int)
 }

@@ -77,6 +77,11 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         savedStateController.performRestore(savedInstanceState)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Sustained-performance mode keeps clocks steady instead of boosting then throttling (MediaTek/Mali SoCs overheat fast).
+        runCatching {
+            val power = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+            if (android.os.Build.VERSION.SDK_INT >= 24 && power.isSustainedPerformanceModeSupported) window.setSustainedPerformanceMode(true)
+        }
         window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_FULLSCREEN
             or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
             or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
@@ -374,7 +379,6 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         val more = ObservableControlLayer(createNewLayer("More").copy(visibilityType = VisibilityType.IN_GAME))
         more.editorHide = true
         more.hide = true
-        for (slot in 1..9) more.addNormalButton(button("$slot", key("GLFW_KEY_$slot"), 0.30f + (slot - 1) * 0.05f, 0.76f, 760, VisibilityType.IN_GAME))
         more.addNormalButton(button("Drop", key("GLFW_KEY_Q"), 0.36f, 0.60f, 900, VisibilityType.IN_GAME))
         more.addNormalButton(button("Swap", key("GLFW_KEY_F"), 0.42f, 0.60f, 900, VisibilityType.IN_GAME))
         more.addNormalButton(button("Pick", listOf(ClickEvent(ClickEvent.Type.Key, "GLFW_MOUSE_BUTTON_MIDDLE")), 0.48f, 0.60f, 900, VisibilityType.IN_GAME))
