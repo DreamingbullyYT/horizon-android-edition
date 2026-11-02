@@ -110,7 +110,7 @@ fun SettingsScreen(
             }
         }
     }
-    val coreVersion = platform?.version ?: "0.2.0"
+    val coreVersion = platform?.version ?: "0.2.37"
     val dataDir = platform?.dataDir ?: homeDir
     val builds = (releases as? ReleasesState.Ready)?.items?.size
     val enabled = busy == null
