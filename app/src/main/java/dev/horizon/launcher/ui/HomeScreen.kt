@@ -1,6 +1,9 @@
 package dev.horizon.launcher.ui
 
-import androidx.compose.foundation.clickable
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,44 +14,42 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Extension
+import androidx.compose.material.icons.outlined.ArrowDownward
+import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.Restore
+import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import dev.horizon.launcher.MinecraftBackup
 import dev.horizon.launcher.data.AccountsInfo
 import dev.horizon.launcher.data.InstalledVersion
 import dev.horizon.launcher.data.InstanceInfo
 import dev.horizon.launcher.data.ModInfo
+import dev.horizon.launcher.data.SettingsInfo
 import dev.horizon.launcher.data.WorldInfo
+import kotlinx.coroutines.launch
 
 @Composable
 fun HomeScreen(
     instances: List<InstanceInfo>,
     accounts: AccountsInfo?,
-    settings: dev.horizon.launcher.data.SettingsInfo?,
+    settings: SettingsInfo?,
     installed: List<InstalledVersion>,
     worlds: List<WorldInfo>,
     mods: List<ModInfo>,
@@ -66,175 +67,197 @@ fun HomeScreen(
     onAccounts: () -> Unit,
 ) {
     val c = LocalHorizon.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var localReady by remember(gameReady) { mutableStateOf(gameReady) }
+    var backupBusy by remember { mutableStateOf<String?>(null) }
+    var backupMessage by remember { mutableStateOf<String?>(null) }
+
+    val restorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri == null || backupBusy != null) return@rememberLauncherForActivityResult
+        scope.launch {
+            backupBusy = "Restoring Minecraft"
+            runCatching {
+                MinecraftBackup.restore(context, uri) { backupBusy = it }
+            }.onSuccess { count ->
+                localReady = true
+                backupMessage = "Restored $count Minecraft resource set(s)."
+            }.onFailure { backupMessage = it.message ?: "Could not restore the backup" }
+            backupBusy = null
+        }
+    }
+
+    fun exportBackup() {
+        if (backupBusy != null) return
+        scope.launch {
+            backupBusy = "Preparing backup"
+            runCatching {
+                MinecraftBackup.exportToDownloads(context) { backupBusy = it }
+            }.onSuccess { location -> backupMessage = "Backup saved to $location" }
+                .onFailure { backupMessage = it.message ?: "Could not export Minecraft" }
+            backupBusy = null
+        }
+    }
+
     val instance = instances.firstOrNull { it.id == settings?.selected }
         ?: instances.firstOrNull { it.id == "horizon" }
         ?: instances.firstOrNull()
-    var picker by remember { mutableStateOf(false) }
     val player = accounts?.player?.label ?: "Offline player"
+    val ready = localReady && gameAvailable
+    val currentBusy = backupBusy ?: busy
 
     LazyColumn(
-        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 24.dp),
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
             Plate(
-                color = c.card.copy(alpha = 0.72f),
-                borderColor = c.accentHi.copy(alpha = 0.3f),
+                color = c.card.copy(alpha = 0.82f),
+                borderColor = c.accentHi.copy(alpha = 0.38f),
                 contentPadding = PaddingValues(20.dp),
             ) {
-                SectionLabel("SELECTED INSTANCE")
-                Spacer(Modifier.height(5.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        instance?.name ?: "Horizon",
-                        color = c.ink,
-                        style = MaterialTheme.typography.displayMedium,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text("Change", color = c.accentHi, style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.clickable { picker = true }.padding(8.dp))
-                }
-                Spacer(Modifier.height(4.dp))
-                Text("Playing as $player", color = c.inkSoft, style = MaterialTheme.typography.bodyMedium)
-                Text("Manage account", color = c.accentHi, style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.clickable(onClick = onAccounts).padding(vertical = 6.dp))
+                SectionLabel("PLAY")
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Minecraft 26.3",
+                    color = c.ink,
+                    style = MaterialTheme.typography.displayMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "${instance?.name ?: "Horizon"} · $player",
+                    color = c.inkSoft,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 Spacer(Modifier.height(10.dp))
                 HorizontalDivider(color = c.stroke)
                 Spacer(Modifier.height(10.dp))
                 Text(
                     when {
                         !gameAvailable -> "The Android game runtime is unavailable in this build."
-                        !gameReady -> "Install Minecraft 26.3 from Mojang or select your existing game files."
-                        else -> "Horizon 26.3 is ready · ${installed.size} build(s) installed."
+                        !ready -> "Minecraft resources are not ready yet. Restore a backup or import your existing files."
+                        else -> "Ready to launch · ${worlds.size} world(s) · ${mods.size} mod(s)"
                     },
                     color = c.muted,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                 )
                 Spacer(Modifier.height(14.dp))
-                if (gameAvailable) {
-                    PrimaryButton(
-                        text = when {
-                            busy != null -> busy
-                            gameReady -> "Play"
-                            else -> "Download Minecraft 26.3"
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        icon = Icons.Filled.PlayArrow,
-                        onClick = { if (busy == null) { if (gameReady) onPlay() else onInstall() } },
+                PrimaryButton(
+                    text = when {
+                        currentBusy != null -> currentBusy
+                        ready -> "Play Minecraft 26.3"
+                        else -> "Prepare Minecraft 26.3"
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    icon = Icons.Filled.PlayArrow,
+                    onClick = {
+                        if (currentBusy == null) {
+                            if (ready) onPlay() else onInstall()
+                        }
+                    },
+                )
+                Spacer(Modifier.height(8.dp))
+                SoftButton(
+                    "Choose existing Minecraft files",
+                    modifier = Modifier.fillMaxWidth(),
+                    icon = Icons.Outlined.FolderOpen,
+                    onClick = { if (currentBusy == null) onChooseFolder() },
+                )
+            }
+        }
+
+        item {
+            Plate(contentPadding = PaddingValues(16.dp)) {
+                SectionLabel("MINECRAFT FILES")
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Keep your prepared 26.3 resources safe or restore them without downloading again.",
+                    color = c.muted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    SoftButton(
+                        "Restore backup",
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Outlined.Restore,
+                        onClick = { if (currentBusy == null) restorePicker.launch(arrayOf("application/zip")) },
                     )
-                    if (!gameReady) {
-                        Text(
-                            "Choose existing Minecraft files",
-                            color = c.accentHi,
-                            style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.clickable(enabled = busy == null, onClick = onChooseFolder)
-                                .padding(top = 14.dp, bottom = 2.dp),
+                    SoftButton(
+                        "Export to Downloads",
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Outlined.FileUpload,
+                        onClick = { if (currentBusy == null) exportBackup() },
+                    )
+                }
+                if (backupMessage != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(backupMessage!!, color = c.success, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        item {
+            Plate(contentPadding = PaddingValues(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(Icons.Outlined.Inventory2)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        SectionLabel("HORIZON BUILDS")
+                        Spacer(Modifier.height(3.dp))
+                        Text("Your Android build + upstream Horizon", color = c.muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                    SoftButton("Open") { onVersions() }
+                }
+            }
+        }
+
+        item {
+            Plate(contentPadding = PaddingValues(16.dp)) {
+                SectionLabel("THIS INSTANCE")
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth()) {
+                    Stat("Worlds", worlds.size.toString(), Modifier.weight(1f))
+                    Stat("Mods", mods.size.toString(), Modifier.weight(1f))
+                    Stat("Played", instance?.lastPlayed?.let(::relativeTime) ?: "Never", Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(10.dp))
+                HorizontalDivider(color = c.stroke)
+                InfoRow(Icons.Outlined.Inventory2, "Manage Horizon builds", "Launcher builds, not Minecraft versions", "Open", onClick = onVersions)
+                InfoRow(Icons.Outlined.SettingsBackupRestore, "Manage mods & shaders", "${mods.size} imported mod(s)", "Open", onClick = onMods)
+            }
+        }
+
+        if (worlds.isNotEmpty()) {
+            item { SectionLabel("RECENT WORLDS") }
+            worlds.take(3).forEach { world ->
+                item(key = world.folder) {
+                    Plate(contentPadding = PaddingValues(horizontal = 14.dp, vertical = 3.dp)) {
+                        InfoRow(
+                            icon = Icons.Outlined.Inventory2,
+                            title = world.name,
+                            subtitle = "${world.mode} · ${formatSize(world.size)}",
+                            trailing = world.version ?: "26.3",
                         )
                     }
                 }
             }
         }
-        item {
-            Plate(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
-                SectionLabel("THIS INSTANCE")
-                Spacer(Modifier.height(9.dp))
-                Row(Modifier.fillMaxWidth()) {
-                    Stat("Worlds", worlds.size.toString(), Modifier.weight(1f))
-                    Stat("Horizon mods", mods.size.toString(), Modifier.weight(1f))
-                    Stat("Last played", instance?.lastPlayed?.let(::relativeTime) ?: "Never", Modifier.weight(1f))
-                }
-                Spacer(Modifier.height(10.dp))
-                HorizontalDivider(color = c.stroke)
-                InfoRow(Icons.Outlined.Extension, "Manage mods & shaders", "Import compatible game content", "Open", onClick = onMods)
-                InfoRow(Icons.Outlined.Inventory2, "Manage versions", "${installed.size} installed build(s)", "Open", onClick = onVersions)
-            }
-        }
-        if (worlds.isNotEmpty()) {
-            item { SectionLabel("RECENT WORLDS") }
-            items(worlds.take(3), key = { it.folder }) { world ->
-                Plate(contentPadding = PaddingValues(horizontal = 14.dp, vertical = 3.dp)) {
-                    InfoRow(
-                        icon = Icons.Filled.Place,
-                        title = world.name,
-                        subtitle = "${world.mode} · ${formatSize(world.size)}",
-                        trailing = world.version,
-                    )
-                }
-            }
-        }
     }
 
-    if (picker) {
-        InstancePickerSheet(
-            instances = instances,
-            selected = settings?.selected,
-            onDismiss = { picker = false },
-            onSelect = { picker = false; onSelectInstance(it) },
-            onDelete = onDeleteInstance,
-            onCreate = { picker = false; onNewInstance() },
-        )
-    }
 }
 
 @Composable
-private fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
+private fun Stat(label: String, value: String, modifier: Modifier) {
     val c = LocalHorizon.current
-    Column(modifier.padding(end = 5.dp)) {
-        Text(label.uppercase(), color = c.muted, style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.8.sp))
-        Spacer(Modifier.height(4.dp))
+    Column(modifier.padding(end = 6.dp)) {
+        Text(label.uppercase(), color = c.muted, style = MaterialTheme.typography.labelSmall)
+        Spacer(Modifier.height(3.dp))
         Text(value, color = c.ink, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun InstancePickerSheet(
-    instances: List<InstanceInfo>,
-    selected: String?,
-    onDismiss: () -> Unit,
-    onSelect: (String) -> Unit,
-    onDelete: (String) -> Unit,
-    onCreate: () -> Unit,
-) {
-    val c = LocalHorizon.current
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.side,
-        contentColor = c.ink,
-    ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
-            SectionLabel("Instances")
-            Spacer(Modifier.height(10.dp))
-            Text("Each instance keeps its own worlds, mods and settings.", color = c.muted, style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.height(8.dp))
-            androidx.compose.foundation.lazy.LazyColumn(
-                contentPadding = PaddingValues(bottom = 28.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                items(instances, key = { it.id }) { instance ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(instance.name, color = c.ink, style = MaterialTheme.typography.titleMedium)
-                            Text(instance.home, color = c.muted, style = MaterialTheme.typography.bodySmall,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                        if (instance.id == selected) Tag("SELECTED", c.success)
-                        else SoftButton("Use") { onSelect(instance.id) }
-                        Spacer(Modifier.width(6.dp))
-                        Icon(Icons.Outlined.Delete, contentDescription = "Delete instance", tint = c.muted,
-                            modifier = Modifier.clickable { onDelete(instance.id) }.padding(8.dp))
-                    }
-                    HorizontalDivider(color = c.stroke)
-                }
-                item {
-                    Spacer(Modifier.height(10.dp))
-                    PrimaryButton("New instance", Modifier.fillMaxWidth(), Icons.Outlined.Add, onCreate)
-                }
-            }
-        }
     }
 }
 
@@ -246,11 +269,11 @@ private fun formatSize(bytes: Long): String = when {
 }
 
 private fun relativeTime(epochSeconds: Long): String {
-    val delta = System.currentTimeMillis() / 1000 - epochSeconds
+    val delta = (System.currentTimeMillis() / 1000 - epochSeconds).coerceAtLeast(0)
     return when {
         delta < 60 -> "Just now"
-        delta < 3600 -> "${delta / 60}m ago"
-        delta < 86400 -> "${delta / 3600}h ago"
-        else -> "${delta / 86400}d ago"
+        delta < 3600 -> "${delta / 60}m"
+        delta < 86400 -> "${delta / 3600}h"
+        else -> "${delta / 86400}d"
     }
 }

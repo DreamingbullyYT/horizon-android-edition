@@ -14,34 +14,24 @@ android {
         applicationId = "dev.horizon.launcher"
         minSdk = 26
         targetSdk = 34
-        // CI sets GITHUB_RUN_NUMBER so every build has a higher versionCode and can update the last one.
         versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
         versionName = System.getenv("HORIZON_VERSION_NAME") ?: "0.1.0-alpha"
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
-    buildFeatures {
-        compose = true
-    }
+    buildFeatures { compose = true }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+    kotlinOptions { jvmTarget = "17" }
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
         jniLibs.useLegacyPackaging = true
     }
 
-    // Optional release signing: only active when the keystore env vars are present (see
-    // .github/workflows/android.yml). Without them `assembleRelease` yields an unsigned APK.
     val releaseKeystore = System.getenv("HORIZON_KEYSTORE_PATH")
     signingConfigs {
         if (releaseKeystore != null) {
@@ -49,12 +39,10 @@ android {
                 storeFile = file(releaseKeystore)
                 storePassword = System.getenv("HORIZON_KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("HORIZON_KEY_ALIAS")
-                keyPassword = System.getenv("HORIZON_KEY_PASSWORD")
-                    ?.takeIf { it.isNotEmpty() } ?: System.getenv("HORIZON_KEYSTORE_PASSWORD")
+                keyPassword = System.getenv("HORIZON_KEY_PASSWORD")?.takeIf { it.isNotEmpty() } ?: System.getenv("HORIZON_KEYSTORE_PASSWORD")
             }
         }
     }
-
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -66,8 +54,6 @@ android {
     sourceSets["main"].assets.srcDir("../horizon/.local/android")
 }
 
-// Build the Rust/JNI library from the checked-in sources for every APK. The bundled .so files in
-// old archives are useful as references, but packaging them silently left Rust changes out of APKs.
 val rustJniLibs = layout.buildDirectory.dir("generated/jniLibs")
 val rustTargetDir = layout.buildDirectory.dir("rust-target")
 val ndkHostTag = when {
@@ -78,9 +64,7 @@ val ndkHostTag = when {
 }
 val ndkBin = android.ndkDirectory.resolve("toolchains/llvm/prebuilt/$ndkHostTag/bin")
 
-val rustAndroidTargets = listOf(
-    Triple("arm64-v8a", "aarch64-linux-android", "aarch64-linux-android"),
-)
+val rustAndroidTargets = listOf(Triple("arm64-v8a", "aarch64-linux-android", "aarch64-linux-android"))
 
 val rustBuildTasks = rustAndroidTargets.map { (abi, target, compilerPrefix) ->
     val targetEnv = target.uppercase().replace('-', '_')
@@ -97,12 +81,31 @@ val rustBuildTasks = rustAndroidTargets.map { (abi, target, compilerPrefix) ->
         environment("CARGO_TARGET_${targetEnv}_LINKER", ndkBin.resolve("${compilerPrefix}26-clang").absolutePath)
         environment("CC_${target}", ndkBin.resolve("${compilerPrefix}26-clang").absolutePath)
         environment("AR_${target}", ndkBin.resolve("llvm-ar").absolutePath)
+        System.getenv("HORIZON_MSA_CLIENT_ID")?.takeIf { it.isNotBlank() }?.let { environment("HORIZON_MSA_CLIENT_ID", it) }
         commandLine("cargo", "build", "--manifest-path", "core/Cargo.toml", "--target", target, "--release", "--features", "audio")
         doLast {
-            copy {
-                from(rustTargetDir.get().file("$target/release/libhorizon_core.so"))
-                into(rustJniLibs.get().dir(abi))
-            }
+            copy { from(rustTargetDir.get().file("$target/release/libhorizon_core.so")); into(rustJniLibs.get().dir(abi)) }
+        }
+    }
+}
+
+val rustAuthBuildTasks = rustAndroidTargets.map { (abi, target, compilerPrefix) ->
+    val targetEnv = target.uppercase().replace('-', '_')
+    tasks.register<Exec>("buildHorizonMicrosoftAuth${abi.replace('-', '_')}") {
+        group = "build"
+        description = "Build Horizon's Microsoft device-code JNI bridge for $abi"
+        inputs.files(fileTree("../android-auth/src"), "../android-auth/Cargo.toml", "../horizon/launcher/src")
+        outputs.file(rustJniLibs.map { it.file("$abi/libhorizon_msa.so") })
+        workingDir = rootProject.projectDir
+        environment("CARGO_TARGET_DIR", rustTargetDir.get().asFile.absolutePath)
+        environment("RUSTFLAGS", "-C link-arg=-Wl,-z,max-page-size=16384")
+        environment("CARGO_TARGET_${targetEnv}_LINKER", ndkBin.resolve("${compilerPrefix}26-clang").absolutePath)
+        environment("CC_${target}", ndkBin.resolve("${compilerPrefix}26-clang").absolutePath)
+        environment("AR_${target}", ndkBin.resolve("llvm-ar").absolutePath)
+        System.getenv("HORIZON_MSA_CLIENT_ID")?.takeIf { it.isNotBlank() }?.let { environment("HORIZON_MSA_CLIENT_ID", it) }
+        commandLine("cargo", "build", "--manifest-path", "android-auth/Cargo.toml", "--target", target, "--release")
+        doLast {
+            copy { from(rustTargetDir.get().file("$target/release/libhorizon_msa.so")); into(rustJniLibs.get().dir(abi)) }
         }
     }
 }
@@ -124,17 +127,14 @@ val androidGameBuildTasks = rustAndroidTargets.map { (abi, target, compilerPrefi
         environment("AR_${target}", ndkBin.resolve("llvm-ar").absolutePath)
         commandLine("cargo", "build", "--manifest-path", "horizon/Cargo.toml", "--package", "horizon-android-game", "--target", target, "--profile", "fast")
         doLast {
-            copy {
-                from(rustTargetDir.get().file("$target/fast/libhorizon_android_game.so"))
-                into(rustJniLibs.get().dir(abi))
-            }
+            copy { from(rustTargetDir.get().file("$target/fast/libhorizon_android_game.so")); into(rustJniLibs.get().dir(abi)) }
         }
     }
 }
 
 tasks.configureEach {
     if (name.startsWith("merge") && name.endsWith("JniLibFolders")) {
-        dependsOn(rustBuildTasks + androidGameBuildTasks)
+        dependsOn(rustBuildTasks + rustAuthBuildTasks + androidGameBuildTasks)
     }
 }
 
