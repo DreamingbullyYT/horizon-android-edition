@@ -92,6 +92,30 @@ jobs:
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # engine-data.zip (the generated engine tables the APK bundles) is made from Mojang's own
+      # pinned files, downloaded and hash-checked by tools/android_prepare.py, exactly like
+      # Vasysik/horizon-android does on a PC. Skipped when the file is committed in the repo.
+      - name: Restore engine data cache
+        id: enginecache
+        if: ${{ hashFiles('horizon/.local/android/engine-data.zip') == '' }}
+        uses: actions/cache@v4
+        with:
+          path: horizon/.local/android/engine-data.zip
+          key: engine-data-${{ hashFiles('horizon/research-lock.json', 'horizon/crates/horizon-prepare/**', 'horizon/tools/android_prepare.py', 'horizon/tools/android_engine_data.py') }}
+
+      - name: Generate engine data
+        if: ${{ hashFiles('horizon/.local/android/engine-data.zip') == '' }}
+        working-directory: horizon
+        run: |
+          python tools/android_prepare.py
+          python tools/android_engine_data.py
+          rm -rf .local/android/minecraft .local/android/jdk .local/horizon-client
+
       - name: Prepare signing (optional)
         id: signing
         env:
