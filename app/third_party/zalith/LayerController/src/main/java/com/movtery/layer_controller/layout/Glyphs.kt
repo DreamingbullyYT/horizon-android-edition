@@ -42,16 +42,16 @@ private fun DrawScope.drawGlyph(name: String, color: Color, shift: Offset) {
     fun p(x: Float, y: Float) = Offset(x * s + shift.x, y * s + shift.y)
     fun line(a: Offset, b: Offset, width: Float = w) =
         drawLine(color, a, b, strokeWidth = width, cap = StrokeCap.Round)
-    fun poly(vararg pts: Offset) {
+    fun poly(pts: List<Offset>) {
         val path = Path().apply { moveTo(pts[0].x, pts[0].y); for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y) }
         drawPath(path, color, style = stroke)
     }
     when (name) {
-        "jump" -> { line(p(.5f, .86f), p(.5f, .16f)); poly(p(.18f, .46f), p(.5f, .14f), p(.82f, .46f)) }
-        "sneak" -> { line(p(.5f, .14f), p(.5f, .84f)); poly(p(.18f, .54f), p(.5f, .86f), p(.82f, .54f)) }
+        "jump" -> { line(p(.5f, .86f), p(.5f, .16f)); poly(listOf(p(.18f, .46f), p(.5f, .14f), p(.82f, .46f))) }
+        "sneak" -> { line(p(.5f, .14f), p(.5f, .84f)); poly(listOf(p(.18f, .54f), p(.5f, .86f), p(.82f, .54f))) }
         "sprint" -> {
-            poly(p(.14f, .22f), p(.46f, .5f), p(.14f, .78f))
-            poly(p(.50f, .22f), p(.82f, .5f), p(.50f, .78f))
+            poly(listOf(p(.14f, .22f), p(.46f, .5f), p(.14f, .78f)))
+            poly(listOf(p(.50f, .22f), p(.82f, .5f), p(.50f, .78f)))
         }
         "sword" -> {
             line(p(.38f, .62f), p(.84f, .16f), w * 1.5f)
@@ -68,19 +68,19 @@ private fun DrawScope.drawGlyph(name: String, color: Color, shift: Offset) {
         "chat" -> {
             drawRoundRect(color, topLeft = p(.14f, .2f), size = Size(s * .72f, s * .46f),
                 cornerRadius = CornerRadius(s * .1f), style = stroke)
-            poly(p(.32f, .66f), p(.28f, .84f), p(.5f, .66f))
+            poly(listOf(p(.32f, .66f), p(.28f, .84f), p(.5f, .66f)))
             for (x in listOf(.35f, .5f, .65f)) drawCircle(color, radius = s * 0.03f, center = p(x, .43f))
         }
         "bag" -> {
             drawRoundRect(color, topLeft = p(.24f, .3f), size = Size(s * .52f, s * .54f),
                 cornerRadius = CornerRadius(s * .12f), style = stroke)
-            poly(p(.38f, .3f), p(.38f, .18f), p(.62f, .18f), p(.62f, .3f))
+            poly(listOf(p(.38f, .3f), p(.38f, .18f), p(.62f, .18f), p(.62f, .3f)))
             line(p(.34f, .6f), p(.66f, .6f))
         }
         "camera" -> {
             drawRoundRect(color, topLeft = p(.14f, .3f), size = Size(s * .72f, s * .5f),
                 cornerRadius = CornerRadius(s * .08f), style = stroke)
-            poly(p(.36f, .3f), p(.42f, .2f), p(.58f, .2f), p(.64f, .3f))
+            poly(listOf(p(.36f, .3f), p(.42f, .2f), p(.58f, .2f), p(.64f, .3f)))
             drawCircle(color, radius = s * 0.12f, center = p(.5f, .55f), style = stroke)
         }
     }
