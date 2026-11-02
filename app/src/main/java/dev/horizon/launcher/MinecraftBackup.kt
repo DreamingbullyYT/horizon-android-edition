@@ -23,7 +23,7 @@ import java.util.zip.ZipOutputStream
 object MinecraftBackup {
     const val FILE_NAME = "Horizon-Minecraft.zip"
 
-    private fun versionsDir(context: Context) = File(File(context.filesDir, "launcher"), ".local/horizon-client")
+    private fun versionsDir(context: Context) = File(File(context.filesDir, "launcher"), "game/.local/horizon-client")
 
     /** Fully installed versions only (the resource marker is written last by the installer). */
     fun installedVersions(context: Context): List<File> =

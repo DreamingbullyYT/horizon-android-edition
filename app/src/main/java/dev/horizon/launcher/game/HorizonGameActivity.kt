@@ -67,6 +67,12 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         }
         dev.horizon.launcher.data.Updater.armGuard(filesDir)
         super.onCreate(savedInstanceState)
+        runCatching {
+            if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 7414)
+            startForegroundService(Intent(this, GameKeepAliveService::class.java))
+        }
         savedStateController.performAttach()
         savedStateController.performRestore(savedInstanceState)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
@@ -109,7 +115,7 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT
             ).apply {
                 token = window.decorView.windowToken
@@ -124,7 +130,13 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     override fun onResume() { super.onResume(); lifecycleRegistry.currentState = Lifecycle.State.RESUMED }
     override fun onPause() { lifecycleRegistry.currentState = Lifecycle.State.STARTED; super.onPause() }
     override fun onStop() { lifecycleRegistry.currentState = Lifecycle.State.CREATED; super.onStop() }
-    override fun onDestroy() { lifecycleRegistry.currentState = Lifecycle.State.DESTROYED; super.onDestroy() }
+    override fun onDestroy() {
+        lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
+        super.onDestroy()
+        // The game lives in its own process (:game); the native engine cannot start twice in one process.
+        stopService(Intent(this, GameKeepAliveService::class.java))
+        android.os.Process.killProcess(android.os.Process.myPid())
+    }
     override fun onSaveInstanceState(outState: Bundle) {
         savedStateController.performSave(outState)
         super.onSaveInstanceState(outState)
@@ -301,8 +313,8 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     private fun loadLayout(): ObservableControlLayout {
         val file = currentLayoutFile
         val prefs = getSharedPreferences("zalith-touch-settings", MODE_PRIVATE)
-        if (!prefs.getBoolean("default_layout_v3", false)) {
-            prefs.edit().putBoolean("default_layout_v3", true).apply()
+        if (!prefs.getBoolean("default_layout_v4", false)) {
+            prefs.edit().putBoolean("default_layout_v4", true).apply()
             // Keep whatever the player had as a saved layout ("Previous layout") before switching defaults.
             if (file.isFile) runCatching { LayoutProfiles(this).save("Previous layout", loadLayoutFromFile(file)) }
             val fresh = defaultLayout()
@@ -323,8 +335,8 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     internal fun defaultLayout(): ControlLayout {
         val glass = createNewButtonStyle("Glass").copy(commonStyle = true).let { base ->
             val cfg = DefaultButtonStyleConfig.copy(
-                backgroundColor = Color(0x59FFFFFF), pressedBackgroundColor = Color(0xA6FFFFFF),
-                contentColor = Color(0xFF1F2933), pressedContentColor = Color(0xFF000000),
+                backgroundColor = Color(0x40FFFFFF), pressedBackgroundColor = Color(0x80FFFFFF),
+                contentColor = Color.White, pressedContentColor = Color.White,
                 borderWidth = 2, pressedBorderWidth = 2,
                 borderColor = Color(0xBFFFFFFF), pressedBorderColor = Color.White,
                 borderRadius = ButtonShape(10f), pressedBorderRadius = ButtonShape(10f), alpha = 1f, pressedAlpha = 1f)
@@ -375,25 +387,25 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
                 uuid = UUID.randomUUID().toString(), position = pos(0.12f, 0.70f, 2800),
                 sizePercentage = 2800, visibilityType = VisibilityType.IN_GAME, joystickStyleId = squareStick.uuid
             ))
-            addNormalButton(button("⚔", key("GLFW_MOUSE_BUTTON_LEFT"), 0.83f, 0.64f, 1400, VisibilityType.IN_GAME))
-            addNormalButton(button("◎", key("GLFW_MOUSE_BUTTON_RIGHT"), 0.94f, 0.52f, 1300, VisibilityType.IN_GAME))
-            addNormalButton(button("▲", key("GLFW_KEY_SPACE"), 0.955f, 0.78f, 1400, VisibilityType.IN_GAME))
-            addNormalButton(button("»", key("GLFW_KEY_LEFT_CONTROL"), 0.74f, 0.77f, 1100, VisibilityType.IN_GAME, toggle = true))
-            addNormalButton(button("▼", key("GLFW_KEY_LEFT_SHIFT"), 0.85f, 0.87f, 1100, VisibilityType.IN_GAME))
-            addNormalButton(button("…", listOf(ClickEvent(ClickEvent.Type.SwitchLayer, more.uuid)), 0.75f, 0.92f, 800, VisibilityType.IN_GAME))
+            addNormalButton(button("@sword", key("GLFW_MOUSE_BUTTON_LEFT"), 0.83f, 0.64f, 1400, VisibilityType.IN_GAME))
+            addNormalButton(button("@use", key("GLFW_MOUSE_BUTTON_RIGHT"), 0.94f, 0.52f, 1300, VisibilityType.IN_GAME))
+            addNormalButton(button("@jump", key("GLFW_KEY_SPACE"), 0.955f, 0.78f, 1400, VisibilityType.IN_GAME))
+            addNormalButton(button("@sprint", key("GLFW_KEY_LEFT_CONTROL"), 0.74f, 0.77f, 1100, VisibilityType.IN_GAME, toggle = true))
+            addNormalButton(button("@sneak", key("GLFW_KEY_LEFT_SHIFT"), 0.85f, 0.87f, 1100, VisibilityType.IN_GAME))
+            addNormalButton(button("@dots", listOf(ClickEvent(ClickEvent.Type.SwitchLayer, more.uuid)), 0.75f, 0.92f, 800, VisibilityType.IN_GAME))
             // Icon row, top centre
-            addNormalButton(button("🎒", key("GLFW_KEY_E"), 0.430f, 0.08f, 850, VisibilityType.IN_GAME))
-            addNormalButton(button("💬", key("GLFW_KEY_T"), 0.475f, 0.08f, 850, VisibilityType.IN_GAME))
-            addNormalButton(button("⏸", key("GLFW_KEY_ESCAPE"), 0.520f, 0.08f, 850, VisibilityType.IN_GAME))
-            addNormalButton(button("📷", key("GLFW_KEY_F5"), 0.565f, 0.08f, 850, VisibilityType.IN_GAME))
-            addNormalButton(button("☰", key("GLFW_KEY_TAB"), 0.610f, 0.08f, 850, VisibilityType.IN_GAME))
+            addNormalButton(button("@bag", key("GLFW_KEY_E"), 0.430f, 0.08f, 850, VisibilityType.IN_GAME))
+            addNormalButton(button("@chat", key("GLFW_KEY_T"), 0.475f, 0.08f, 850, VisibilityType.IN_GAME))
+            addNormalButton(button("@pause", key("GLFW_KEY_ESCAPE"), 0.520f, 0.08f, 850, VisibilityType.IN_GAME))
+            addNormalButton(button("@camera", key("GLFW_KEY_F5"), 0.565f, 0.08f, 850, VisibilityType.IN_GAME))
+            addNormalButton(button("@list", key("GLFW_KEY_TAB"), 0.610f, 0.08f, 850, VisibilityType.IN_GAME))
         }
 
         // Shown whenever a GUI has the cursor (inventory, pause screen, chat, crafting, ...).
         val menu = ObservableControlLayer(createNewLayer("Menu").copy(visibilityType = VisibilityType.IN_MENU))
         menu.apply {
             addNormalButton(button("Back", key("GLFW_KEY_ESCAPE"), 0.07f, 0.12f, 1100, VisibilityType.IN_MENU))
-            addNormalButton(button("🎒", key("GLFW_KEY_E"), 0.07f, 0.30f, 1100, VisibilityType.IN_MENU))
+            addNormalButton(button("@bag", key("GLFW_KEY_E"), 0.07f, 0.30f, 1100, VisibilityType.IN_MENU))
             addNormalButton(button("Shift", key("GLFW_KEY_LEFT_SHIFT"), 0.07f, 0.48f, 1100, VisibilityType.IN_MENU, toggle = true))
             addNormalButton(button("Drop", key("GLFW_KEY_Q"), 0.07f, 0.66f, 1100, VisibilityType.IN_MENU))
             addNormalButton(button("Enter", key("GLFW_KEY_ENTER"), 0.93f, 0.30f, 1100, VisibilityType.IN_MENU))

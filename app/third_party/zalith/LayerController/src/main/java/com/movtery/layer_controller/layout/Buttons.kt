@@ -21,6 +21,8 @@ package com.movtery.layer_controller.layout
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -153,8 +155,15 @@ internal fun TextButton(
                 )
                 else -> error("Unknown widget type")
             }
-            RtLText(
-                text = buttonTextStyle.text.translate(locale),
+            val label = buttonTextStyle.text.translate(locale)
+            if (Glyphs.isGlyph(label)) {
+                GlyphIcon(
+                    text = label,
+                    color = color,
+                    modifier = Modifier.fillMaxHeight(0.58f).aspectRatio(1f)
+                )
+            } else RtLText(
+                text = label,
                 color = color,
                 fontSize = fontSize.sp,
                 textAlign = buttonTextStyle.textAlignment.textAlign,
@@ -202,7 +211,8 @@ fun RendererStyleBox(
     ) {
         val color by buttonContentColorAsState(style = style, isDark = isDark, isPressed = isPressed)
         val fontSize by buttonFontSizeAsState(style = style, isDark = isDark, isPressed = isPressed)
-        RtLText(
+        if (Glyphs.isGlyph(text)) GlyphIcon(text, color, Modifier.fillMaxHeight(0.58f).aspectRatio(1f))
+        else RtLText(
             text = text,
             color = color,
             fontSize = fontSize.sp
