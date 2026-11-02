@@ -427,7 +427,7 @@ fun HorizonApp(initialScreen: String, homeDir: String, loadError: String?) {
                                     }
                                 },
                                 onMessage = say,
-                                onGameFilesChanged = { gameReady = runCatching { Core.gameReady() }.getOrDefault(false) },
+                                onGameFilesChanged = { scope.launch { gameReady = runCatching { Core.gameReady() }.getOrDefault(false) } },
                             )
                         }
                     }
