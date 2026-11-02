@@ -98,7 +98,8 @@ object Updater {
     }
 
     /** Blocking: call from Dispatchers.IO. Takes effect at the next app start. */
-    fun checkAndInstall(context: Context): Result = try {
+    fun checkAndInstall(context: Context): Result {
+        return try {
         val files = context.filesDir
         val manifest = JSONObject(httpText("$BASE/manifest.json"))
         if (manifest.optInt("abi_level", -1) != ABI_LEVEL) {
@@ -128,8 +129,9 @@ object Updater {
         // keep only the newest installed update
         root(files).listFiles()?.filter { it.isDirectory && it.name != build.toString() }?.forEach { it.deleteRecursively() }
         Result.Installed(build, manifest.optString("upstream"))
-    } catch (t: Throwable) {
-        Result.Failed(t.message ?: t.javaClass.simpleName)
+        } catch (t: Throwable) {
+            Result.Failed(t.message ?: t.javaClass.simpleName)
+        }
     }
 
     private fun open(url: String): HttpURLConnection =
