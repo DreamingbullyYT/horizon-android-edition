@@ -1806,10 +1806,10 @@ index 0261d53a0..6a3d1df91 100644
      /// `SoundManager.tick(paused)`, once per client tick.
      pub fn tick(&mut self, paused: bool, ctx: &TickContext) {
 diff --git a/crates/horizon-client-render/src/gfx.rs b/crates/horizon-client-render/src/gfx.rs
-index cc43f8d30..bb9935fed 100644
+index d1e1ec8ae..5699f3307 100644
 --- a/crates/horizon-client-render/src/gfx.rs
 +++ b/crates/horizon-client-render/src/gfx.rs
-@@ -4162,6 +4162,15 @@ impl Renderer {
+@@ -3978,6 +3978,15 @@ impl Renderer {
              .unwrap_or_else(std::sync::PoisonError::into_inner) =
              self.surface.take().and_then(|s| Arc::try_unwrap(s).ok());
      }
@@ -1826,7 +1826,7 @@ index cc43f8d30..bb9935fed 100644
      pub fn recreate_surface(&mut self) -> Result<()> {
          self.queue.wait();
 diff --git a/crates/horizon-client/Cargo.toml b/crates/horizon-client/Cargo.toml
-index 033222eb2..7adeb98d4 100644
+index 2d970daf9..388d6981a 100644
 --- a/crates/horizon-client/Cargo.toml
 +++ b/crates/horizon-client/Cargo.toml
 @@ -43,7 +43,7 @@ horizon-narrator = { path = "../horizon-narrator" }
@@ -1847,10 +1847,10 @@ index 033222eb2..7adeb98d4 100644
  # Use the registered URI handler without routing links through Explorer/cmd.
  open = { version = "5.4.5", features = ["shellexecute-on-windows"] }
 diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.rs
-index 53d71da1e..fc1ef2bea 100644
+index 25e3d344a..1df023917 100644
 --- a/crates/horizon-client/src/game.rs
 +++ b/crates/horizon-client/src/game.rs
-@@ -412,17 +412,121 @@ use std::{
+@@ -404,17 +404,121 @@ use std::{
      collections::{HashMap, HashSet},
      path::PathBuf,
      sync::{
@@ -1975,7 +1975,7 @@ index 53d71da1e..fc1ef2bea 100644
      event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
      keyboard::{KeyCode, PhysicalKey},
      window::{CursorGrabMode, Window, WindowId},
-@@ -2363,6 +2467,7 @@ struct Game<'a> {
+@@ -2412,6 +2516,7 @@ struct Game<'a> {
      physical_keys: HashSet<KeyCode>,
      physical_buttons: HashSet<MouseButton>,
      drag_button: Option<MouseButton>,
@@ -1983,7 +1983,7 @@ index 53d71da1e..fc1ef2bea 100644
      /// Control + left click as a right click (macOS).
      right_click_emulation: horizon_client_input::mouse::RightClickEmulation,
      left: bool,
-@@ -3105,6 +3210,236 @@ struct Game<'a> {
+@@ -3148,6 +3253,236 @@ struct Game<'a> {
      /// The local player as a model (third person, the inventory).
      player_model: Option<Mob>,
  }
@@ -2220,7 +2220,7 @@ index 53d71da1e..fc1ef2bea 100644
  #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
  enum Dim {
      Overworld,
-@@ -3574,7 +3909,7 @@ impl Game<'_> {
+@@ -3617,7 +3952,7 @@ impl Game<'_> {
          player.mobility_restricted = blind;
          player.yaw = self.yaw;
          player.pitch = self.pitch;
@@ -2229,7 +2229,7 @@ index 53d71da1e..fc1ef2bea 100644
          player.item_use_speed = item_use_speed;
          player.item_use_slows_sprint = item_use_slows_sprint;
          player.respiration = respiration;
-@@ -8017,7 +8352,15 @@ impl Game<'_> {
+@@ -8047,7 +8382,15 @@ impl Game<'_> {
      fn apply_mouse_look(&mut self) {
          let look = self.look_options();
          let time = self.started.elapsed().as_secs_f64();
@@ -2246,7 +2246,7 @@ index 53d71da1e..fc1ef2bea 100644
          let grabbed = pointer && self.screen == Screen::Playing && self.player.is_some();
          let active = self.focused || self.agent_pointer;
          if let Some((xo, yo)) = self
-@@ -8858,6 +9201,404 @@ impl Game<'_> {
+@@ -8888,6 +9231,404 @@ impl Game<'_> {
          let view = self.screen_view(batch, screen);
          self.native_screen_render_post(batch, &view);
      }
@@ -2651,8 +2651,8 @@ index 53d71da1e..fc1ef2bea 100644
      /// `CreativeModeInventoryScreen.hasPermissions` (`canUseGameMasterBlocks`
      /// and the Operator Items Tab option) given to `tryRefreshInvalidatedTabs`,
      /// as the screen's constructor and `containerTick` do.
-@@ -17026,8 +17767,28 @@ fn autosave_interval(rate: f32) -> i64 {
-     i64::from((rate * 300.0) as i32).max(100)
+@@ -16829,8 +17570,28 @@ impl Game<'_> {
+     }
  }
  impl ApplicationHandler for Game<'_> {
 +    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
@@ -2680,7 +2680,7 @@ index 53d71da1e..fc1ef2bea 100644
              return;
          }
          // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
-@@ -17114,6 +17875,8 @@ impl ApplicationHandler for Game<'_> {
+@@ -16917,6 +17678,8 @@ impl ApplicationHandler for Game<'_> {
          }
      }
      fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -2689,7 +2689,7 @@ index 53d71da1e..fc1ef2bea 100644
          self.idle(event_loop);
      }
      /// The application is ending. On macOS, Quit (Cmd+Q) ends it through
-@@ -17145,6 +17908,121 @@ impl Game<'_> {
+@@ -16948,6 +17711,121 @@ impl Game<'_> {
          if !ours {
              return;
          }
@@ -2811,7 +2811,7 @@ index 53d71da1e..fc1ef2bea 100644
          follow_keymap(&mut event);
          // MacosUtil.setCtrlClickEmulatesRightClick: Control + left click is a right click.
          if let WindowEvent::MouseInput { state, button, .. } = &mut event
-@@ -18549,6 +19427,8 @@ impl Game<'_> {
+@@ -18334,6 +19212,8 @@ impl Game<'_> {
                          horizon_client::crash::debug_crash_tick();
                          if self.fps_at.elapsed() >= Duration::from_secs(1) {
                              self.fps = self.fps_frames as f32 / self.fps_at.elapsed().as_secs_f32();
@@ -2820,7 +2820,7 @@ index 53d71da1e..fc1ef2bea 100644
                              self.fps_frames = 0;
                              self.fps_at = Instant::now();
                          }
-@@ -18585,6 +19465,71 @@ impl Game<'_> {
+@@ -18369,6 +19249,71 @@ impl Game<'_> {
          }
          self.finish_perf();
      }
@@ -2892,7 +2892,7 @@ index 53d71da1e..fc1ef2bea 100644
      /// winit's `about_to_wait`: what happens between frames (stop requests, the closing
      /// save, world entry, the control socket, pads), then the next frame.
      pub(super) fn idle(&mut self, event_loop: &dyn EventLoopCtl) {
-@@ -18822,6 +19767,7 @@ impl<'a> Game<'a> {
+@@ -18603,6 +19548,7 @@ impl<'a> Game<'a> {
              physical_keys: HashSet::new(),
              physical_buttons: HashSet::new(),
              drag_button: None,
@@ -2900,7 +2900,7 @@ index 53d71da1e..fc1ef2bea 100644
              right_click_emulation: Default::default(),
              left: false,
              right: false,
-@@ -20847,7 +21793,7 @@ fn run_event_loop(mut game: Game<'_>) -> Result<()> {
+@@ -20587,7 +21533,7 @@ fn run_event_loop(mut game: Game<'_>) -> Result<()> {
          return game.error.take().map_or(Ok(()), Err);
      }
      let mut split = split::Split::new(game);
@@ -2909,7 +2909,7 @@ index 53d71da1e..fc1ef2bea 100644
      game = split.host;
      narrator::stop();
      leave_fullscreen_after(&result, &mut game.settings);
-@@ -20902,8 +21848,27 @@ impl Loading {
+@@ -20642,8 +21588,27 @@ impl Loading {
              || self.menu.pending.is_some()
              || self.ui_at.is_none_or(|at| at.elapsed() >= TITLE_FRAME_WAIT)
      }
@@ -2937,7 +2937,7 @@ index 53d71da1e..fc1ef2bea 100644
              return;
          }
          // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
-@@ -21189,6 +22154,12 @@ enum App {
+@@ -20929,6 +21894,12 @@ enum App {
      Ready(Box<split::Split<'static>>),
  }
  impl ApplicationHandler for App {
@@ -2950,7 +2950,7 @@ index 53d71da1e..fc1ef2bea 100644
      fn resumed(&mut self, event_loop: &ActiveEventLoop) {
          match self {
              App::Loading(loading) => loading.resumed(event_loop),
-@@ -21314,7 +22285,7 @@ fn run_loading(
+@@ -21054,7 +22025,7 @@ fn run_loading(
          error: None,
      };
      let mut app = App::Loading(Box::new(loading));
@@ -2986,10 +2986,10 @@ index 12e1cf5b0..c3ef8e593 100644
  }
  
 diff --git a/crates/horizon-client/src/game/split.rs b/crates/horizon-client/src/game/split.rs
-index b99c122fb..b7787d62e 100644
+index ee5e0fc0e..5536e54e2 100644
 --- a/crates/horizon-client/src/game/split.rs
 +++ b/crates/horizon-client/src/game/split.rs
-@@ -577,6 +577,10 @@ impl<'a> Split<'a> {
+@@ -558,6 +558,10 @@ impl<'a> Split<'a> {
  }
  
  impl ApplicationHandler for Split<'_> {
@@ -3001,7 +3001,7 @@ index b99c122fb..b7787d62e 100644
          self.host.resumed(event_loop);
          if !self.surfaces.is_empty() {
 diff --git a/launcher/Cargo.toml b/launcher/Cargo.toml
-index e7b5ab403..68548e274 100644
+index 858c84cd0..1149739bb 100644
 --- a/launcher/Cargo.toml
 +++ b/launcher/Cargo.toml
 @@ -8,10 +8,6 @@ description = "Downloads, prepares and starts Horizon builds"
@@ -3063,7 +3063,7 @@ index 8767bfdb7..5cab8a4c8 100644
      std::thread::scope(|s| s.spawn(f).join()).unwrap_or_else(|panic| {
          let why = panic
 diff --git a/launcher/src/lib.rs b/launcher/src/lib.rs
-index 6018e8a6f..1dbbc9206 100644
+index 975cbd0de..ff2b4d7f6 100644
 --- a/launcher/src/lib.rs
 +++ b/launcher/src/lib.rs
 @@ -8,7 +8,7 @@ pub mod datapacks;
