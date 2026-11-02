@@ -50,7 +50,7 @@ index 000000000..027d51134
 +workspace = true
 diff --git a/crates/horizon-android-game/src/lib.rs b/crates/horizon-android-game/src/lib.rs
 new file mode 100644
-index 000000000..5fbd65b38
+index 000000000..5a4da2659
 --- /dev/null
 +++ b/crates/horizon-android-game/src/lib.rs
 @@ -0,0 +1,220 @@
@@ -270,7 +270,7 @@ index 000000000..5fbd65b38
 +        unsafe { std::env::set_var("HORIZON_ANDROID_TOUCH_CONTROLS", controls) };
 +    }
 +    horizon_client::game::set_android_app(app);
-+    if let Err(error) = horizon_client::game::run() {
++    if let Err(error) = horizon_client::game::run_with() {
 +        log::error!("Horizon Android game stopped: {error}");
 +    }
 +}
