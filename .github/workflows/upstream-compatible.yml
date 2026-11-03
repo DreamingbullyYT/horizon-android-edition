@@ -1,4 +1,4 @@
-name: Find latest Android-compatible upstream
+name: Find latest Android-compatible Nightly
 
 on:
   schedule:
@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       max_commits:
-        description: "Maximum newer upstream commits to test backwards from main"
+        description: "Maximum newest Nightlies to test, newest first"
         required: false
-        default: "48"
+        default: "12"
 
 permissions:
   contents: write
@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
-      MAX_COMMITS: ${{ inputs.max_commits || '48' }}
+      MAX_COMMITS: ${{ inputs.max_commits || '12' }}
       NDK_VERSION: "26.3.11579264"
       GRADLE_VERSION: "8.7"
       RUST_TARGET: aarch64-linux-android
@@ -83,9 +83,10 @@ jobs:
         run: |
           git clone -q --filter=blob:none https://github.com/horizon-rust/horizon.git .horizon-candidates
           git -C .horizon-candidates fetch -q --unshallow || true
-          git -C .horizon-candidates fetch -q origin main
-          echo "UPSTREAM_HEAD=$(git -C .horizon-candidates rev-parse origin/main)" >> "$GITHUB_ENV"
-          echo "Current upstream: $(git -C .horizon-candidates rev-parse origin/main)"
+          git -C .horizon-candidates fetch -q --tags -f origin
+          newest_tag="$(git -C .horizon-candidates tag --list 'nightly-source/*' --sort=-creatordate | head -n 1)"
+          echo "UPSTREAM_HEAD=$(git -C .horizon-candidates rev-list -n1 "$newest_tag")" >> "$GITHUB_ENV"
+          echo "Newest Nightly: $newest_tag"
 
       - name: Test newest compatible commits
         id: find
@@ -99,12 +100,15 @@ jobs:
           echo "Known-good Android pin: $known_good"
           echo "Upstream main:          $head"
 
-          if git -C .horizon-candidates merge-base --is-ancestor "$known_good" "$head"; then
-            mapfile -t candidates < <(git -C .horizon-candidates rev-list --first-parent "$head" "^$known_good" | head -n "$max")
-          else
-            echo "Known-good pin is not an ancestor of upstream main; using a bounded fallback window." >&2
-            mapfile -t candidates < <(git -C .horizon-candidates rev-list --first-parent --max-count="$max" "$head")
-          fi
+          # The official Horizon channel is the Nightly (main + the reviewers' picked PRs), published as
+          # `nightly-source/<date>-<commit>` tags. Test the newest ones first, stop at the known-good pin.
+          candidates=()
+          while read -r tag; do
+            [ -n "$tag" ] || continue
+            sha="$(git -C .horizon-candidates rev-list -n1 "$tag")"
+            [ "$sha" = "$known_good" ] && break
+            candidates+=("$sha")
+          done < <(git -C .horizon-candidates tag --list 'nightly-source/*' --sort=-creatordate | head -n "$max")
 
           if [ "${#candidates[@]}" -eq 0 ]; then
             echo "No newer upstream commits need testing."
@@ -181,7 +185,7 @@ jobs:
           {
             echo "## Android upstream compatibility"
             echo ""
-            echo "- Upstream main: \`$UPSTREAM_HEAD\`"
+            echo "- Newest Nightly source: \`$UPSTREAM_HEAD\`"
             echo "- Previous known-good pin: \`$(git show HEAD:android/UPSTREAM_PIN | tr -d '[:space:]')\`"
             if [ -n "${{ steps.find.outputs.good || '' }}" ]; then
               echo "- Selected compatible commit: \`${{ steps.find.outputs.good }}\`"
