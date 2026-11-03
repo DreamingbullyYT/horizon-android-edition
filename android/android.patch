@@ -285,7 +285,7 @@ index 000000000..619178c2f
 +        unsafe { std::env::set_var("HORIZON_ANDROID_TOUCH_CONTROLS", controls) };
 +    }
 +    horizon_client::game::set_android_app(app);
-+    if let Err(error) = horizon_client::game::run_with() {
++    if let Err(error) = horizon_client::game::run() {
 +        log::error!("Horizon Android game stopped: {error}");
 +    }
 +}
