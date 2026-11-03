@@ -32,6 +32,7 @@ import dev.horizon.launcher.data.SettingsInfo
 import dev.horizon.launcher.data.SignInInfo
 import dev.horizon.launcher.data.TelemetryInfo
 import dev.horizon.launcher.data.TouchControlsInfo
+import dev.horizon.launcher.data.AppUpdater
 import dev.horizon.launcher.data.Updater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -63,6 +64,8 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     var updateBusy by remember { mutableStateOf(false) }
     var updateStatus by remember { mutableStateOf<String?>(null) }
+    var apkOffer by remember { mutableStateOf<AppUpdater.Offer?>(null) }
+    var apkProgress by remember { mutableStateOf<Float?>(null) }
     var installedNativeBuild by remember { mutableStateOf(Updater.installedBuild(context.filesDir)) }
     var autoInstall by remember(settings?.installNewVersions) { mutableStateOf(settings?.installNewVersions ?: true) }
     var prune by remember(settings?.pruneOldVersions) { mutableStateOf(settings?.pruneOldVersions ?: true) }
@@ -166,10 +169,37 @@ fun SettingsScreen(
                                 } finally {
                                     updateBusy = false
                                 }
+                                runCatching { withContext(Dispatchers.IO) { AppUpdater.check(context) } }
+                                    .onSuccess { apkOffer = it }
                             }
                         }
                     },
                 )
+                apkOffer?.let { offer ->
+                    Spacer(Modifier.height(10.dp))
+                    PrimaryButton(
+                        text = apkProgress?.let { "Downloading… ${(it * 100).toInt()}%" } ?: "Install app update (build #${offer.build})",
+                        modifier = Modifier.fillMaxWidth(),
+                        icon = Icons.Outlined.Update,
+                        onClick = {
+                            if (apkProgress == null) {
+                                if (!AppUpdater.canInstall(context)) {
+                                    onMessage("Allow Horizon to install updates, then tap the button again.")
+                                    context.startActivity(AppUpdater.settingsIntent(context))
+                                } else scope.launch {
+                                    apkProgress = 0f
+                                    runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            val file = AppUpdater.download(context, offer) { apkProgress = it }
+                                            AppUpdater.install(context, file)
+                                        }
+                                    }.onFailure { onMessage(it.message ?: "Could not install the update") }
+                                    apkProgress = null
+                                }
+                            }
+                        },
+                    )
+                }
                 if (updateStatus != null) {
                     Spacer(Modifier.height(8.dp))
                     Text(updateStatus!!, color = if (updateStatus!!.startsWith("Update failed")) c.danger else c.muted, style = MaterialTheme.typography.bodySmall)

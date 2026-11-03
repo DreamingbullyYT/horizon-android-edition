@@ -167,7 +167,7 @@ jobs:
 
       # In-app updates: the app downloads these from the rolling release "libs".
       - name: Publish native libraries for in-app updates
-        if: ${{ github.event_name == 'push' && github.ref_name == github.event.repository.default_branch }}
+        if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_name == github.event.repository.default_branch }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -175,6 +175,10 @@ jobs:
           mkdir -p updates
           cp "$libs/libhorizon_core.so" "$libs/libhorizon_android_game.so" updates/
           cp horizon/.local/android/engine-data.zip updates/engine-data.zip
+          # The whole app, for "Install app update" (the release APK when signed with your key, else the debug one).
+          apk=$(ls dist/Horizon-Android-release-*.apk 2>/dev/null | head -1 || true)
+          [ -n "$apk" ] || apk=$(ls dist/Horizon-Android-debug-*.apk | head -1)
+          cp "$apk" updates/Horizon-Android.apk
           python3 - <<'PY'
           import hashlib, json, os
           def sha(p): return hashlib.sha256(open(p, 'rb').read()).hexdigest()
@@ -188,10 +192,11 @@ jobs:
                   "data": {"file": "engine-data.zip", "sha256": sha("updates/engine-data.zip")},
               },
           }
+          manifest["apk"] = {"file": "Horizon-Android.apk", "sha256": sha("updates/Horizon-Android.apk")}
           json.dump(manifest, open("updates/manifest.json", "w"), indent=2)
           PY
           gh release view libs >/dev/null 2>&1 || gh release create libs --title "Native libraries (in-app updates)" --notes "Rolling release the app updates from." --prerelease
-          gh release upload libs updates/libhorizon_core.so updates/libhorizon_android_game.so updates/engine-data.zip updates/manifest.json --clobber
+          gh release upload libs updates/libhorizon_core.so updates/libhorizon_android_game.so updates/engine-data.zip updates/Horizon-Android.apk updates/manifest.json --clobber
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4

@@ -104,7 +104,7 @@ object Updater {
         val files = context.filesDir
         val manifest = JSONObject(httpText("$BASE/manifest.json"))
         if (manifest.optInt("abi_level", -1) != ABI_LEVEL) {
-            return Result.Failed("Update needs a newer app (reinstall the APK).")
+            return Result.Failed("This update needs a newer app. Use “Install app update” below.")
         }
         val build = manifest.getLong("build")
         val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)

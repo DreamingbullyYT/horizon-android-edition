@@ -17,6 +17,8 @@ use jni::sys::{jboolean, jint, jstring};
 use serde::Serialize;
 use serde_json::{Value, json};
 
+mod browse;
+
 fn jstr(env: &mut JNIEnv, s: String) -> jstring {
     match env.new_string(s) {
         Ok(v) => v.into_raw(),
@@ -1332,4 +1334,81 @@ pub unsafe extern "C" fn ANativeActivity_onCreate(
     saved_state_size: usize,
 ) {
     unsafe { boot::start(activity, saved_state, saved_state_size) }
+}
+
+
+// ---- Mod browser (see browse.rs) -------------------------------------------------------------
+
+#[no_mangle]
+pub extern "system" fn Java_dev_horizon_launcher_core_Native_nativeBrowseCatalog(mut env: JNIEnv, _this: JObject) -> jstring {
+    guarded(&mut env, browse::catalog)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_horizon_launcher_core_Native_nativeBrowseSearch(
+    mut env: JNIEnv,
+    _this: JObject,
+    source: JString,
+    kind: JString,
+    text: JString,
+    offset: jint,
+    everything: jboolean,
+) -> jstring {
+    let args = (|| {
+        Ok::<_, String>((
+            string_arg(&mut env, &source, "source")?,
+            string_arg(&mut env, &kind, "kind")?,
+            string_arg(&mut env, &text, "search text")?,
+        ))
+    })();
+    match args {
+        Ok((source, kind, text)) => guarded(&mut env, move || browse::search(&source, &kind, &text, offset, everything != 0)),
+        Err(e) => reply(&mut env, Err(e)),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_horizon_launcher_core_Native_nativeBrowseDetails(
+    mut env: JNIEnv,
+    _this: JObject,
+    source: JString,
+    id: JString,
+) -> jstring {
+    let args = (|| Ok::<_, String>((string_arg(&mut env, &source, "source")?, string_arg(&mut env, &id, "id")?)))();
+    match args {
+        Ok((source, id)) => guarded(&mut env, move || browse::details(&source, &id)),
+        Err(e) => reply(&mut env, Err(e)),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_horizon_launcher_core_Native_nativeBrowseInstall(
+    mut env: JNIEnv,
+    _this: JObject,
+    source: JString,
+    id: JString,
+) -> jstring {
+    let args = (|| Ok::<_, String>((string_arg(&mut env, &source, "source")?, string_arg(&mut env, &id, "id")?)))();
+    match args {
+        Ok((source, id)) => guarded(&mut env, move || browse::install(&source, &id)),
+        Err(e) => reply(&mut env, Err(e)),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_horizon_launcher_core_Native_nativeBrowseProgress(mut env: JNIEnv, _this: JObject) -> jstring {
+    guarded(&mut env, browse::progress_json)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_horizon_launcher_core_Native_nativeBrowseInstalled(mut env: JNIEnv, _this: JObject) -> jstring {
+    guarded(&mut env, browse::installed_json)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_horizon_launcher_core_Native_nativeBrowseRemove(mut env: JNIEnv, _this: JObject, name: JString) -> jstring {
+    match string_arg(&mut env, &name, "name") {
+        Ok(name) => guarded(&mut env, move || browse::remove(&name)),
+        Err(e) => reply(&mut env, Err(e)),
+    }
 }

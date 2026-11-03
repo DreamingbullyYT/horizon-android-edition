@@ -36,9 +36,10 @@ fun ModsScreen(
     onImportShader: () -> Unit,
     onRemoveMod: (String) -> Unit,
     onRemoveShader: (String) -> Unit,
+    browser: BrowserState,
 ) {
     val c = LocalHorizon.current
-    var tab by remember { mutableStateOf("Mods") }
+    var tab by remember { mutableStateOf("Discover") }
     var showShaderFolder by remember { mutableStateOf(false) }
 
     LazyColumn(
@@ -47,21 +48,25 @@ fun ModsScreen(
     ) {
         item {
             ScreenHeader(
-                kicker = "Game files",
+                kicker = "Make it yours",
                 title = "Mods & shaders",
-                subtitle = "Import content supported by Horizon into this phone’s private game folder.",
+                subtitle = "Browse, install and manage everything that changes how Horizon looks and plays.",
             )
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Pill("Mods", selected = tab == "Mods") { tab = "Mods" }
+                Pill("Discover", selected = tab == "Discover") { tab = "Discover" }
+                Pill("Installed", selected = tab == "Mods") { tab = "Mods" }
                 Pill("Shaders", selected = tab == "Shaders") { tab = "Shaders" }
             }
         }
-        if (tab == "Mods") {
+        if (tab == "Discover") {
+            browserItems(browser)
+        } else if (tab == "Mods") {
+            browserInstalledItems(browser)
             item {
                 Plate {
-                    SectionLabel("Horizon content mods")
+                    SectionLabel("Import your own mod")
                     Spacer(Modifier.height(6.dp))
                     Text(
                         "Choose a .hmod file. Imported content mods are enabled for the next game start. Java .jar mods (Fabric, Forge and NeoForge code) do not run in Horizon.",
@@ -70,7 +75,7 @@ fun ModsScreen(
                     )
                     Spacer(Modifier.height(12.dp))
                     PrimaryButton(
-                        text = "Import .hmod",
+                        text = "Import a .hmod file",
                         modifier = Modifier.fillMaxWidth(),
                         icon = Icons.Outlined.FileDownload,
                         onClick = onImportMod,

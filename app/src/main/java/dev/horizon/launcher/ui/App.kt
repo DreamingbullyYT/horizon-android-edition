@@ -83,7 +83,7 @@ enum class Screen(val label: String, val icon: ImageVector) {
     Home("Home", Icons.Outlined.Home),
     Mods("Mods", Icons.Outlined.Extension),
     Servers("Servers", Icons.Outlined.Dns),
-    Versions("Versions", Icons.Outlined.Inventory2),
+    Versions("Updates", Icons.Outlined.Inventory2),
     Settings("Settings", Icons.Outlined.Settings),
 }
 
@@ -155,6 +155,7 @@ fun HorizonApp(initialScreen: String, homeDir: String, loadError: String?) {
         val snackbar = remember { SnackbarHostState() }
         val scope = rememberCoroutineScope()
         val say: (String) -> Unit = { message -> scope.launch { snackbar.showSnackbar(message) } }
+        val browser = remember { BrowserState(scope, say) { reload++ } }
 
         suspend fun refreshLocal() {
             runCatching { Core.accounts() }.onSuccess { accounts = it }
@@ -365,6 +366,7 @@ fun HorizonApp(initialScreen: String, homeDir: String, loadError: String?) {
                                 onAccounts = { accountSheet = true },
                             )
                             Screen.Mods -> ModsScreen(
+                                browser = browser,
                                 mods = mods,
                                 shaders = shaderPacks,
                                 shaderFolder = File(homeDir, "game/shaderpacks").absolutePath,

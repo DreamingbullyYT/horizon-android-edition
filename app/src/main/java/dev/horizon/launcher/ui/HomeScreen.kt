@@ -143,9 +143,9 @@ fun HomeScreen(
                 Spacer(Modifier.height(10.dp))
                 Text(
                     when {
-                        !gameAvailable -> "The Android game runtime is unavailable in this build."
-                        !ready -> "Minecraft resources are not ready yet. Restore a backup or import your existing files."
-                        else -> "Ready to launch · ${worlds.size} world(s) · ${mods.size} mod(s)"
+                        !gameAvailable -> "This build can’t start the game engine. Update the app or reinstall it."
+                        !ready -> "Almost there. Download Minecraft once, or bring back the copy you saved earlier."
+                        else -> "All set · ${worlds.size} world${if (worlds.size == 1) "" else "s"} · ${mods.size} mod${if (mods.size == 1) "" else "s"}"
                     },
                     color = c.muted,
                     style = MaterialTheme.typography.bodySmall,
@@ -154,8 +154,8 @@ fun HomeScreen(
                 PrimaryButton(
                     text = when {
                         currentBusy != null -> currentBusy
-                        ready -> "Play Minecraft 26.3"
-                        else -> "Prepare Minecraft 26.3"
+                        ready -> "Play"
+                        else -> "Get Minecraft ready"
                     },
                     modifier = Modifier.fillMaxWidth(),
                     icon = Icons.Filled.PlayArrow,
@@ -171,18 +171,18 @@ fun HomeScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     SectionLabel("MINECRAFT FILES")
                     Spacer(Modifier.weight(1f))
-                    Text("Import or back up", color = c.muted, style = MaterialTheme.typography.labelSmall)
+                    Text("Already have the game? Bring it over, or save a copy so you never download it twice.", color = c.muted, style = MaterialTheme.typography.labelSmall)
                 }
                 Spacer(Modifier.height(7.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     SoftButton(
-                        "Browse / Import",
+                        "Import files",
                         modifier = Modifier.weight(1.25f),
                         icon = Icons.Outlined.FolderOpen,
                         onClick = { if (currentBusy == null) openFileBrowser() },
                     )
                     SoftButton(
-                        if (backupBusy != null) "Exporting…" else "Export ZIP",
+                        if (backupBusy != null) "Exporting…" else "Save a backup",
                         modifier = Modifier.weight(1f),
                         icon = Icons.Outlined.FileUpload,
                         onClick = { if (currentBusy == null) exportBackup() },
@@ -203,7 +203,7 @@ fun HomeScreen(
                     Column(Modifier.weight(1f)) {
                         SectionLabel("HORIZON BUILDS")
                         Spacer(Modifier.height(3.dp))
-                        Text("Your Android build + upstream Horizon", color = c.muted, style = MaterialTheme.typography.bodySmall)
+                        Text("Engine and launcher updates", color = c.muted, style = MaterialTheme.typography.bodySmall)
                     }
                     SoftButton("Open") { onVersions() }
                 }
@@ -212,7 +212,7 @@ fun HomeScreen(
 
         item {
             Plate(contentPadding = PaddingValues(16.dp)) {
-                SectionLabel("THIS INSTANCE")
+                SectionLabel("AT A GLANCE")
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth()) {
                     Stat("Worlds", worlds.size.toString(), Modifier.weight(1f))
@@ -221,8 +221,8 @@ fun HomeScreen(
                 }
                 Spacer(Modifier.height(10.dp))
                 HorizontalDivider(color = c.stroke)
-                InfoRow(Icons.Outlined.Inventory2, "Manage Horizon builds", "Launcher builds, not Minecraft versions", "Open", onClick = onVersions)
-                InfoRow(Icons.Outlined.SettingsBackupRestore, "Manage mods & shaders", "${mods.size} imported mod(s)", "Open", onClick = onMods)
+                InfoRow(Icons.Outlined.Inventory2, "Engine updates", "Keep Horizon fresh", "Open", onClick = onVersions)
+                InfoRow(Icons.Outlined.SettingsBackupRestore, "Mods & shaders", "Find new ones and manage what you have", "Open", onClick = onMods)
             }
         }
 

@@ -34,6 +34,14 @@ android {
 
     val releaseKeystore = System.getenv("HORIZON_KEYSTORE_PATH")
     signingConfigs {
+        // One fixed key for every CI build, so a new APK installs over the old one (in-app update).
+        // CI runners would otherwise sign each build with a fresh random debug key.
+        getByName("debug") {
+            storeFile = file("horizon-debug.jks")
+            storePassword = "android"
+            keyAlias = "horizon"
+            keyPassword = "android"
+        }
         if (releaseKeystore != null) {
             create("release") {
                 storeFile = file(releaseKeystore)

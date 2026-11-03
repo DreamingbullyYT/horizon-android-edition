@@ -34,6 +34,15 @@ object Native {
     }
 
     external fun nativeInit(home: String): String
+
+    // Mod browser (core/src/browse.rs)
+    external fun nativeBrowseCatalog(): String
+    external fun nativeBrowseSearch(source: String, kind: String, text: String, offset: Int, everything: Boolean): String
+    external fun nativeBrowseDetails(source: String, id: String): String
+    external fun nativeBrowseInstall(source: String, id: String): String
+    external fun nativeBrowseProgress(): String
+    external fun nativeBrowseInstalled(): String
+    external fun nativeBrowseRemove(name: String): String
     external fun nativeGameReady(): Boolean
     external fun nativeInstallProgress(): String
     external fun nativeSetImportCache(cache: String): String
