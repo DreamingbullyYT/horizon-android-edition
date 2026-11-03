@@ -2718,7 +2718,7 @@ index aa6dec399..6ec5c2c75 100644
          self.idle(event_loop);
      }
      /// The application is ending. On macOS, Quit (Cmd+Q) ends it through
-@@ -15956,6 +16733,121 @@ impl Game<'_> {
+@@ -15956,6 +16733,120 @@ impl Game<'_> {
          if !ours {
              return;
          }
@@ -2733,7 +2733,6 @@ index aa6dec399..6ec5c2c75 100644
 +                    state: ElementState::Released,
 +                    button: MouseButton::Left,
 +                },
-+                origin,
 +            );
 +        }
 +        // In-world Android touches use independent virtual controls; menu
