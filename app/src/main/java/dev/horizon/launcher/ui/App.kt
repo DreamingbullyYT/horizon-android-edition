@@ -71,6 +71,7 @@ import dev.horizon.launcher.data.TelemetryInfo
 import dev.horizon.launcher.data.TouchControlsInfo
 import dev.horizon.launcher.data.WorldInfo
 import dev.horizon.launcher.data.ReleasesState
+import dev.horizon.launcher.MinecraftBackup
 import dev.horizon.launcher.importMinecraftFolder
 import dev.horizon.launcher.game.HorizonGameActivity
 import kotlinx.coroutines.launch
@@ -88,7 +89,7 @@ enum class Screen(val label: String, val icon: ImageVector) {
 
 fun screenOf(value: String?): Screen = when (value?.lowercase()) {
     "mods" -> Screen.Mods
-    "servers" -> Screen.Servers
+    "servers" -> Screen.Versions
     "versions" -> Screen.Versions
     "settings" -> Screen.Settings
     else -> Screen.Home
@@ -189,21 +190,6 @@ fun HorizonApp(initialScreen: String, homeDir: String, loadError: String?) {
             }
         }
 
-        val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-            if (uri != null) scope.launch {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                busy = "Reading Minecraft folder"
-                Core.setImportCache(context.cacheDir.absolutePath)
-                val count = importMinecraftFolder(context, uri)
-                say("Imported $count files into the verified download cache. Completing installation…")
-                busy = "Preparing Minecraft 26.3"
-                Core.installGame(context.cacheDir.absolutePath)
-                gameReady = Core.gameReady()
-            }.onFailure { say(it.message ?: "Could not import this Minecraft folder") }
-                .also { busy = null; refreshLocal() }
-            }
-        }
         var contentImportKind by remember { mutableStateOf("mod") }
         val contentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
             if (uris.isNotEmpty()) scope.launch {
@@ -316,7 +302,46 @@ fun HorizonApp(initialScreen: String, homeDir: String, loadError: String?) {
                                         finally { poll.cancel(); busy = null; refreshLocal() }
                                     }
                                 },
-                                onChooseFolder = { folderPicker.launch(null) },
+                                onImportFolder = { treeUri, documentId ->
+                                    if (busy == null) scope.launch {
+                                        busy = "Reading Minecraft folder"
+                                        try {
+                                            Core.setImportCache(context.cacheDir.absolutePath)
+                                            val count = importMinecraftFolder(context, treeUri, documentId)
+                                            say("Imported $count files into the verified download cache. Completing installation…")
+                                            busy = "Preparing Minecraft 26.3"
+                                            Core.installGame(context.cacheDir.absolutePath)
+                                            gameReady = Core.gameReady()
+                                            say("Minecraft 26.3 is ready to play.")
+                                        } catch (error: Exception) {
+                                            say(error.message ?: "Could not import this Minecraft folder")
+                                        } finally {
+                                            busy = null
+                                            refreshLocal()
+                                        }
+                                    }
+                                },
+                                onImportBackup = { uri ->
+                                    if (busy == null) scope.launch {
+                                        busy = "Restoring Minecraft backup"
+                                        try {
+                                            val count = MinecraftBackup.restore(context, uri) { progress -> busy = progress }
+                                            gameReady = Core.gameReady()
+                                            if (!gameReady) {
+                                                busy = "Finishing Minecraft setup"
+                                                Core.setImportCache(context.cacheDir.absolutePath)
+                                                Core.installGame(context.cacheDir.absolutePath)
+                                                gameReady = Core.gameReady()
+                                            }
+                                            say("Restored $count Minecraft resource set(s).")
+                                        } catch (error: Exception) {
+                                            say(error.message ?: "Could not restore this Minecraft ZIP")
+                                        } finally {
+                                            busy = null
+                                            refreshLocal()
+                                        }
+                                    }
+                                },
                                 onPlay = {
                                     runCatching {
                                         context.startActivity(Intent(context, HorizonGameActivity::class.java))
@@ -375,9 +400,29 @@ fun HorizonApp(initialScreen: String, homeDir: String, loadError: String?) {
                                 onMessage = say,
                             )
                             Screen.Versions -> VersionsScreen(
+                                servers = servers,
+                                gameAvailable = platform?.asset != null,
                                 releases = releases,
                                 installed = installed,
                                 busy = busy,
+                                onAddServer = { addServer = true },
+                                onRemoveServer = { index ->
+                                    operate("Removing server") {
+                                        Core.removeServer(index)
+                                        null
+                                    }
+                                },
+                                onJoinServer = { server ->
+                                    if (platform?.asset == null) {
+                                        say("Joining will be available when the Android game runtime is published.")
+                                    } else {
+                                        operate("Joining ${server.name}") {
+                                            val result = Core.launch(server.ip)
+                                            if (result.started) "Joining ${server.name} (${server.ip})"
+                                            else "The core did not start a game process."
+                                        }
+                                    }
+                                },
                                 onInstall = { tag ->
                                     operate("Installing $tag") {
                                         Core.installVersion(tag)
@@ -586,7 +631,7 @@ private fun HorizonBottomBar(current: Screen, onSelect: (Screen) -> Unit) {
         contentColor = c.ink,
         tonalElevation = 0.dp,
     ) {
-        Screen.entries.forEach { destination ->
+        Screen.entries.filterNot { it == Screen.Servers }.forEach { destination ->
             NavigationBarItem(
                 selected = destination == current,
                 onClick = { onSelect(destination) },

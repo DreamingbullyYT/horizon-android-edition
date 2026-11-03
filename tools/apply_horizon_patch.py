@@ -168,7 +168,6 @@ replace_once(
                 val starts = mutableMapOf<Long, Offset>()
                 val downAt = mutableMapOf<Long, Long>()
                 val lookPointers = mutableSetOf<Long>()
-                val gesturePointers = mutableSetOf<Long>()
                 val ignored = mutableSetOf<Long>()
                 val hotbarPointers = mutableSetOf<Long>()
 ''',
@@ -179,6 +178,7 @@ replace_once(
                 val starts = mutableMapOf<Long, Offset>()
                 val downAt = mutableMapOf<Long, Long>()
                 val lookPointers = mutableSetOf<Long>()
+                val gesturePointers = mutableSetOf<Long>()
                 val ignored = mutableSetOf<Long>()
                 val hotbarPointers = mutableSetOf<Long>()
                 val longPressJobs = mutableMapOf<Long, kotlinx.coroutines.Job>()
@@ -189,7 +189,7 @@ replace_once(
     "app/src/main/java/dev/horizon/launcher/game/HorizonGameControls.kt",
     '''                    if (editing) {
                         // The editor owns touch input; never steer the camera while dragging controls.
-                        positions.clear(); starts.clear(); downAt.clear(); lookPointers.clear(); gesturePointers.clear(); ignored.clear(); tuner.reset()
+                        positions.clear(); starts.clear(); downAt.clear(); lookPointers.clear(); ignored.clear(); tuner.reset()
                         continue
                     }
 ''',
@@ -200,7 +200,7 @@ replace_once(
                         heldButtons.values.forEach { GameInput.nativeSendControl(it, false) }
                         if (swipeLook) GameInput.nativeLookActive(false)
                         heldButtons.clear()
-                        positions.clear(); starts.clear(); downAt.clear(); lookPointers.clear(); ignored.clear(); tuner.reset()
+                        positions.clear(); starts.clear(); downAt.clear(); lookPointers.clear(); gesturePointers.clear(); ignored.clear(); tuner.reset()
                         continue
                     }
 ''',

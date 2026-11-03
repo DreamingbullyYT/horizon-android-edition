@@ -1,6 +1,7 @@
 package dev.horizon.launcher.data
 
 import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import dev.horizon.launcher.core.NativeLoader
@@ -106,7 +107,9 @@ object Updater {
             return Result.Failed("Update needs a newer app (reinstall the APK).")
         }
         val build = manifest.getLong("build")
-        val apkBuild = context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
+        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        @Suppress("DEPRECATION")
+        val apkBuild = if (Build.VERSION.SDK_INT >= 28) packageInfo.longVersionCode else packageInfo.versionCode.toLong()
         val have = maxOf(apkBuild, installedBuild(files))
         if (build <= have) return Result.UpToDate(have)
         val entry = manifest.getJSONObject(ABI)

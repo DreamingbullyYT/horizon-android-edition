@@ -47,6 +47,8 @@ jobs:
     name: Build APK
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    env:
+      HORIZON_MSA_CLIENT_ID: ${{ secrets.HORIZON_MSA_CLIENT_ID }}
     permissions:
       contents: write   # needed to attach the APK to a GitHub Release on tags
     steps:

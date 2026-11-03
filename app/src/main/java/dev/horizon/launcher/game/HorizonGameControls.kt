@@ -92,6 +92,7 @@ import dev.horizon.launcher.game.controls.ProfilesPanel
 import dev.horizon.launcher.game.controls.StylesPanel
 import dev.horizon.launcher.game.controls.ToggleRow
 import dev.horizon.launcher.game.controls.WidgetInspector
+import kotlinx.coroutines.launch
 import java.util.UUID
 
 private val EDITOR_TABS = listOf("Control", "Layers", "Styles", "Layouts")
@@ -128,9 +129,10 @@ internal fun HorizonGameControls(
     var swipeLook by remember { mutableStateOf(prefs.getBoolean("swipe_look", true)) }
     var gyroEnabled by remember { mutableStateOf(prefs.getBoolean("gyro_enabled", false)) }
     var gyroSensitivity by remember { mutableFloatStateOf(prefs.getFloat("gyro_sensitivity", 1f)) }
-    var tapAction by remember { mutableIntStateOf(prefs.getInt("gesture_tap_action", 0)) }
-    var longPressAction by remember { mutableIntStateOf(prefs.getInt("gesture_long_action", 0)) }
-    var longPressDelay by remember { mutableIntStateOf(prefs.getInt("gesture_long_delay", 500)) }
+    var gesturesEnabled by remember { mutableStateOf(prefs.getBoolean("touch_gestures_enabled", true)) }
+    var tapAction by remember { mutableIntStateOf(prefs.getInt("gesture_tap_action", 2).coerceIn(0, 2)) }
+    var longPressAction by remember { mutableIntStateOf(prefs.getInt("gesture_long_action", 1).coerceIn(0, 2)) }
+    var longPressDelay by remember { mutableIntStateOf(prefs.getInt("gesture_long_delay", 300).coerceIn(100, 1000)) }
     var storedHud by remember { mutableStateOf(prefs.getBoolean("hud_visible", true)) }
     var hapticLevel by remember { mutableIntStateOf(prefs.getInt("haptic_level", 0)) }
     var autoHideForPad by remember { mutableStateOf(prefs.getBoolean("hide_hud_for_gamepad", false)) }
@@ -322,13 +324,17 @@ internal fun HorizonGameControls(
     MaterialTheme {
     Box(
         Modifier.fillMaxSize().pointerInput(Unit) {
+            val pointerScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.currentCoroutineContext())
             awaitPointerEventScope {
                 val positions = mutableMapOf<Long, Offset>()
                 val starts = mutableMapOf<Long, Offset>()
                 val downAt = mutableMapOf<Long, Long>()
                 val lookPointers = mutableSetOf<Long>()
+                val gesturePointers = mutableSetOf<Long>()
                 val ignored = mutableSetOf<Long>()
                 val hotbarPointers = mutableSetOf<Long>()
+                val longPressJobs = mutableMapOf<Long, kotlinx.coroutines.Job>()
+                val heldButtons = mutableMapOf<Long, String>()
                 /** Zalith-style hotbar: index 0..8 of the slot under [p], or -1. Geometry comes from the game's HUD. */
                 fun hotbarSlotAt(p: Offset): Int {
                     val r = runCatching { GameInput.nativeHotbarRect() }.getOrNull() ?: return -1
@@ -341,8 +347,13 @@ internal fun HorizonGameControls(
                 while (true) {
                     val event = awaitPointerEvent(PointerEventPass.Final)
                     if (editing) {
-                        // The editor owns touch input; never steer the camera while dragging controls.
-                        positions.clear(); starts.clear(); downAt.clear(); lookPointers.clear(); ignored.clear(); tuner.reset()
+                        // Release any synthetic mouse button before the editor takes over input.
+                        longPressJobs.values.forEach { it.cancel() }
+                        longPressJobs.clear()
+                        heldButtons.values.forEach { GameInput.nativeSendControl(it, false) }
+                        if (swipeLook) GameInput.nativeLookActive(false)
+                        heldButtons.clear()
+                        positions.clear(); starts.clear(); downAt.clear(); lookPointers.clear(); gesturePointers.clear(); ignored.clear(); tuner.reset()
                         continue
                     }
                     val areaStart = when (lookArea) { 1 -> 0.3f; 2 -> 0.5f; else -> 0f }
@@ -364,18 +375,36 @@ internal fun HorizonGameControls(
                                 starts[id] = change.position
                                 downAt[id] = SystemClock.elapsedRealtime()
                             }
-                            if (grabbing && swipeLook) {
+                            if (grabbing) {
                                 if (prior == null) {
+                                    gesturePointers += id
                                     if (change.position.x >= size.width * areaStart) {
                                         lookPointers += id
                                         tuner.reset()
-                                        GameInput.nativeLookActive(true)
-                                    } else ignored += id
-                                } else if (id in lookPointers) {
-                                    val dx = (change.position.x - prior.x) * lookSensitivity * lookSensX * if (invertLookX) -1f else 1f
-                                    val dy = (change.position.y - prior.y) * lookSensitivity * lookSensY * if (invertLookY) -1f else 1f
-                                    tuner.apply(dx, dy, lookAccel, lookSmoothing)
-                                    GameInput.nativeLook(tuner.outX, tuner.outY)
+                                        if (swipeLook) GameInput.nativeLookActive(true)
+                                    }
+                                    if (gesturesEnabled && longPressAction in 1..2) {
+                                        longPressJobs[id] = pointerScope.launch {
+                                            kotlinx.coroutines.delay(longPressDelay.toLong())
+                                            if (id in gesturePointers && gesturesEnabled && longPressAction in 1..2) {
+                                                val button = if (longPressAction == 1) "GLFW_MOUSE_BUTTON_LEFT" else "GLFW_MOUSE_BUTTON_RIGHT"
+                                                GameInput.nativeSendControl(button, true)
+                                                heldButtons[id] = button
+                                            }
+                                        }
+                                    }
+                                } else if (id in gesturePointers) {
+                                    val start = starts[id]
+                                    if (start != null && (start - change.position).getDistance() > 24f) {
+                                        longPressJobs.remove(id)?.cancel()
+                                        heldButtons.remove(id)?.let { GameInput.nativeSendControl(it, false) }
+                                    }
+                                    if (id in lookPointers && swipeLook) {
+                                        val dx = (change.position.x - prior.x) * lookSensitivity * lookSensX * if (invertLookX) -1f else 1f
+                                        val dy = (change.position.y - prior.y) * lookSensitivity * lookSensY * if (invertLookY) -1f else 1f
+                                        tuner.apply(dx, dy, lookAccel, lookSmoothing)
+                                        GameInput.nativeLook(tuner.outX, tuner.outY)
+                                    }
                                 }
                             } else {
                                 GameInput.nativeMenuTouch(id, change.position.x, change.position.y, if (prior == null) 0 else 1)
@@ -385,14 +414,20 @@ internal fun HorizonGameControls(
                             occupied.remove(id)
                             val start = starts.remove(id)
                             val duration = SystemClock.elapsedRealtime() - (downAt.remove(id) ?: 0L)
-                            if (lookPointers.remove(id)) {
-                                GameInput.nativeLookActive(lookPointers.isNotEmpty())
+                            if (gesturePointers.remove(id)) {
+                                if (lookPointers.remove(id) && swipeLook) GameInput.nativeLookActive(lookPointers.isNotEmpty())
+                                longPressJobs.remove(id)?.cancel()
+                                val heldButton = heldButtons.remove(id)
                                 val moved = start?.let { (it - change.position).getDistance() > 24f } ?: true
-                                val action = if (duration >= longPressDelay) longPressAction else tapAction
-                                if (!moved && action in 1..2) {
-                                    val button = if (action == 1) "GLFW_MOUSE_BUTTON_LEFT" else "GLFW_MOUSE_BUTTON_RIGHT"
-                                    GameInput.nativeSendControl(button, true)
-                                    GameInput.nativeSendControl(button, false)
+                                if (heldButton != null) {
+                                    GameInput.nativeSendControl(heldButton, false)
+                                } else if (!moved && gesturesEnabled) {
+                                    val action = if (duration >= longPressDelay) longPressAction else tapAction
+                                    if (action in 1..2) {
+                                        val button = if (action == 1) "GLFW_MOUSE_BUTTON_LEFT" else "GLFW_MOUSE_BUTTON_RIGHT"
+                                        GameInput.nativeSendControl(button, true)
+                                        GameInput.nativeSendControl(button, false)
+                                    }
                                 }
                             } else if (!ignored.remove(id)) {
                                 GameInput.nativeMenuTouch(id, change.position.x, change.position.y, 2)
@@ -619,19 +654,30 @@ internal fun HorizonGameControls(
                                     }, valueRange = 0.2f..4f)
                                 }
                                 3 -> {
-                                    Text("Touch gestures and scrolling", style = MaterialTheme.typography.titleSmall)
-                                    Button(onClick = { tapAction = (tapAction + 1) % 3; prefs.edit().putInt("gesture_tap_action", tapAction).apply() }) {
-                                        Text("Tap: ${listOf("None", "Left click", "Right click")[tapAction]}")
+                                    Text("Touch gestures", style = MaterialTheme.typography.titleSmall)
+                                    ToggleRow("Enable tap and long-press actions", gesturesEnabled) {
+                                        gesturesEnabled = it
+                                        prefs.edit().putBoolean("touch_gestures_enabled", it).apply()
                                     }
-                                    Button(onClick = { longPressAction = (longPressAction + 1) % 3; prefs.edit().putInt("gesture_long_action", longPressAction).apply() }) {
-                                        Text("Long press: ${listOf("None", "Left click", "Right click")[longPressAction]}")
+                                    Text("Short tap action", style = MaterialTheme.typography.bodySmall)
+                                    ChipChoice(listOf(0, 1, 2), tapAction, { listOf("None", "Break / Attack", "Place / Use")[it] }) {
+                                        tapAction = it
+                                        prefs.edit().putInt("gesture_tap_action", it).apply()
                                     }
-                                    Text("Long press threshold · ${longPressDelay} ms")
-                                    Slider(value = longPressDelay.toFloat(), onValueChange = { longPressDelay = it.toInt() },
+                                    Text("Long-press action", style = MaterialTheme.typography.bodySmall)
+                                    ChipChoice(listOf(0, 1, 2), longPressAction, { listOf("None", "Break / Attack", "Place / Use")[it] }) {
+                                        longPressAction = it
+                                        prefs.edit().putInt("gesture_long_action", it).apply()
+                                    }
+                                    Text("Long-press delay · ${longPressDelay} ms (default 300 ms)")
+                                    Slider(
+                                        value = longPressDelay.toFloat(),
+                                        onValueChange = { longPressDelay = it.toInt() },
                                         onValueChangeFinished = { prefs.edit().putInt("gesture_long_delay", longPressDelay).apply() },
-                                        valueRange = 250f..1200f)
-                                    Text("When the game is not capturing the pointer, taps and drags outside the HUD are sent to the game for menus.", style = MaterialTheme.typography.bodySmall)
-                                    Text("Menu swipes become native scroll-wheel events in Horizon's Rust input bridge. Touch controls consume their own pointer so they do not click through.", style = MaterialTheme.typography.bodySmall)
+                                        valueRange = 100f..1000f,
+                                        steps = 17,
+                                    )
+                                    Text("Gestures are active only while the game captures the pointer. A stationary short tap sends the tap action; reaching the long-press delay holds the selected mouse button until you lift your finger. Menus continue to receive normal touches.", style = MaterialTheme.typography.bodySmall)
                                 }
                                 4 -> {
                                     val manager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
