@@ -3050,6 +3050,35 @@ index 680060dbd..0a6f12eac 100644
      fn resumed(&mut self, event_loop: &ActiveEventLoop) {
          self.host.resumed(event_loop);
          if !self.surfaces.is_empty() {
+diff --git a/crates/horizon-client/src/lib.rs b/crates/horizon-client/src/lib.rs
+index 76bfeb8e9..dba9ee49a 100644
+--- a/crates/horizon-client/src/lib.rs
++++ b/crates/horizon-client/src/lib.rs
+@@ -1,6 +1,10 @@
+ //! Horizon native client: resources, world streaming, rendering and the
+ //! bindings between the validated simulation pieces and the game loop.
+ #![forbid(unsafe_code)]
++// Android: `game` lives here (not in the binary) so the cdylib in horizon-android-game can drive it, and its
++// `horizon_client::` paths keep resolving from inside this crate.
++extern crate self as horizon_client;
++pub mod game;
+ pub mod advancements;
+ pub mod ambience;
+ pub mod animate_tick;
+diff --git a/crates/horizon-client/src/main.rs b/crates/horizon-client/src/main.rs
+index 279faef58..01e8e300a 100644
+--- a/crates/horizon-client/src/main.rs
++++ b/crates/horizon-client/src/main.rs
+@@ -1,8 +1,6 @@
+ //! Horizon: native Rust client for Minecraft Java Edition 26.3 gameplay.
+ #![forbid(unsafe_code)]
+-mod game;
+-
+-use horizon_client::{crash, logging};
++use horizon_client::{crash, game, logging};
+ 
+ #[global_allocator]
+ static ALLOCATOR: horizon_threads::Allocator = horizon_threads::Allocator;
 diff --git a/launcher/Cargo.toml b/launcher/Cargo.toml
 index 168700db2..3b2f1913e 100644
 --- a/launcher/Cargo.toml
