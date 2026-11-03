@@ -50,7 +50,7 @@ index 000000000..027d51134
 +workspace = true
 diff --git a/crates/horizon-android-game/src/lib.rs b/crates/horizon-android-game/src/lib.rs
 new file mode 100644
-index 000000000..619178c2f
+index 000000000..8f9ca3bd8
 --- /dev/null
 +++ b/crates/horizon-android-game/src/lib.rs
 @@ -0,0 +1,235 @@
@@ -1821,10 +1821,22 @@ index 0261d53a0..6a3d1df91 100644
      /// `SoundManager.tick(paused)`, once per client tick.
      pub fn tick(&mut self, paused: bool, ctx: &TickContext) {
 diff --git a/crates/horizon-client-render/src/gfx.rs b/crates/horizon-client-render/src/gfx.rs
-index 35d36a430..80ab31e8e 100644
+index 35d36a430..38a731b79 100644
 --- a/crates/horizon-client-render/src/gfx.rs
 +++ b/crates/horizon-client-render/src/gfx.rs
-@@ -3680,6 +3680,15 @@ impl Renderer {
+@@ -1770,6 +1770,11 @@ impl Renderer {
+                     size.height.clamp(1, max_side),
+                 )
+                 .ok_or("surface has no supported configuration")?;
++            // Android: one frame in flight, so touch input reaches the screen a frame sooner.
++            #[cfg(target_os = "android")]
++            {
++                config.desired_maximum_frame_latency = 1;
++            }
+             let caps = surface.get_capabilities(&adapter);
+             config.format = surface_format(&caps.formats, config.format);
+             config.view_formats = vec![config.format.remove_srgb_suffix()];
+@@ -3680,6 +3685,15 @@ impl Renderer {
              .get_mut()
              .unwrap_or_else(std::sync::PoisonError::into_inner) = self.surface.take();
      }
@@ -1862,7 +1874,7 @@ index c5b959f4e..ad15c748b 100644
  # Use the registered URI handler without routing links through Explorer/cmd.
  open = { version = "5.4.5", features = ["shellexecute-on-windows"] }
 diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.rs
-index aa6dec399..6ec5c2c75 100644
+index aa6dec399..9740924b9 100644
 --- a/crates/horizon-client/src/game.rs
 +++ b/crates/horizon-client/src/game.rs
 @@ -375,17 +375,135 @@ use std::{
@@ -2839,7 +2851,7 @@ index aa6dec399..6ec5c2c75 100644
          follow_keymap(&mut event);
          // MacosUtil.setCtrlClickEmulatesRightClick: Control + left click is a right click.
          if let WindowEvent::MouseInput { state, button, .. } = &mut event
-@@ -17279,9 +18171,29 @@ impl Game<'_> {
+@@ -17279,9 +18170,29 @@ impl Game<'_> {
                          }
                          self.frames += 1;
                          self.fps_frames += 1;
@@ -2869,7 +2881,7 @@ index aa6dec399..6ec5c2c75 100644
                              self.fps_frames = 0;
                              self.fps_at = Instant::now();
                          }
-@@ -17317,6 +18229,71 @@ impl Game<'_> {
+@@ -17317,6 +18228,71 @@ impl Game<'_> {
          }
          self.finish_perf();
      }
@@ -2941,7 +2953,7 @@ index aa6dec399..6ec5c2c75 100644
      /// winit's `about_to_wait`: what happens between frames (stop requests, the closing
      /// save, world entry, the control socket, pads), then the next frame.
      pub(super) fn idle(&mut self, event_loop: &dyn EventLoopCtl) {
-@@ -17528,6 +18505,7 @@ impl<'a> Game<'a> {
+@@ -17528,6 +18504,7 @@ impl<'a> Game<'a> {
              physical_keys: HashSet::new(),
              physical_buttons: HashSet::new(),
              drag_button: None,
@@ -2949,7 +2961,7 @@ index aa6dec399..6ec5c2c75 100644
              right_click_emulation: Default::default(),
              left: false,
              right: false,
-@@ -19357,7 +20335,7 @@ fn run_event_loop(mut game: Game<'_>) -> Result<()> {
+@@ -19357,7 +20334,7 @@ fn run_event_loop(mut game: Game<'_>) -> Result<()> {
          return game.error.take().map_or(Ok(()), Err);
      }
      let mut split = split::Split::new(game);
@@ -2958,7 +2970,7 @@ index aa6dec399..6ec5c2c75 100644
      game = split.host;
      narrator::stop();
      leave_fullscreen_after(&result, &mut game.settings);
-@@ -19396,8 +20374,27 @@ struct Loading {
+@@ -19396,8 +20373,27 @@ struct Loading {
      error: Option<Box<dyn std::error::Error>>,
  }
  impl Loading {
@@ -2986,7 +2998,7 @@ index aa6dec399..6ec5c2c75 100644
              return;
          }
          // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
-@@ -19669,6 +20666,12 @@ enum App {
+@@ -19669,6 +20665,12 @@ enum App {
      Ready(Box<split::Split<'static>>),
  }
  impl ApplicationHandler for App {
@@ -2999,7 +3011,7 @@ index aa6dec399..6ec5c2c75 100644
      fn resumed(&mut self, event_loop: &ActiveEventLoop) {
          match self {
              App::Loading(loading) => loading.resumed(event_loop),
-@@ -19792,7 +20795,7 @@ fn run_loading(
+@@ -19792,7 +20794,7 @@ fn run_loading(
          error: None,
      };
      let mut app = App::Loading(Box::new(loading));
