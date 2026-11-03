@@ -64,6 +64,9 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     var updateBusy by remember { mutableStateOf(false) }
     var updateStatus by remember { mutableStateOf<String?>(null) }
+    var versions by remember { mutableStateOf(Updater.versions(context.filesDir)) }
+    var activeVersion by remember { mutableStateOf(Updater.activeVersion(context.filesDir)) }
+    var autoUpdate by remember { mutableStateOf(Updater.autoEnabled(context)) }
     var apkOffer by remember { mutableStateOf<AppUpdater.Offer?>(null) }
     var apkProgress by remember { mutableStateOf<Float?>(null) }
     var installedNativeBuild by remember { mutableStateOf(Updater.installedBuild(context.filesDir)) }
@@ -138,7 +141,7 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.titleSmall,
                 )
                 Text(
-                    "Checks this Android edition's rolling update manifest and verifies downloaded native libraries with SHA-256. Upstream Horizon Nightlies are listed separately in Servers & Builds.",
+                    "Looks for the newest Android Nightly the way the PC launcher does. A download is installed only after its signature and checksum check out, and the build you use now is never replaced if anything fails.",
                     color = c.muted,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -160,7 +163,9 @@ fun SettingsScreen(
                                         }
                                         is Updater.Result.Installed -> {
                                             installedNativeBuild = result.build
-                                            updateStatus = "Nightly native build #${result.build} downloaded. Restart Horizon to apply it."
+                                            versions = Updater.versions(context.filesDir)
+                                            activeVersion = Updater.activeVersion(context.filesDir)
+                                            updateStatus = "Build #${result.build} was downloaded and verified. It starts with the next game launch."
                                         }
                                         is Updater.Result.Failed -> updateStatus = "Update failed: ${result.message}"
                                     }
@@ -196,6 +201,41 @@ fun SettingsScreen(
                                     }.onFailure { onMessage(it.message ?: "Could not install the update") }
                                     apkProgress = null
                                 }
+                            }
+                        },
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                ToggleRow("Update automatically (every 30 minutes)", autoUpdate) {
+                    autoUpdate = it
+                    Updater.setAuto(context, it)
+                }
+                Spacer(Modifier.height(6.dp))
+                SectionLabel("Installed builds")
+                InfoRow(
+                    icon = Icons.Outlined.Update,
+                    title = "Bundled with the app",
+                    subtitle = "The version that came inside this APK",
+                    trailing = if (activeVersion == null) "In use" else "Use",
+                    onClick = {
+                        if (activeVersion != null) {
+                            Updater.activate(context.filesDir, null, byHand = true)
+                            activeVersion = null
+                            onMessage("The bundled build starts with the next game launch.")
+                        }
+                    },
+                )
+                versions.forEach { v ->
+                    InfoRow(
+                        icon = Icons.Outlined.Update,
+                        title = v.name,
+                        subtitle = "Build #${v.build}",
+                        trailing = if (v.name == activeVersion) "In use" else "Use",
+                        onClick = {
+                            if (v.name != activeVersion) {
+                                Updater.activate(context.filesDir, v.name, byHand = true)
+                                activeVersion = v.name
+                                onMessage("${v.name} starts with the next game launch.")
                             }
                         },
                     )

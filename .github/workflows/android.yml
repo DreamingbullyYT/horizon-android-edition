@@ -165,38 +165,71 @@ jobs:
           (cd dist && sha256sum *.apk > SHA256SUMS.txt)
           ls -lh dist
 
-      # In-app updates: the app downloads these from the rolling release "libs".
-      - name: Publish native libraries for in-app updates
+      # In-app updates, the way the PC launcher does them (docs/release-flow.md upstream): the newest
+      # build is the release `nightly`, titled "Nightly <date> · <upstream commit>", with its files and a
+      # signed SHA256SUMS. The previous one is kept as `nightly-<date>-<commit>` (the last few), so the app
+      # can roll back. Needs the ANDROID_RELEASE_SIGNING_KEY secret (Ed25519, PKCS#8 base64).
+      - name: Publish signed Nightly for in-app updates
         if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_name == github.event.repository.default_branch }}
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_SIGNING_KEY: ${{ secrets.ANDROID_RELEASE_SIGNING_KEY }}
         run: |
+          if [ -z "$RELEASE_SIGNING_KEY" ]; then
+            echo "::warning::ANDROID_RELEASE_SIGNING_KEY is not set, so no in-app update was published."
+            exit 0
+          fi
           libs=app/build/generated/jniLibs/arm64-v8a
-          mkdir -p updates
-          cp "$libs/libhorizon_core.so" "$libs/libhorizon_android_game.so" updates/
-          cp horizon/.local/android/engine-data.zip updates/engine-data.zip
-          # The whole app, for "Install app update" (the release APK when signed with your key, else the debug one).
+          rm -rf nightly && mkdir nightly
+          cp "$libs/libhorizon_core.so" "$libs/libhorizon_android_game.so" nightly/
+          cp horizon/.local/android/engine-data.zip nightly/engine-data.zip
+          # The whole app, for "Install app update": the release APK when signed with your key, else the debug one.
           apk=$(ls dist/Horizon-Android-release-*.apk 2>/dev/null | head -1 || true)
           [ -n "$apk" ] || apk=$(ls dist/Horizon-Android-debug-*.apk | head -1)
-          cp "$apk" updates/Horizon-Android.apk
-          python3 - <<'PY'
-          import hashlib, json, os
-          def sha(p): return hashlib.sha256(open(p, 'rb').read()).hexdigest()
-          manifest = {
-              "abi_level": int(open("android/ABI_LEVEL").read()),
-              "build": int(os.environ["GITHUB_RUN_NUMBER"]),
-              "upstream": open("android/.upstream-built").read().strip(),
-              "arm64-v8a": {
-                  "core": {"file": "libhorizon_core.so", "sha256": sha("updates/libhorizon_core.so")},
-                  "game": {"file": "libhorizon_android_game.so", "sha256": sha("updates/libhorizon_android_game.so")},
-                  "data": {"file": "engine-data.zip", "sha256": sha("updates/engine-data.zip")},
-              },
+          cp "$apk" nightly/Horizon-Android.apk
+          upstream=$(tr -d '[:space:]' < android/.upstream-built)
+          short=${upstream::7}
+          day=$(date -u +%F)
+          version="nightly-$day-$short"
+          cat > nightly/android-manifest.json <<JSON
+          {
+            "abi_level": $(cat android/ABI_LEVEL),
+            "build": ${GITHUB_RUN_NUMBER},
+            "version": "$version",
+            "upstream": "$upstream",
+            "arm64-v8a": { "core": "libhorizon_core.so", "game": "libhorizon_android_game.so", "data": "engine-data.zip" },
+            "apk": "Horizon-Android.apk"
           }
-          manifest["apk"] = {"file": "Horizon-Android.apk", "sha256": sha("updates/Horizon-Android.apk")}
-          json.dump(manifest, open("updates/manifest.json", "w"), indent=2)
+          JSON
+          # SHA256SUMS + SHA256SUMS.sig, signed for the "nightly" channel exactly like Horizon's own.
+          bash horizon/tools/ci/sign_release.sh nightly nightly/*
+          # Check it the way the app will, before anything is published.
+          (cd horizon && cargo run -q -p horizon-release-sign -- verify --tag nightly \
+            --key "$(grep -v '^#' ../android/release-keys.txt | tr -d '\n')" ../nightly)
+          # Keep the one being replaced as nightly-<date>-<commit>.
+          repo="${GITHUB_REPOSITORY}"
+          if old=$(gh api "repos/$repo/releases/tags/nightly" 2>/dev/null); then
+            id=$(echo "$old" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+            title=$(echo "$old" | python3 -c 'import json,sys; print(json.load(sys.stdin)["name"])')
+            oldtag=$(python3 - "$title" <<'PY'
+          import re, sys
+          m = re.match(r"Nightly (\d{4}-\d{2}-\d{2}) · ([0-9a-f]+)", sys.argv[1])
+          print(f"nightly-{m.group(1)}-{m.group(2)}" if m else "")
           PY
-          gh release view libs >/dev/null 2>&1 || gh release create libs --title "Native libraries (in-app updates)" --notes "Rolling release the app updates from." --prerelease
-          gh release upload libs updates/libhorizon_core.so updates/libhorizon_android_game.so updates/engine-data.zip updates/Horizon-Android.apk updates/manifest.json --clobber
+          )
+            if [ -n "$oldtag" ]; then
+              gh api -X PATCH "repos/$repo/releases/$id" -f tag_name="$oldtag" -f target_commitish="${GITHUB_SHA}" >/dev/null
+              git push origin ":refs/tags/nightly" || true
+            else
+              gh release delete nightly --cleanup-tag -y || true
+            fi
+          fi
+          gh release create nightly nightly/* --target "${GITHUB_SHA}" --prerelease \
+            --title "Nightly $day · $short" \
+            --notes "Android build of Horizon upstream ${upstream}. The app installs it as ${version}."
+          # Only the newest few past nightlies stay.
+          gh release list --limit 100 --json tagName,createdAt -q '[.[] | select(.tagName | startswith("nightly-"))] | sort_by(.createdAt) | reverse | .[6:] | .[].tagName' \
+            | while read -r tag; do gh release delete "$tag" --cleanup-tag -y || true; done
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4

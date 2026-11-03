@@ -8,24 +8,22 @@ import android.content.IntentFilter
 import android.content.pm.PackageInstaller
 import android.os.Build
 import androidx.core.content.ContextCompat
+import dev.horizon.launcher.core.Native
 import org.json.JSONObject
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
-import java.security.MessageDigest
+import kotlin.concurrent.thread
 
 /**
- * Updates the whole app (APK) from the rolling `libs` release. CI publishes the APK next to the
- * native libraries and lists it in manifest.json under "apk" (file + sha256). The download is
- * verified, then handed to Android's PackageInstaller, which asks the player to confirm. Android
- * only installs it over the current app when both are signed with the same key (CI signs every
- * build with the project's fixed key).
+ * Updates the whole app (APK). The APK is an asset of the signed Nightly release (listed in its
+ * SHA256SUMS like every other file), so the Rust core (core/src/update.rs) checks the Ed25519
+ * signature and the SHA-256 before the file reaches Android's PackageInstaller, which asks the
+ * player to confirm. Android only installs it over the current app when both are signed with the
+ * same key (CI signs every build with the project's fixed key).
  */
 object AppUpdater {
-    private const val BASE = "https://github.com/DreamingbullyYT/horizon-android-edition/releases/download/libs"
     private const val ACTION = "dev.horizon.launcher.APP_UPDATE_RESULT"
 
-    data class Offer(val build: Long, val file: String, val sha256: String, val upstream: String)
+    data class Offer(val build: Long, val file: String, val tag: String, val version: String, val upstream: String)
 
     private fun currentBuild(context: Context): Long {
         val info = context.packageManager.getPackageInfo(context.packageName, 0)
@@ -33,51 +31,42 @@ object AppUpdater {
         return if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
     }
 
-    private fun open(url: String) = (URL(url).openConnection() as HttpURLConnection).apply {
-        connectTimeout = 20_000
-        readTimeout = 60_000
-        instanceFollowRedirects = true
+    private fun folder(context: Context, tag: String) = File(File(context.cacheDir, "app-update"), tag)
+
+    private fun checked(raw: String): JSONObject {
+        val o = JSONObject(raw)
+        if (o.has("error") && o.optString("error").isNotEmpty()) error(o.getString("error"))
+        return o
     }
 
     /** Blocking. Returns the newer APK on offer, or null when this app is current (or none is published). */
     fun check(context: Context): Offer? {
-        val c = open("$BASE/manifest.json")
-        if (c.responseCode != 200) error("HTTP ${c.responseCode} for manifest.json")
-        val manifest = JSONObject(c.inputStream.use { it.readBytes().decodeToString() })
-        val apk = manifest.optJSONObject("apk") ?: return null
+        val newest = Updater.newest() ?: return null
+        val dir = folder(context, newest.tag).apply { mkdirs() }
+        val manifest = checked(Native.nativeUpdateDownload(newest.tag, "manifest", dir.absolutePath))
+        val apk = manifest.optString("apk").takeIf { it.isNotEmpty() } ?: return null
         val build = manifest.optLong("build", 0)
         if (build <= currentBuild(context)) return null
-        return Offer(build, apk.getString("file"), apk.getString("sha256"), manifest.optString("upstream"))
+        return Offer(build, apk, newest.tag, newest.version, manifest.optString("upstream"))
     }
 
-    /** Blocking: downloads and verifies the APK. [onProgress] gets 0..1. */
+    /** Blocking: downloads the APK and verifies its signed checksum. [onProgress] gets 0..1. */
     fun download(context: Context, offer: Offer, onProgress: (Float) -> Unit): File {
-        val dir = File(context.cacheDir, "app-update").apply { deleteRecursively(); mkdirs() }
-        val out = File(dir, "update.apk")
-        val c = open("$BASE/${offer.file}")
-        if (c.responseCode != 200) error("HTTP ${c.responseCode} for ${offer.file}")
-        val total = c.contentLengthLong
-        val digest = MessageDigest.getInstance("SHA-256")
-        c.inputStream.use { input ->
-            out.outputStream().use { sink ->
-                val buffer = ByteArray(65536)
-                var done = 0L
-                while (true) {
-                    val n = input.read(buffer)
-                    if (n < 0) break
-                    sink.write(buffer, 0, n)
-                    digest.update(buffer, 0, n)
-                    done += n
-                    if (total > 0) onProgress(done.toFloat() / total)
-                }
+        val dir = folder(context, offer.tag).apply { mkdirs() }
+        var running = true
+        val poller = thread(isDaemon = true) {
+            while (running) {
+                runCatching { onProgress(JSONObject(Native.nativeUpdateProgress()).optDouble("fraction", 0.0).toFloat()) }
+                Thread.sleep(300)
             }
         }
-        val sum = digest.digest().joinToString("") { "%02x".format(it) }
-        if (!sum.equals(offer.sha256, ignoreCase = true)) {
-            out.delete()
-            error("The downloaded update is corrupted (checksum mismatch)")
+        try {
+            checked(Native.nativeUpdateDownload(offer.tag, "apk", dir.absolutePath))
+        } finally {
+            running = false
+            poller.interrupt()
         }
-        return out
+        return File(dir, offer.file).takeIf { it.isFile } ?: error("The update was not downloaded")
     }
 
     /** True when Android lets this app install packages; otherwise the caller opens the settings page. */

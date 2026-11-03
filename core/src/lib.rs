@@ -18,6 +18,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 mod browse;
+mod update;
 
 fn jstr(env: &mut JNIEnv, s: String) -> jstring {
     match env.new_string(s) {
@@ -1411,4 +1412,37 @@ pub extern "system" fn Java_dev_horizon_launcher_core_Native_nativeBrowseRemove(
         Ok(name) => guarded(&mut env, move || browse::remove(&name)),
         Err(e) => reply(&mut env, Err(e)),
     }
+}
+
+// ---- In-app updates (see update.rs) -----------------------------------------------------------
+
+#[no_mangle]
+pub extern "system" fn Java_dev_horizon_launcher_core_Native_nativeUpdateList(mut env: JNIEnv, _this: JObject) -> jstring {
+    guarded(&mut env, update::list)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_horizon_launcher_core_Native_nativeUpdateDownload(
+    mut env: JNIEnv,
+    _this: JObject,
+    tag: JString,
+    what: JString,
+    dest: JString,
+) -> jstring {
+    let args = (|| {
+        Ok::<_, String>((
+            string_arg(&mut env, &tag, "tag")?,
+            string_arg(&mut env, &what, "kind")?,
+            string_arg(&mut env, &dest, "folder")?,
+        ))
+    })();
+    match args {
+        Ok((tag, what, dest)) => guarded(&mut env, move || update::download(&tag, &what, &dest)),
+        Err(e) => reply(&mut env, Err(e)),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_horizon_launcher_core_Native_nativeUpdateProgress(mut env: JNIEnv, _this: JObject) -> jstring {
+    guarded(&mut env, update::progress_json)
 }

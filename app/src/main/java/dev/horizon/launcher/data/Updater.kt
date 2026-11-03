@@ -4,51 +4,119 @@ import android.content.Context
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import dev.horizon.launcher.core.Native
 import dev.horizon.launcher.core.NativeLoader
 import org.json.JSONObject
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 import java.security.MessageDigest
 
 /**
- * In-app updates for the native libraries (launcher core + game runtime).
+ * In-app updates of the Horizon runtime (launcher core + game library + engine data), modelled on
+ * the PC launcher: the newest build is the signed GitHub release `nightly`, older ones are kept as
+ * `nightly-<date>-<commit>`. The Rust core (core/src/update.rs) lists them and downloads a build only
+ * after its SHA256SUMS passed the Ed25519 check; this object keeps the versions on disk, switches
+ * between them and rolls back a build that does not start.
  *
- * CI publishes them to the rolling GitHub release `libs` with a manifest.json (sha256 per file).
- * Downloaded files live in filesDir/updates/<build>/ and are used instead of the APK's copies. A
- * start that does not survive 20 seconds (see armGuard) drops the update, so a bad one can only
- * cost one failed launch.
+ * filesDir/updates/<version>/   libhorizon_core.so, libhorizon_android_game.so, engine-data.zip,
+ *                               android-manifest.json
+ * filesDir/updates/current      the active version's name (missing: the runtime bundled in the APK)
+ * filesDir/updates/hold         the newest version the player chose not to follow (rolled back by hand)
+ * filesDir/updates/bad          versions that failed to start
+ * filesDir/updates/pending      written while a start with an update has not lived 20 s yet
+ *
+ * A failed or unverified download never touches the active version.
  */
 object Updater {
     /** Bump (also android/ABI_LEVEL) when the Kotlin <-> Rust JNI contract changes. */
-    const val ABI_LEVEL = 1
-    private const val ABI = "arm64-v8a"
-    private const val BASE = "https://github.com/DreamingbullyYT/horizon-android-edition/releases/download/libs"
+    const val ABI_LEVEL = 2
     private const val CORE = "libhorizon_core.so"
     private const val GAME = "libhorizon_android_game.so"
     private const val DATA = "engine-data.zip"
+    private const val MANIFEST = "android-manifest.json"
+    private const val KEEP = 3
+
+    /** The 30-minute background check (like the PC launcher's), on by default. */
+    fun autoEnabled(context: Context): Boolean =
+        context.getSharedPreferences("horizon-updates", Context.MODE_PRIVATE).getBoolean("auto", true)
+
+    fun setAuto(context: Context, on: Boolean) {
+        context.getSharedPreferences("horizon-updates", Context.MODE_PRIVATE).edit().putBoolean("auto", on).apply()
+    }
+
+    data class Version(val name: String, val build: Long, val active: Boolean)
 
     private fun root(files: File) = File(files, "updates").apply { mkdirs() }
     private fun marker(files: File) = File(root(files), "pending")
-    private fun current(files: File): File? {
-        val name = runCatching { File(root(files), "current").readText().trim() }.getOrNull() ?: return null
-        return File(root(files), name).takeIf { File(it, CORE).isFile && File(it, GAME).isFile }
+    private fun read(files: File, name: String): String? =
+        runCatching { File(root(files), name).readText().trim() }.getOrNull()?.takeIf { it.isNotEmpty() }
+    private fun write(files: File, name: String, value: String?) {
+        val f = File(root(files), name)
+        if (value == null) f.delete() else f.writeText(value)
+    }
+    private fun bad(files: File): Set<String> = read(files, "bad")?.lines()?.toSet() ?: emptySet()
+
+    private fun complete(dir: File) = File(dir, CORE).isFile && File(dir, GAME).isFile && File(dir, DATA).isFile
+
+    private fun buildOf(dir: File): Long =
+        runCatching { JSONObject(File(dir, MANIFEST).readText()).optLong("build", 0) }.getOrDefault(0L)
+
+    private fun apkBuild(context: Context): Long {
+        val info = context.packageManager.getPackageInfo(context.packageName, 0)
+        @Suppress("DEPRECATION")
+        return if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
     }
 
-    /** Installed update's build number, or 0. */
-    fun installedBuild(files: File): Long = current(files)?.name?.toLongOrNull() ?: 0L
+    private fun current(files: File): File? {
+        val name = read(files, "current") ?: return null
+        return File(root(files), name).takeIf { complete(it) }
+    }
 
-    /** Call first in MainActivity: rolls back a failed update and points the loader at the new core. */
-    fun prepare(files: File) {
+    /** The active update's version, or null when the runtime bundled in the APK is used. */
+    fun activeVersion(files: File): String? = current(files)?.name
+
+    /** Installed updates, newest first. */
+    fun versions(files: File): List<Version> {
+        val active = activeVersion(files)
+        return root(files).listFiles { f -> f.isDirectory && !f.name.endsWith(".partial") && complete(f) }
+            .orEmpty()
+            .map { Version(it.name, buildOf(it), it.name == active) }
+            .sortedByDescending { it.build }
+    }
+
+    /** Active update's build number, or 0 (kept for the settings screen). */
+    fun installedBuild(files: File): Long = current(files)?.let { buildOf(it) } ?: 0L
+
+    /** Makes `version` the one the next start uses; null selects the runtime bundled in the APK. */
+    fun activate(files: File, version: String?, byHand: Boolean = false) {
+        write(files, "current", version)
+        if (byHand) {
+            // Remember the newest one we were offered, so a rollback by hand is not undone by the next check.
+            val newest = versions(files).firstOrNull()?.name
+            write(files, "hold", if (version != newest) newest else null)
+        }
+    }
+
+    /** Call first in MainActivity: rolls back a failed update and points the loader at the active one. */
+    fun prepare(files: File, context: Context? = null) {
         if (marker(files).exists()) {
-            // The previous start with an update never got going.
-            File(root(files), "current").delete()
+            // The previous start with an update never got going: that build is bad, go back to the one before.
+            val failed = read(files, "pending") ?: activeVersion(files)
             marker(files).delete()
+            if (failed != null) {
+                write(files, "bad", (bad(files) + failed).joinToString("\n"))
+                val fallback = versions(files).firstOrNull { it.name != failed && it.name !in bad(files) }
+                write(files, "current", fallback?.name)
+            }
+        }
+        // A newer APK obsoletes updates older than itself.
+        if (context != null) {
+            current(files)?.let { if (buildOf(it) <= apkBuild(context)) write(files, "current", null) }
         }
         NativeLoader.corePath = current(files)?.let { File(it, CORE).absolutePath }
     }
 
     fun dataPath(files: File): File? = current(files)?.let { File(it, DATA) }?.takeIf { it.isFile }
+    fun gamePath(files: File): String? = current(files)?.let { File(it, GAME).absolutePath }
 
     /**
      * Makes launcher/game/engine-data.zip the one this app should use (the updated one, else the
@@ -83,12 +151,10 @@ object Updater {
         stamp.writeText(sum)
     }
 
-    fun gamePath(files: File): String? = current(files)?.let { File(it, GAME).absolutePath }
-
     /** Marks "starting with an update"; cleared once the process has lived 20 s. */
     fun armGuard(files: File) {
-        if (current(files) == null) return
-        marker(files).writeText("1")
+        val active = activeVersion(files) ?: return
+        marker(files).writeText(active)
         Handler(Looper.getMainLooper()).postDelayed({ marker(files).delete() }, 20_000)
     }
 
@@ -98,74 +164,92 @@ object Updater {
         data class Failed(val message: String) : Result()
     }
 
-    /** Blocking: call from Dispatchers.IO. Takes effect at the next app start. */
-    fun checkAndInstall(context: Context): Result {
+    /** What the newest published Nightly is, as the app sees it. */
+    data class Newest(val tag: String, val version: String)
+
+    /** Blocking. The current Nightly (release tag `nightly`), or null when none is published. */
+    fun newest(): Newest? {
+        val raw = JSONObject(Native.nativeUpdateList())
+        if (raw.has("error")) error(raw.getString("error"))
+        val list = raw.getJSONArray("releases")
+        for (i in 0 until list.length()) {
+            val r = list.getJSONObject(i)
+            if (r.optBoolean("current")) return Newest(r.getString("tag"), r.getString("version"))
+        }
+        return null
+    }
+
+    /** Blocking: all published Nightlies as (tag, version), newest first. Used to offer older ones. */
+    fun published(): List<Newest> {
+        val raw = JSONObject(Native.nativeUpdateList())
+        if (raw.has("error")) error(raw.getString("error"))
+        val list = raw.getJSONArray("releases")
+        return (0 until list.length()).map { list.getJSONObject(it).let { r -> Newest(r.getString("tag"), r.getString("version")) } }
+    }
+
+    /**
+     * Blocking: downloads (and verifies) `tag` as a new installed version and makes it the active one,
+     * unless the player rolled back by hand past it. The active version is never touched when
+     * anything fails.
+     */
+    fun install(context: Context, tag: String, version: String, activateIt: Boolean = true): Result {
         return try {
-        val files = context.filesDir
-        val manifest = JSONObject(httpText("$BASE/manifest.json"))
-        if (manifest.optInt("abi_level", -1) != ABI_LEVEL) {
-            return Result.Failed("This update needs a newer app. Use “Install app update” below.")
-        }
-        val build = manifest.getLong("build")
-        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-        @Suppress("DEPRECATION")
-        val apkBuild = if (Build.VERSION.SDK_INT >= 28) packageInfo.longVersionCode else packageInfo.versionCode.toLong()
-        val have = maxOf(apkBuild, installedBuild(files))
-        if (build <= have) return Result.UpToDate(have)
-        val entry = manifest.getJSONObject(ABI)
-        val target = File(root(files), "$build.partial").apply { deleteRecursively(); mkdirs() }
-        for ((key, name) in listOf("core" to CORE, "game" to GAME, "data" to DATA)) {
-            if (key == "data" && !entry.has("data")) continue
-            val item = entry.getJSONObject(key)
-            val out = File(target, name)
-            download("$BASE/${item.getString("file")}", out)
-            val sum = sha256(out)
-            if (!sum.equals(item.getString("sha256"), ignoreCase = true)) {
-                target.deleteRecursively()
-                return Result.Failed("Checksum mismatch for $name")
+            val files = context.filesDir
+            val staging = File(root(files), "$version.partial").apply { deleteRecursively(); mkdirs() }
+            val manifest = JSONObject(Native.nativeUpdateDownload(tag, "manifest", staging.absolutePath).also {
+                if (it.trimStart().startsWith("{") && JSONObject(it).has("error")) error(JSONObject(it).getString("error"))
+            })
+            if (manifest.optInt("abi_level", -1) != ABI_LEVEL) {
+                staging.deleteRecursively()
+                return Result.Failed("This build needs a newer app. Use “Install app update”.")
             }
-        }
-        val finalDir = File(root(files), build.toString())
-        finalDir.deleteRecursively()
-        if (!target.renameTo(finalDir)) return Result.Failed("Could not store the update")
-        File(root(files), "current").writeText(build.toString())
-        // keep only the newest installed update
-        root(files).listFiles()?.filter { it.isDirectory && it.name != build.toString() }?.forEach { it.deleteRecursively() }
-        Result.Installed(build, manifest.optString("upstream"))
+            val out = Native.nativeUpdateDownload(tag, "runtime", staging.absolutePath)
+            if (out.trimStart().startsWith("{") && JSONObject(out).has("error")) {
+                staging.deleteRecursively()
+                return Result.Failed(JSONObject(out).getString("error"))
+            }
+            if (!complete(staging)) {
+                staging.deleteRecursively()
+                return Result.Failed("The download is incomplete")
+            }
+            val finalDir = File(root(files), version)
+            finalDir.deleteRecursively()
+            if (!staging.renameTo(finalDir)) return Result.Failed("Could not store the update")
+            val build = manifest.optLong("build", 0)
+            if (build <= apkBuild(context)) {
+                // Not newer than the app itself: nothing to run.
+                finalDir.deleteRecursively()
+                return Result.UpToDate(apkBuild(context))
+            }
+            val held = read(files, "hold") == version
+            if (activateIt && !held && version !in bad(files)) write(files, "current", version)
+            prune(files)
+            Result.Installed(build, manifest.optString("upstream"))
         } catch (t: Throwable) {
             Result.Failed(t.message ?: t.javaClass.simpleName)
         }
     }
 
-    private fun open(url: String): HttpURLConnection =
-        (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 20_000
-            readTimeout = 60_000
-            instanceFollowRedirects = true
-        }
-
-    private fun httpText(url: String): String {
-        val c = open(url)
-        if (c.responseCode != 200) error("HTTP ${c.responseCode} for ${url.substringAfterLast('/')}")
-        return c.inputStream.use { it.readBytes().decodeToString() }
+    /** Keeps the active version and the newest few; the rest go. */
+    private fun prune(files: File) {
+        val active = activeVersion(files)
+        versions(files).drop(KEEP).filter { it.name != active }.forEach { File(root(files), it.name).deleteRecursively() }
+        root(files).listFiles { f -> f.name.endsWith(".partial") }?.forEach { it.deleteRecursively() }
     }
 
-    private fun download(url: String, out: File) {
-        val c = open(url)
-        if (c.responseCode != 200) error("HTTP ${c.responseCode} for ${url.substringAfterLast('/')}")
-        c.inputStream.use { input -> out.outputStream().use { input.copyTo(it) } }
-    }
-
-    private fun sha256(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
-            val buffer = ByteArray(65536)
-            while (true) {
-                val n = input.read(buffer)
-                if (n < 0) break
-                digest.update(buffer, 0, n)
+    /** Blocking: checks for the newest Nightly and installs it unless it already is. */
+    fun checkAndInstall(context: Context): Result {
+        return try {
+            val files = context.filesDir
+            val newest = newest() ?: return Result.UpToDate(maxOf(apkBuild(context), installedBuild(files)))
+            val have = versions(files).any { it.name == newest.version }
+            val held = read(files, "hold") == newest.version
+            if (have || held || newest.version in bad(files)) {
+                return Result.UpToDate(maxOf(apkBuild(context), installedBuild(files)))
             }
+            install(context, newest.tag, newest.version)
+        } catch (t: Throwable) {
+            Result.Failed(t.message ?: t.javaClass.simpleName)
         }
-        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 }

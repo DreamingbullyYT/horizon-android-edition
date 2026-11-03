@@ -59,6 +59,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import dev.horizon.launcher.data.AccountsInfo
+import dev.horizon.launcher.data.AppUpdater
+import dev.horizon.launcher.data.Updater
 import dev.horizon.launcher.data.Core
 import dev.horizon.launcher.data.InstalledVersion
 import dev.horizon.launcher.data.InstanceInfo
@@ -75,6 +77,8 @@ import dev.horizon.launcher.MinecraftBackup
 import dev.horizon.launcher.importMinecraftFolder
 import dev.horizon.launcher.game.HorizonGameActivity
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import java.io.File
 import java.util.Locale
 import java.util.UUID
@@ -217,6 +221,25 @@ fun HorizonApp(initialScreen: String, homeDir: String, loadError: String?) {
         LaunchedEffect(settings?.accent) {
             val savedAccent = settings?.accent ?: return@LaunchedEffect
             accent = Accent.entries.firstOrNull { it.name.equals(savedAccent, ignoreCase = true) } ?: Accent.Violet
+        }
+
+        // Like the PC launcher: look for a new Nightly at start and every 30 minutes, and download it in
+        // the background once it is signed and verified. It applies the next time the game starts.
+        val updateContext = LocalContext.current.applicationContext
+        LaunchedEffect(Unit) {
+            var told = ""
+            while (true) {
+                if (Updater.autoEnabled(updateContext)) {
+                    val result = withContext(Dispatchers.IO) { Updater.checkAndInstall(updateContext) }
+                    if (result is Updater.Result.Installed) say("A new Horizon build was downloaded. It starts with the next game launch.")
+                    val offer = runCatching { withContext(Dispatchers.IO) { AppUpdater.check(updateContext) } }.getOrNull()
+                    if (offer != null && told != offer.tag) {
+                        told = offer.tag
+                        say("A new app version is available: Settings → Install app update.")
+                    }
+                }
+                kotlinx.coroutines.delay(30 * 60 * 1000L)
+            }
         }
 
         LaunchedEffect(reload) {

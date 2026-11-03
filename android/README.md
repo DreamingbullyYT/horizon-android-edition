@@ -5,8 +5,8 @@
 1. clone the original https://github.com/horizon-rust/horizon at the commit in `android/UPSTREAM_PIN`
 2. apply `android/android.patch` (all our Android changes, ~30 files)
 
-`.github/workflows/upstream-check.yml` tries the newest upstream every day. A clean apply opens a PR
-that moves the pin; a conflict opens an issue and the build stays on the pinned commit.
+`.github/workflows/upstream-compatible.yml` builds the newest upstream Nightlies every 6 hours and moves the
+pin to the first one that builds. How the app follows them: see `UPDATES.md`.
 
 Local use: `bash android/sync.sh` (needs git), then build as usual.
 To change Horizon code: edit inside `horizon/` after syncing, then regenerate the patch:

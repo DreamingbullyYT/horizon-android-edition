@@ -12,7 +12,7 @@ import java.io.File
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        dev.horizon.launcher.data.Updater.prepare(filesDir)
+        dev.horizon.launcher.data.Updater.prepare(filesDir, this)
         enableEdgeToEdge()
         WindowCompat.getInsetsController(window, window.decorView).apply {
             isAppearanceLightStatusBars = false

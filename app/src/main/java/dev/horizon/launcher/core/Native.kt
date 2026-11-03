@@ -35,6 +35,11 @@ object Native {
 
     external fun nativeInit(home: String): String
 
+    // In-app updates (core/src/update.rs): signed Nightly releases, the PC launcher's scheme
+    external fun nativeUpdateList(): String
+    external fun nativeUpdateDownload(tag: String, what: String, dest: String): String
+    external fun nativeUpdateProgress(): String
+
     // Mod browser (core/src/browse.rs)
     external fun nativeBrowseCatalog(): String
     external fun nativeBrowseSearch(source: String, kind: String, text: String, offset: Int, everything: Boolean): String
