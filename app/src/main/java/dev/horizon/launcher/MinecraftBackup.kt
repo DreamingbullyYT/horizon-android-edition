@@ -30,6 +30,16 @@ object MinecraftBackup {
         versionsDir(context).listFiles { f -> f.isDirectory && !f.name.endsWith(".partial") && File(f, "horizon-resources.json").isFile }
             ?.sortedBy { it.name } ?: emptyList()
 
+    private fun gameDir(context: Context) = File(File(context.filesDir, "launcher"), "game")
+    private val skipTop = setOf(".local", "engine-data.zip", ".engine-data.sha", ".engine-refresh", "logs", "crash-reports", "screenshots", "cache")
+
+    /** Worlds, mods, shader packs, resource packs and settings: everything the player made in the game folder. */
+    private fun userFiles(context: Context): List<Pair<File, File>> {
+        val root = gameDir(context)
+        return root.listFiles().orEmpty().filter { it.name !in skipTop && !it.name.endsWith(".partial") }
+            .flatMap { top -> if (top.isFile) listOf(root to top) else top.walkTopDown().filter { it.isFile }.map { root to it }.toList() }
+    }
+
     fun installedBytes(context: Context): Long =
         installedVersions(context).sumOf { dir -> dir.walkTopDown().filter { it.isFile }.sumOf { it.length() } }
 
@@ -37,14 +47,15 @@ object MinecraftBackup {
     suspend fun exportToDownloads(context: Context, onProgress: (String) -> Unit): String = withContext(Dispatchers.IO) {
         val versions = installedVersions(context)
         require(versions.isNotEmpty()) { "Minecraft is not installed yet" }
-        val files = versions.flatMap { dir -> dir.walkTopDown().filter { it.isFile }.map { dir to it }.toList() }
+        val files = versions.flatMap { dir -> dir.walkTopDown().filter { it.isFile }.map { dir to it }.toList() } + userFiles(context)
 
         fun write(out: java.io.OutputStream) {
             ZipOutputStream(BufferedOutputStream(out, 1 shl 16)).use { zip ->
                 zip.setLevel(Deflater.BEST_SPEED)   // assets are mostly already compressed
                 files.forEachIndexed { index, (root, file) ->
                     if (index % 100 == 0) onProgress("Exporting ${index}/${files.size} files")
-                    zip.putNextEntry(ZipEntry(root.name + "/" + file.relativeTo(root).invariantSeparatorsPath))
+                    val prefix = if (root == gameDir(context)) "userdata/" else root.name + "/"
+                    zip.putNextEntry(ZipEntry(prefix + file.relativeTo(root).invariantSeparatorsPath))
                     file.inputStream().use { it.copyTo(zip, 1 shl 16) }
                     zip.closeEntry()
                 }
@@ -112,6 +123,8 @@ object MinecraftBackup {
                 live.deleteRecursively()
                 check(dir.renameTo(live)) { "Could not move ${dir.name} into place" }
             }
+            // Worlds, mods, shaders and settings go back into the game folder.
+            File(staging, "userdata").takeIf { it.isDirectory }?.copyRecursively(gameDir(context).apply { mkdirs() }, overwrite = true)
             restored.size
         } finally {
             staging.deleteRecursively()
