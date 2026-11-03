@@ -1,7 +1,7 @@
 package dev.horizon.launcher.ui
 
-import android.content.Intent
 import android.net.Uri
+import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -16,11 +16,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Inventory2
-import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -57,7 +55,8 @@ fun HomeScreen(
     gameAvailable: Boolean,
     gameReady: Boolean,
     onInstall: () -> Unit,
-    onChooseFolder: () -> Unit,
+    onImportFolder: (Uri, String) -> Unit,
+    onImportBackup: (Uri) -> Unit,
     onPlay: () -> Unit,
     onNewInstance: () -> Unit,
     onSelectInstance: (String) -> Unit,
@@ -72,19 +71,25 @@ fun HomeScreen(
     var localReady by remember(gameReady) { mutableStateOf(gameReady) }
     var backupBusy by remember { mutableStateOf<String?>(null) }
     var backupMessage by remember { mutableStateOf<String?>(null) }
+    val browserPrefs = remember { context.getSharedPreferences("minecraft-file-browser", android.content.Context.MODE_PRIVATE) }
+    var storageTree by remember {
+        mutableStateOf(browserPrefs.getString("tree_uri", null)?.let(Uri::parse))
+    }
+    var browserOpen by remember { mutableStateOf(false) }
 
-    val restorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri == null || backupBusy != null) return@rememberLauncherForActivityResult
-        scope.launch {
-            backupBusy = "Restoring Minecraft"
+    val storagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        if (uri != null) {
             runCatching {
-                MinecraftBackup.restore(context, uri) { backupBusy = it }
-            }.onSuccess { count ->
-                localReady = true
-                backupMessage = "Restored $count Minecraft resource set(s)."
-            }.onFailure { backupMessage = it.message ?: "Could not restore the backup" }
-            backupBusy = null
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            storageTree = uri
+            browserPrefs.edit().putString("tree_uri", uri.toString()).apply()
+            browserOpen = true
         }
+    }
+
+    fun openFileBrowser() {
+        if (storageTree == null) storagePicker.launch(null) else browserOpen = true
     }
 
     fun exportBackup() {
@@ -160,42 +165,31 @@ fun HomeScreen(
                         }
                     },
                 )
-                Spacer(Modifier.height(8.dp))
-                SoftButton(
-                    "Choose existing Minecraft files",
-                    modifier = Modifier.fillMaxWidth(),
-                    icon = Icons.Outlined.FolderOpen,
-                    onClick = { if (currentBusy == null) onChooseFolder() },
-                )
-            }
-        }
-
-        item {
-            Plate(contentPadding = PaddingValues(16.dp)) {
-                SectionLabel("MINECRAFT FILES")
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Keep your prepared 26.3 resources safe or restore them without downloading again.",
-                    color = c.muted,
-                    style = MaterialTheme.typography.bodySmall,
-                )
                 Spacer(Modifier.height(12.dp))
+                HorizontalDivider(color = c.stroke)
+                Spacer(Modifier.height(9.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionLabel("MINECRAFT FILES")
+                    Spacer(Modifier.weight(1f))
+                    Text("Import or back up", color = c.muted, style = MaterialTheme.typography.labelSmall)
+                }
+                Spacer(Modifier.height(7.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     SoftButton(
-                        "Restore backup",
-                        modifier = Modifier.weight(1f),
-                        icon = Icons.Outlined.Restore,
-                        onClick = { if (currentBusy == null) restorePicker.launch(arrayOf("application/zip")) },
+                        "Browse / Import",
+                        modifier = Modifier.weight(1.25f),
+                        icon = Icons.Outlined.FolderOpen,
+                        onClick = { if (currentBusy == null) openFileBrowser() },
                     )
                     SoftButton(
-                        "Export to Downloads",
+                        if (backupBusy != null) "Exporting…" else "Export ZIP",
                         modifier = Modifier.weight(1f),
                         icon = Icons.Outlined.FileUpload,
                         onClick = { if (currentBusy == null) exportBackup() },
                     )
                 }
                 if (backupMessage != null) {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
                     Text(backupMessage!!, color = c.success, style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -249,6 +243,25 @@ fun HomeScreen(
         }
     }
 
+    val tree = storageTree
+    if (browserOpen && tree != null) {
+        MinecraftFileBrowserDialog(
+            treeUri = tree,
+            onDismiss = { browserOpen = false },
+            onChangeStorage = {
+                browserOpen = false
+                storagePicker.launch(null)
+            },
+            onSelectFolder = { documentId ->
+                browserOpen = false
+                onImportFolder(tree, documentId)
+            },
+            onSelectZip = { uri ->
+                browserOpen = false
+                onImportBackup(uri)
+            },
+        )
+    }
 }
 
 @Composable

@@ -10,10 +10,13 @@ import org.json.JSONObject
 import java.io.File
 
 /** Imports Mojang launcher files into the installer's cache; native code verifies every SHA-1. */
-internal suspend fun importMinecraftFolder(context: Context, tree: Uri): Int = withContext(Dispatchers.IO) {
+internal suspend fun importMinecraftFolder(
+    context: Context,
+    tree: Uri,
+    rootDocumentId: String = DocumentsContract.getTreeDocumentId(tree),
+): Int = withContext(Dispatchers.IO) {
     val resolver = context.contentResolver
-    val rootId = DocumentsContract.getTreeDocumentId(tree)
-    val rootUri = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)
+    val rootId = rootDocumentId
 
     fun children(parentId: String): List<Pair<String, String>> {
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
@@ -44,7 +47,8 @@ internal suspend fun importMinecraftFolder(context: Context, tree: Uri): Int = w
         ?: error("Could not find versions/26.3/26.3.json. Choose the Minecraft game folder.")
     val versionJson = File(context.cacheDir, "minecraft-import/version.json")
     versionJson.parentFile?.mkdirs()
-    resolver.openInputStream(DocumentsContract.buildDocumentUriUsingTree(tree, versionJsonId))!!.use { input -> versionJson.outputStream().use(input::copyTo) }
+    resolver.openInputStream(DocumentsContract.buildDocumentUriUsingTree(tree, versionJsonId))!!
+        .use { input -> versionJson.outputStream().use(input::copyTo) }
     val metadata = JSONObject(versionJson.readText())
     versionJson.delete()
     val assetIndexId = metadata.getJSONObject("assetIndex").getString("id")
@@ -57,7 +61,8 @@ internal suspend fun importMinecraftFolder(context: Context, tree: Uri): Int = w
     imported++
 
     val indexDocument = File(context.cacheDir, "minecraft-import/asset-index.json")
-    resolver.openInputStream(DocumentsContract.buildDocumentUriUsingTree(tree, indexId))!!.use { input -> indexDocument.outputStream().use(input::copyTo) }
+    resolver.openInputStream(DocumentsContract.buildDocumentUriUsingTree(tree, indexId))!!
+        .use { input -> indexDocument.outputStream().use(input::copyTo) }
     val objects = JSONObject(indexDocument.readText()).getJSONObject("objects")
     indexDocument.delete()
     val assetsId = locate("assets", "objects")

@@ -13,14 +13,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Update
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.horizon.launcher.data.AccountsInfo
 import dev.horizon.launcher.data.PlatformInfo
@@ -29,6 +32,10 @@ import dev.horizon.launcher.data.SettingsInfo
 import dev.horizon.launcher.data.SignInInfo
 import dev.horizon.launcher.data.TelemetryInfo
 import dev.horizon.launcher.data.TouchControlsInfo
+import dev.horizon.launcher.data.Updater
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 @Composable
@@ -52,6 +59,11 @@ fun SettingsScreen(
     onGameFilesChanged: () -> Unit = {},
 ) {
     val c = LocalHorizon.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var updateBusy by remember { mutableStateOf(false) }
+    var updateStatus by remember { mutableStateOf<String?>(null) }
+    var installedNativeBuild by remember { mutableStateOf(Updater.installedBuild(context.filesDir)) }
     var autoInstall by remember(settings?.installNewVersions) { mutableStateOf(settings?.installNewVersions ?: true) }
     var prune by remember(settings?.pruneOldVersions) { mutableStateOf(settings?.pruneOldVersions ?: true) }
     var skipOpening by remember(settings?.skipOpening) { mutableStateOf(settings?.skipOpening ?: false) }
@@ -107,8 +119,66 @@ fun SettingsScreen(
             }
         }
         item {
+            Plate(
+                color = c.accent.copy(alpha = 0.07f),
+                borderColor = c.accentHi.copy(alpha = 0.28f),
+            ) {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    SectionLabel("ANDROID NIGHTLY UPDATE")
+                    Spacer(Modifier.weight(1f))
+                    Tag("ROLLING", c.accentHi)
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (installedNativeBuild > 0L) "Installed native build #$installedNativeBuild" else "Using the native runtime bundled in this APK",
+                    color = c.ink,
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    "Checks this Android edition's rolling update manifest and verifies downloaded native libraries with SHA-256. Upstream Horizon Nightlies are listed separately in Servers & Builds.",
+                    color = c.muted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(10.dp))
+                SoftButton(
+                    text = if (updateBusy) "Checking updates…" else "Check for updates",
+                    modifier = Modifier.fillMaxWidth(),
+                    icon = Icons.Outlined.Update,
+                    onClick = {
+                        if (!updateBusy && busy == null) {
+                            scope.launch {
+                                updateBusy = true
+                                updateStatus = "Contacting the rolling update channel…"
+                                try {
+                                    when (val result = withContext(Dispatchers.IO) { Updater.checkAndInstall(context) }) {
+                                        is Updater.Result.UpToDate -> {
+                                            installedNativeBuild = result.build
+                                            updateStatus = "Already up to date (build #${result.build})."
+                                        }
+                                        is Updater.Result.Installed -> {
+                                            installedNativeBuild = result.build
+                                            updateStatus = "Nightly native build #${result.build} downloaded. Restart Horizon to apply it."
+                                        }
+                                        is Updater.Result.Failed -> updateStatus = "Update failed: ${result.message}"
+                                    }
+                                } catch (error: Exception) {
+                                    updateStatus = "Update failed: ${error.message ?: error.javaClass.simpleName}"
+                                } finally {
+                                    updateBusy = false
+                                }
+                            }
+                        }
+                    },
+                )
+                if (updateStatus != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(updateStatus!!, color = if (updateStatus!!.startsWith("Update failed")) c.danger else c.muted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        item {
             Plate {
-                SectionLabel("UPDATES & GAME")
+                SectionLabel("GAME OPTIONS")
                 Spacer(Modifier.height(8.dp))
                 ToggleRow("Install new Horizon versions", autoInstall) {
                     autoInstall = it
