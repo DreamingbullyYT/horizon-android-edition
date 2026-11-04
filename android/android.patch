@@ -9,14 +9,239 @@ index 469760ca6..2ea42d7bc 100644
  /target/
  **/__pycache__/
  *.py[cod]
+diff --git a/Cargo.lock b/Cargo.lock
+index 1eb02f73f..3e93046fa 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -120,6 +120,23 @@ version = "0.2.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "fc7eb209b1518d6bb87b283c20095f5228ecda460da70b44f0802523dea6da04"
+ 
++[[package]]
++name = "android_log-sys"
++version = "0.3.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "84521a3cf562bc62942e294181d9eef17eb38ceb8c68677bc49f144e4c3d4f8d"
++
++[[package]]
++name = "android_logger"
++version = "0.14.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "05b07e8e73d720a1f2e4b6014766e6039fd2e96a4fa44e2a78d0e1fa2ff49826"
++dependencies = [
++ "android_log-sys",
++ "env_filter",
++ "log",
++]
++
+ [[package]]
+ name = "android_system_properties"
+ version = "0.1.6"
+@@ -129,6 +146,15 @@ dependencies = [
+  "libc",
+ ]
+ 
++[[package]]
++name = "arbitrary"
++version = "1.5.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "3bc62ac97cc33321f50863d514c3bc38a453947a8f9e781137e47c7401020aed"
++dependencies = [
++ "derive_arbitrary",
++]
++
+ [[package]]
+ name = "arboard"
+ version = "3.6.1"
+@@ -373,7 +399,7 @@ version = "0.1.0"
+ dependencies = [
+  "horizon-mods",
+  "serde_json",
+- "zip",
++ "zip 9.1.3",
+ ]
+ 
+ [[package]]
+@@ -768,6 +794,17 @@ version = "0.5.9"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "9e9de72ce2ad1f90dc62fa25f0f430ef85eb4b0d8fa0be4f30373bc40a21d28e"
+ 
++[[package]]
++name = "derive_arbitrary"
++version = "1.5.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "1b034bd7d5f032402a2479444dcc6f74e36a03f31854d41680fb240ef682a1ac"
++dependencies = [
++ "proc-macro2",
++ "quote",
++ "syn 3.0.6",
++]
++
+ [[package]]
+ name = "des"
+ version = "0.8.1"
+@@ -877,6 +914,16 @@ dependencies = [
+  "simdutf8",
+ ]
+ 
++[[package]]
++name = "env_filter"
++version = "0.1.4"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "1bf3c259d255ca70051b30e2e95b5446cdb8949ac4cd22c0d7fd634d89f568e2"
++dependencies = [
++ "log",
++ "regex",
++]
++
+ [[package]]
+ name = "equivalent"
+ version = "1.0.2"
+@@ -1266,6 +1313,33 @@ dependencies = [
+  "digest",
+ ]
+ 
++[[package]]
++name = "horizon-android-game"
++version = "0.1.0"
++dependencies = [
++ "android_logger",
++ "horizon-client",
++ "jni 0.21.1",
++ "log",
++ "serde_json",
++ "winit",
++]
++
++[[package]]
++name = "horizon-android-installer"
++version = "0.1.0"
++dependencies = [
++ "horizon-core",
++ "log",
++ "serde",
++ "serde_json",
++ "sha1",
++ "sha2",
++ "ureq",
++ "url",
++ "zip 2.6.1",
++]
++
+ [[package]]
+ name = "horizon-anticheat"
+ version = "0.1.0"
+@@ -1368,7 +1442,7 @@ dependencies = [
+  "wgpu",
+  "winit",
+  "winresource",
+- "zip",
++ "zip 9.1.3",
+ ]
+ 
+ [[package]]
+@@ -1445,7 +1519,7 @@ dependencies = [
+  "ureq",
+  "wgpu",
+  "winit",
+- "zip",
++ "zip 9.1.3",
+ ]
+ 
+ [[package]]
+@@ -1497,7 +1571,7 @@ dependencies = [
+  "ureq",
+  "wgpu",
+  "winit",
+- "zip",
++ "zip 9.1.3",
+  "zune-jpeg",
+ ]
+ 
+@@ -1615,7 +1689,7 @@ dependencies = [
+  "sha2",
+  "toml",
+  "wasmparser",
+- "zip",
++ "zip 9.1.3",
+ ]
+ 
+ [[package]]
+@@ -1650,7 +1724,7 @@ dependencies = [
+  "sha1",
+  "toml",
+  "ureq",
+- "zip",
++ "zip 9.1.3",
+ ]
+ 
+ [[package]]
+@@ -1662,7 +1736,7 @@ dependencies = [
+  "regex",
+  "sha1",
+  "sha2",
+- "zip",
++ "zip 9.1.3",
+ ]
+ 
+ [[package]]
+@@ -1726,7 +1800,7 @@ dependencies = [
+  "toml_edit",
+  "ureq",
+  "windows-sys 0.61.2",
+- "zip",
++ "zip 9.1.3",
+ ]
+ 
+ [[package]]
+@@ -1752,7 +1826,7 @@ dependencies = [
+  "serde_json",
+  "sha2",
+  "toml",
+- "zip",
++ "zip 9.1.3",
+ ]
+ 
+ [[package]]
+@@ -1763,7 +1837,7 @@ dependencies = [
+  "horizon-core",
+  "naga",
+  "png",
+- "zip",
++ "zip 9.1.3",
+ ]
+ 
+ [[package]]
+@@ -5322,6 +5396,21 @@ dependencies = [
+  "syn 3.0.6",
+ ]
+ 
++[[package]]
++name = "zip"
++version = "2.6.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "1dcb24d0152526ae49b9b96c1dcf71850ca1e0b882e4e28ed898a93c41334744"
++dependencies = [
++ "arbitrary",
++ "crc32fast",
++ "crossbeam-utils",
++ "flate2",
++ "indexmap",
++ "memchr",
++ "zopfli",
++]
++
+ [[package]]
+ name = "zip"
+ version = "9.1.3"
 diff --git a/Cargo.toml b/Cargo.toml
-index 5fe7b7738..46235a25e 100644
+index 1944ef889..d29d9d4cd 100644
 --- a/Cargo.toml
 +++ b/Cargo.toml
-@@ -8,6 +8,8 @@ members = [
-     "crates/horizon-hdr",
+@@ -9,6 +9,8 @@ members = [
      "crates/horizon-world",
      "crates/horizon-client",
+     "crates/horizon-client-lib",
 +    "crates/horizon-android-game",
 +    "crates/horizon-android-installer",
      "crates/horizon-client-core",
@@ -1702,7 +1927,7 @@ index eaf2a2274..3c3199518 100644
              && system.set_text(text.to_owned()).is_err()
          {
 diff --git a/crates/horizon-client-input/src/keybinds.rs b/crates/horizon-client-input/src/keybinds.rs
-index 3d1ec0a36..a8bd6af6d 100644
+index 439df2a0b..601b92bdf 100644
 --- a/crates/horizon-client-input/src/keybinds.rs
 +++ b/crates/horizon-client-input/src/keybinds.rs
 @@ -288,6 +288,8 @@ pub use horizon_client_core::key_display::display_name;
@@ -1725,10 +1950,10 @@ index 3d1ec0a36..a8bd6af6d 100644
  
  /// Current bindings by mapping name.
 diff --git a/crates/horizon-client-render/src/audio.rs b/crates/horizon-client-render/src/audio.rs
-index 0261d53a0..6a3d1df91 100644
+index 1e87b0737..52349d8ad 100644
 --- a/crates/horizon-client-render/src/audio.rs
 +++ b/crates/horizon-client-render/src/audio.rs
-@@ -1123,45 +1123,56 @@ impl Audio {
+@@ -1129,45 +1129,56 @@ impl Audio {
              self.devices_seen = output_devices();
              return true;
          }
@@ -1821,10 +2046,10 @@ index 0261d53a0..6a3d1df91 100644
      /// `SoundManager.tick(paused)`, once per client tick.
      pub fn tick(&mut self, paused: bool, ctx: &TickContext) {
 diff --git a/crates/horizon-client-render/src/gfx.rs b/crates/horizon-client-render/src/gfx.rs
-index 35d36a430..38a731b79 100644
+index 3bb0db791..68067e095 100644
 --- a/crates/horizon-client-render/src/gfx.rs
 +++ b/crates/horizon-client-render/src/gfx.rs
-@@ -1770,6 +1770,11 @@ impl Renderer {
+@@ -2106,6 +2106,11 @@ impl Renderer {
                      size.height.clamp(1, max_side),
                  )
                  .ok_or("surface has no supported configuration")?;
@@ -1836,9 +2061,9 @@ index 35d36a430..38a731b79 100644
              let caps = surface.get_capabilities(&adapter);
              config.format = surface_format(&caps.formats, config.format);
              config.view_formats = vec![config.format.remove_srgb_suffix()];
-@@ -3680,6 +3685,15 @@ impl Renderer {
-             .get_mut()
-             .unwrap_or_else(std::sync::PoisonError::into_inner) = self.surface.take();
+@@ -4325,6 +4330,15 @@ impl Renderer {
+             .unwrap_or_else(std::sync::PoisonError::into_inner) =
+             self.surface.take().and_then(|s| Arc::try_unwrap(s).ok());
      }
 +    /// Drop the window surface and any spare: Android destroys the native window when the app
 +    /// is paused, so a surface kept across that is dead and draws black.
@@ -1853,19 +2078,19 @@ index 35d36a430..38a731b79 100644
      pub fn recreate_surface(&mut self) -> Result<()> {
          self.queue.wait();
 diff --git a/crates/horizon-client/Cargo.toml b/crates/horizon-client/Cargo.toml
-index c5b959f4e..ad15c748b 100644
+index 3fab033ba..9af77707b 100644
 --- a/crates/horizon-client/Cargo.toml
 +++ b/crates/horizon-client/Cargo.toml
-@@ -38,7 +38,7 @@ horizon-narrator = { path = "../horizon-narrator" }
+@@ -44,7 +44,7 @@ horizon-narrator = { path = "../horizon-narrator" }
+ # Their runtime is the `mods` feature.
  horizon-mods = { path = "../horizon-mods", default-features = false, features = ["index"] }
- horizon-optifine = { path = "../horizon-optifine" }
  wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "vulkan", "metal", "wgsl", "naga-ir"] }
 -winit = "0.30.13"
 +winit = { version = "0.30.13", features = ["android-native-activity"] }
  pollster = "0.4"
  bytemuck = { version = "1.24", features = ["derive"] }
  glam = "0.30"
-@@ -76,6 +76,7 @@ fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
+@@ -82,6 +82,7 @@ fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
  # The server thread's CPU time per tick (`HORIZON_SPIKES`, spans.rs).
  rustix = { version = "1", default-features = false, features = ["std", "time", "process", "fs"] }
  
@@ -1874,10 +2099,10 @@ index c5b959f4e..ad15c748b 100644
  # Use the registered URI handler without routing links through Explorer/cmd.
  open = { version = "5.4.5", features = ["shellexecute-on-windows"] }
 diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.rs
-index aa6dec399..9740924b9 100644
+index 27dfd813f..8b89b618f 100644
 --- a/crates/horizon-client/src/game.rs
 +++ b/crates/horizon-client/src/game.rs
-@@ -375,17 +375,135 @@ use std::{
+@@ -422,17 +422,39 @@ use std::{
      collections::{HashMap, HashSet},
      path::PathBuf,
      sync::{
@@ -1890,6 +2115,244 @@ index aa6dec399..9740924b9 100644
      thread::JoinHandle,
      time::{Duration, Instant},
  };
++
++include!("game/android.rs");
++
++fn new_event_loop() -> Result<EventLoop<()>> {
++    #[cfg(target_os = "android")]
++    {
++        use winit::platform::android::EventLoopBuilderExtAndroid;
++        let mut builder = EventLoop::builder();
++        ANDROID_APP.with(|slot| {
++            if let Some(app) = slot.borrow().as_ref() {
++                builder.with_android_app(app.clone());
++            }
++        });
++        return Ok(builder.build()?);
++    }
++    #[cfg(not(target_os = "android"))]
++    {
++        Ok(EventLoop::new()?)
++    }
++}
+ use winit::{
+     application::ApplicationHandler,
+     error::EventLoopError,
+-    event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent},
++    event::{
++        DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent,
++    },
+     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+     keyboard::{KeyCode, PhysicalKey},
+     window::{CursorGrabMode, Window, WindowId},
+@@ -2417,6 +2439,7 @@ struct Game<'a> {
+     physical_keys: HashSet<KeyCode>,
+     physical_buttons: HashSet<MouseButton>,
+     drag_button: Option<MouseButton>,
++    android_touch: AndroidTouchState,
+     /// Control + left click as a right click (macOS).
+     right_click_emulation: horizon_client_input::mouse::RightClickEmulation,
+     left: bool,
+@@ -3164,6 +3187,7 @@ struct Game<'a> {
+     /// The local player as a model (third person, the inventory).
+     player_model: Option<Mob>,
+ }
++
+ #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+ enum Dim {
+     Overworld,
+@@ -3657,7 +3681,7 @@ impl Game<'_> {
+         player.mobility_restricted = blind;
+         player.yaw = self.yaw;
+         player.pitch = self.pitch;
+-        player.auto_jump_enabled = self.settings.auto_jump;
++        player.auto_jump_enabled = self.settings.auto_jump || self.android_touch.auto_jump;
+         player.item_use_speed = item_use_speed;
+         player.item_use_slows_sprint = item_use_slows_sprint;
+         player.respiration = respiration;
+@@ -7834,7 +7858,15 @@ impl Game<'_> {
+     fn apply_mouse_look(&mut self) {
+         let look = self.look_options();
+         let time = self.started.elapsed().as_secs_f64();
+-        let pointer = self.captured || self.agent_pointer;
++        // Android touch has no native cursor to capture. A finger held in the
++        // look region supplies relative motion instead, so treat that active
++        // pointer as captured for the duration of its gesture.
++        #[cfg(target_os = "android")]
++        let touch_look = ANDROID_LOOK_ACTIVE.load(Ordering::Relaxed)
++            || self.android_touch.active.values().any(|role| matches!(role, AndroidTouchRole::Look));
++        #[cfg(not(target_os = "android"))]
++        let touch_look = false;
++        let pointer = self.captured || self.agent_pointer || touch_look;
+         let grabbed = pointer && self.screen == Screen::Playing && self.player.is_some();
+         let active = self.focused || self.agent_pointer;
+         if let Some((xo, yo)) = self
+@@ -8723,6 +8755,7 @@ impl Game<'_> {
+         };
+         self.native_screen_render_post(batch, &view);
+     }
++
+     /// `CreativeModeInventoryScreen.hasPermissions` (`canUseGameMasterBlocks`
+     /// and the Operator Items Tab option) given to `tryRefreshInvalidatedTabs`,
+     /// as the screen's constructor and `containerTick` do.
+@@ -16863,8 +16896,28 @@ fn autosave_interval(rate: f32) -> i64 {
+     i64::from((rate * 300.0) as i32).max(100)
+ }
+ impl ApplicationHandler for Game<'_> {
++    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
++        // Android destroys the native window on pause (a file picker, the home button): the
++        // surface made for it is dead from here on.
++        if cfg!(target_os = "android")
++            && let Some(renderer) = self.renderer.as_mut()
++        {
++            renderer.drop_surface();
++        }
++    }
+     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+         if self.window.is_some() {
++            // Back from a pause on Android: the window has a new native surface.
++            if cfg!(target_os = "android") {
++                if let Some(renderer) = self.renderer.as_mut()
++                    && let Err(error) = renderer.recreate_surface()
++                {
++                    log::error!("Horizon Android: cannot recreate the surface: {error}");
++                }
++                if let Some(window) = &self.window {
++                    window.request_redraw();
++                }
++            }
+             return;
+         }
+         // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
+@@ -16951,6 +17004,8 @@ impl ApplicationHandler for Game<'_> {
+         }
+     }
+     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
++        #[cfg(target_os = "android")]
++        self.android_poll_input(event_loop);
+         self.idle(event_loop);
+     }
+     /// The application is ending. On macOS, Quit (Cmd+Q) ends it through
+@@ -16982,6 +17037,14 @@ impl Game<'_> {
+         if !ours {
+             return;
+         }
++        self.android_finish_menu_tap(event_loop, id, origin);
++        event = match event {
++            WindowEvent::Touch(touch) => match self.android_translate_touch(event_loop, touch) {
++                Some(translated) => translated,
++                None => return,
++            },
++            other => other,
++        };
+         follow_keymap(&mut event);
+         // MacosUtil.setCtrlClickEmulatesRightClick: Control + left click is a right click.
+         if let WindowEvent::MouseInput { state, button, .. } = &mut event
+@@ -18414,9 +18477,29 @@ impl Game<'_> {
+                         }
+                         self.frames += 1;
+                         self.fps_frames += 1;
++                        #[cfg(target_os = "android")]
++                        if self.frames == 1 || self.fps_at.elapsed() >= Duration::from_secs(1) {
++                            if let Some(renderer) = &self.renderer {
++                                let size = [renderer.config.width, renderer.config.height];
++                                let batch = HudBatch::new(size);
++                                let (scale, w, h) = (batch.scale, batch.width as i32, batch.height as i32);
++                                // `Hud.extractItemHotbar`: 182x22 sprite centred, slots 20 wide from +1.
++                                let rect = [
++                                    (w / 2 - 91) as f32 * scale,
++                                    (h - 22) as f32 * scale,
++                                    20.0 * scale,
++                                    22.0 * scale,
++                                ];
++                                for (slot, v) in ANDROID_HOTBAR.iter().zip(rect) {
++                                    slot.store(v.to_bits(), Ordering::Relaxed);
++                                }
++                            }
++                        }
+                         horizon_client::crash::debug_crash_tick();
+                         if self.fps_at.elapsed() >= Duration::from_secs(1) {
+                             self.fps = self.fps_frames as f32 / self.fps_at.elapsed().as_secs_f32();
++                            #[cfg(target_os = "android")]
++                            ANDROID_GAME_FPS.store(self.fps.round().max(0.0) as u32, Ordering::Relaxed);
+                             self.fps_frames = 0;
+                             self.fps_at = Instant::now();
+                         }
+@@ -18685,6 +18768,7 @@ impl<'a> Game<'a> {
+             physical_keys: HashSet::new(),
+             physical_buttons: HashSet::new(),
+             drag_button: None,
++            android_touch: AndroidTouchState::from_environment(),
+             right_click_emulation: Default::default(),
+             left: false,
+             right: false,
+@@ -20718,7 +20802,7 @@ fn run_event_loop(mut game: Game<'_>) -> Result<()> {
+         return game.error.take().map_or(Ok(()), Err);
+     }
+     let mut split = split::Split::new(game);
+-    let result = EventLoop::new()?.run_app(&mut split);
++    let result = new_event_loop()?.run_app(&mut split);
+     game = split.host;
+     narrator::stop();
+     leave_fullscreen_after(&result, &mut game.settings);
+@@ -20773,8 +20857,27 @@ impl Loading {
+             || self.menu.pending.is_some()
+             || self.ui_at.is_none_or(|at| at.elapsed() >= TITLE_FRAME_WAIT)
+     }
++    /// Android destroys the native window on pause: the surface made for it is dead from here on.
++    fn suspended(&mut self) {
++        if cfg!(target_os = "android")
++            && let Some(renderer) = self.renderer.as_mut()
++        {
++            renderer.drop_surface();
++        }
++    }
+     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+         if self.window.is_some() {
++            // Back from a pause on Android: the window has a new native surface.
++            if cfg!(target_os = "android") {
++                if let Some(renderer) = self.renderer.as_mut()
++                    && let Err(error) = renderer.recreate_surface()
++                {
++                    log::error!("Horizon Android: cannot recreate the surface: {error}");
++                }
++                if let Some(window) = &self.window {
++                    window.request_redraw();
++                }
++            }
+             return;
+         }
+         // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
+@@ -21066,6 +21169,12 @@ enum App {
+     Ready(Box<split::Split<'static>>),
+ }
+ impl ApplicationHandler for App {
++    fn suspended(&mut self, event_loop: &ActiveEventLoop) {
++        match self {
++            App::Loading(loading) => loading.suspended(),
++            App::Ready(game) => game.suspended(event_loop),
++        }
++    }
+     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+         match self {
+             App::Loading(loading) => loading.resumed(event_loop),
+@@ -21210,7 +21319,7 @@ fn run_loading(
+         error: None,
+     };
+     let mut app = App::Loading(Box::new(loading));
+-    let result = EventLoop::new()?.run_app(&mut app);
++    let result = new_event_loop()?.run_app(&mut app);
+     narrator::stop();
+     match &mut app {
+         // Ready: splitscreen around P1's game.
+diff --git a/crates/horizon-client/src/game/android.rs b/crates/horizon-client/src/game/android.rs
+new file mode 100644
+index 000000000..613562c3f
+--- /dev/null
++++ b/crates/horizon-client/src/game/android.rs
+@@ -0,0 +1,915 @@
++// Android input bridge and touch state, kept out of game.rs so upstream merges stay clean.
++// Included into `game` with `include!`, so it shares that module's scope and private fields.
 +
 +#[cfg(target_os = "android")]
 +static ANDROID_CONTROL_INPUTS: OnceLock<Mutex<Vec<(String, bool)>>> = OnceLock::new();
@@ -1988,46 +2451,6 @@ index aa6dec399..9740924b9 100644
 +        }
 +    });
 +}
-+
-+fn new_event_loop() -> Result<EventLoop<()>> {
-+    #[cfg(target_os = "android")]
-+    {
-+        use winit::platform::android::EventLoopBuilderExtAndroid;
-+        let mut builder = EventLoop::builder();
-+        ANDROID_APP.with(|slot| {
-+            if let Some(app) = slot.borrow().as_ref() {
-+                builder.with_android_app(app.clone());
-+            }
-+        });
-+        return Ok(builder.build()?);
-+    }
-+    #[cfg(not(target_os = "android"))]
-+    {
-+        Ok(EventLoop::new()?)
-+    }
-+}
- use winit::{
-     application::ApplicationHandler,
-     error::EventLoopError,
--    event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent},
-+    event::{
-+        DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent,
-+    },
-     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-     keyboard::{KeyCode, PhysicalKey},
-     window::{CursorGrabMode, Window, WindowId},
-@@ -2205,6 +2323,7 @@ struct Game<'a> {
-     physical_keys: HashSet<KeyCode>,
-     physical_buttons: HashSet<MouseButton>,
-     drag_button: Option<MouseButton>,
-+    android_touch: AndroidTouchState,
-     /// Control + left click as a right click (macOS).
-     right_click_emulation: horizon_client_input::mouse::RightClickEmulation,
-     left: bool,
-@@ -2874,6 +2993,236 @@ struct Game<'a> {
-     /// The local player as a model (third person, the inventory).
-     player_model: Option<Mob>,
- }
 +
 +#[derive(Clone, Copy, Debug)]
 +enum AndroidTouchRole {
@@ -2258,40 +2681,8 @@ index aa6dec399..9740924b9 100644
 +    };
 +    Some(AndroidTouchRole::Key(key))
 +}
- #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
- enum Dim {
-     Overworld,
-@@ -3305,7 +3654,7 @@ impl Game<'_> {
-         player.mobility_restricted = blind;
-         player.yaw = self.yaw;
-         player.pitch = self.pitch;
--        player.auto_jump_enabled = self.settings.auto_jump;
-+        player.auto_jump_enabled = self.settings.auto_jump || self.android_touch.auto_jump;
-         player.item_use_speed = item_use_speed;
-         player.item_use_slows_sprint = item_use_slows_sprint;
-         player.respiration = respiration;
-@@ -7511,7 +7860,15 @@ impl Game<'_> {
-     fn apply_mouse_look(&mut self) {
-         let look = self.look_options();
-         let time = self.started.elapsed().as_secs_f64();
--        let pointer = self.captured || self.agent_pointer;
-+        // Android touch has no native cursor to capture. A finger held in the
-+        // look region supplies relative motion instead, so treat that active
-+        // pointer as captured for the duration of its gesture.
-+        #[cfg(target_os = "android")]
-+        let touch_look = ANDROID_LOOK_ACTIVE.load(Ordering::Relaxed)
-+            || self.android_touch.active.values().any(|role| matches!(role, AndroidTouchRole::Look));
-+        #[cfg(not(target_os = "android"))]
-+        let touch_look = false;
-+        let pointer = self.captured || self.agent_pointer || touch_look;
-         let grabbed = pointer && self.screen == Screen::Playing && self.player.is_some();
-         let active = self.focused || self.agent_pointer;
-         if let Some((xo, yo)) = self
-@@ -8287,6 +8644,404 @@ impl Game<'_> {
-         let view = self.screen_view(batch, screen);
-         self.native_screen_render_post(batch, &view);
-     }
 +
++impl Game<'_> {
 +    fn touch_control_centres(&self, width: f32, height: f32) -> [(f32, f32, KeyCode); 3] {
 +        let (jx, jy) = self.android_touch.position("jump", (0.90, 0.73));
 +        let (sx, sy) = self.android_touch.position("sneak", (0.68, 0.87));
@@ -2311,7 +2702,7 @@ index aa6dec399..9740924b9 100644
 +    ) -> Result<()> {
 +        let role = self.android_touch.output(id, fallback);
 +        match role {
-+            AndroidTouchRole::Key(key) => self.mapped_key(key, pressed, false),
++            AndroidTouchRole::Key(key) => self.mapped_key(key, pressed, false, key),
 +            AndroidTouchRole::Mouse(button) => self.play_mouse(button, pressed),
 +            _ => Ok(()),
 +        }
@@ -2321,11 +2712,11 @@ index aa6dec399..9740924b9 100644
 +        if id == "sprint" && self.android_touch.hold_to_sprint && key == KeyCode::ControlLeft {
 +            let toggle = self.settings.toggle_sprint;
 +            self.settings.toggle_sprint = false;
-+            let result = self.mapped_key(key, pressed, false);
++            let result = self.mapped_key(key, pressed, false, key);
 +            self.settings.toggle_sprint = toggle;
 +            result
 +        } else {
-+            self.mapped_key(key, pressed, false)
++            self.mapped_key(key, pressed, false, key)
 +        }
 +    }
 +
@@ -2581,7 +2972,7 @@ index aa6dec399..9740924b9 100644
 +                    AndroidTouchRole::Key(key) if key == KeyCode::ControlLeft => {
 +                        self.touch_key("sprint", key, true)?
 +                    }
-+                    AndroidTouchRole::Key(key) => self.mapped_key(key, true, false)?,
++                    AndroidTouchRole::Key(key) => self.mapped_key(key, true, false, key)?,
 +                    AndroidTouchRole::Mouse(button) => self.play_mouse(button, true)?,
 +                    AndroidTouchRole::QuickSettings => {
 +                        self.android_touch.quick_settings_open =
@@ -2661,7 +3052,7 @@ index aa6dec399..9740924b9 100644
 +                        AndroidTouchRole::Key(key) if key == KeyCode::ControlLeft => {
 +                            self.touch_key("sprint", key, false)?
 +                        }
-+                        AndroidTouchRole::Key(key) => self.mapped_key(key, false, false)?,
++                        AndroidTouchRole::Key(key) => self.mapped_key(key, false, false, key)?,
 +                        AndroidTouchRole::Mouse(button) => self.play_mouse(button, false)?,
 +                        AndroidTouchRole::Joystick { .. } => {
 +                            for (id, key) in [
@@ -2689,53 +3080,76 @@ index aa6dec399..9740924b9 100644
 +        self.last_input = Instant::now();
 +        Ok(())
 +    }
-     /// `CreativeModeInventoryScreen.hasPermissions` (`canUseGameMasterBlocks`
-     /// and the Operator Items Tab option) given to `tryRefreshInvalidatedTabs`,
-     /// as the screen's constructor and `containerTick` do.
-@@ -15846,8 +16601,28 @@ impl Game<'_> {
-     }
- }
- impl ApplicationHandler for Game<'_> {
-+    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
-+        // Android destroys the native window on pause (a file picker, the home button): the
-+        // surface made for it is dead from here on.
-+        if cfg!(target_os = "android")
-+            && let Some(renderer) = self.renderer.as_mut()
-+        {
-+            renderer.drop_surface();
-+        }
-+    }
-     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-         if self.window.is_some() {
-+            // Back from a pause on Android: the window has a new native surface.
-+            if cfg!(target_os = "android") {
-+                if let Some(renderer) = self.renderer.as_mut()
-+                    && let Err(error) = renderer.recreate_surface()
-+                {
-+                    log::error!("Horizon Android: cannot recreate the surface: {error}");
-+                }
-+                if let Some(window) = &self.window {
-+                    window.request_redraw();
++
++    #[cfg(target_os = "android")]
++    fn android_poll_input(&mut self, event_loop: &ActiveEventLoop) {
++            ANDROID_GAME_ACTIVE.store(
++                self.screen == Screen::Playing && self.title.is_none() && self.player.is_some(),
++                Ordering::Relaxed,
++            );
++            if let Some(inputs) = ANDROID_CONTROL_INPUTS.get() {
++                let queued = std::mem::take(&mut *inputs.lock().unwrap());
++                for (name, pressed) in queued {
++                    if let Some(button) = name.strip_prefix("GLFW_MOUSE_BUTTON_") {
++                        let button = match button {
++                            "LEFT" => Some(MouseButton::Left),
++                            "RIGHT" => Some(MouseButton::Right),
++                            "MIDDLE" => Some(MouseButton::Middle),
++                            _ => None,
++                        };
++                        if let Some(button) = button {
++                            if let Err(error) = self.play_mouse(button, pressed) { self.error = Some(error); }
++                        }
++                        continue;
++                    }
++                    let key = name.strip_prefix("GLFW_KEY_").unwrap_or(&name);
++                    let key = match key {
++                        "SPACE" => "Space", "LEFT_SHIFT" => "ShiftLeft", "RIGHT_SHIFT" => "ShiftRight",
++                        "LEFT_CONTROL" => "ControlLeft", "RIGHT_CONTROL" => "ControlRight",
++                        "LEFT_ALT" => "AltLeft", "RIGHT_ALT" => "AltRight", "ESCAPE" => "Escape",
++                        "ENTER" => "Enter", "BACKSPACE" => "Backspace", "TAB" => "Tab",
++                        "UP" => "ArrowUp", "DOWN" => "ArrowDown", "LEFT" => "ArrowLeft", "RIGHT" => "ArrowRight",
++                        "PAGE_UP" => "PageUp", "PAGE_DOWN" => "PageDown",
++                        other => other,
++                    };
++                    if let Some(AndroidTouchRole::Key(code)) = android_touch_output(key) {
++                        if let Err(error) = self.mapped_key(code, pressed, false, code) { self.error = Some(error); }
++                    }
 +                }
 +            }
-             return;
-         }
-         // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
-@@ -15926,6 +16701,8 @@ impl ApplicationHandler for Game<'_> {
-         }
-     }
-     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-+        #[cfg(target_os = "android")]
-+        self.android_poll_input(event_loop);
-         self.idle(event_loop);
-     }
-     /// The application is ending. On macOS, Quit (Cmd+Q) ends it through
-@@ -15956,6 +16733,120 @@ impl Game<'_> {
-         if !ours {
-             return;
-         }
-+        // Finish synthetic menu taps on the next native event, giving touch
-+        // scroll gestures a clean press/release boundary.
++            if let Some(delta) = ANDROID_LOOK_DELTA.get() {
++                let (dx, dy) = std::mem::replace(&mut *delta.lock().unwrap(), (0.0, 0.0));
++                if dx != 0.0 || dy != 0.0 {
++                    self.mouse.on_move(0.0, 0.0, dx, dy, true, true);
++                    self.last_input = Instant::now();
++                }
++            }
++            if !ANDROID_GAME_ACTIVE.load(Ordering::Relaxed)
++                && let Some(touches) = ANDROID_MENU_TOUCHES.get()
++                && let Some(window_id) = self.window.as_ref().map(|window| window.id())
++            {
++                let queued = std::mem::take(&mut *touches.lock().unwrap());
++                for (id, x, y, phase) in queued {
++                    let touch = winit::event::Touch {
++                        device_id: DeviceId::dummy(),
++                        id,
++                        phase: match phase {
++                            0 => TouchPhase::Started,
++                            1 => TouchPhase::Moved,
++                            3 => TouchPhase::Cancelled,
++                            _ => TouchPhase::Ended,
++                        },
++                        location: winit::dpi::PhysicalPosition::new(x, y),
++                        force: None,
++                    };
++                    self.window_event(event_loop, window_id, WindowEvent::Touch(touch));
++                }
++            }
++    }
++
++    /// Finish synthetic menu taps on the next native event, giving touch scroll gestures a clean
++    /// press/release boundary.
++    fn android_finish_menu_tap(&mut self, event_loop: &dyn EventLoopCtl, id: WindowId, origin: input_trace::InputOrigin) {
 +        if let Some(device_id) = self.android_touch.pending_menu_release.take() {
 +            self.handle_window_event(
 +                event_loop,
@@ -2745,12 +3159,16 @@ index aa6dec399..9740924b9 100644
 +                    state: ElementState::Released,
 +                    button: MouseButton::Left,
 +                },
++                origin,
 +            );
 +        }
-+        // In-world Android touches use independent virtual controls; menu
-+        // touches use the standard pointer UI path.
-+        event = match event {
-+            WindowEvent::Touch(touch) => {
++    }
++
++    /// A touch as the pointer event the menus understand, or `None` when virtual controls took it
++    /// (or it only moved a gesture the menus ignore). In-world touches use independent virtual
++    /// controls; menu touches use the standard pointer UI path.
++    fn android_translate_touch(&mut self, event_loop: &dyn EventLoopCtl, touch: winit::event::Touch) -> Option<WindowEvent> {
++        Some({
 +                if cfg!(target_os = "android")
 +                    && self.android_touch.enabled
 +                    && self.screen == Screen::Playing
@@ -2761,7 +3179,7 @@ index aa6dec399..9740924b9 100644
 +                        self.error = Some(error);
 +                        event_loop.exit();
 +                    }
-+                    return;
++                    return None;
 +                }
 +                let position = touch.location;
 +                let physical = (position.x, position.y);
@@ -2791,7 +3209,7 @@ index aa6dec399..9740924b9 100644
 +                        let Some(mut gesture) =
 +                            self.android_touch.menu_touches.get(&touch.id).copied()
 +                        else {
-+                            return;
++                            return None;
 +                        };
 +                        let dy = gesture.last.1 - physical.1;
 +                        // Accumulate the total displacement for tap-vs-drag,
@@ -2845,186 +3263,14 @@ index aa6dec399..9740924b9 100644
 +                        }
 +                    }
 +                }
-+            }
-+            other => other,
-+        };
-         follow_keymap(&mut event);
-         // MacosUtil.setCtrlClickEmulatesRightClick: Control + left click is a right click.
-         if let WindowEvent::MouseInput { state, button, .. } = &mut event
-@@ -17279,9 +18170,29 @@ impl Game<'_> {
-                         }
-                         self.frames += 1;
-                         self.fps_frames += 1;
-+                        #[cfg(target_os = "android")]
-+                        if self.frames == 1 || self.fps_at.elapsed() >= Duration::from_secs(1) {
-+                            if let Some(renderer) = &self.renderer {
-+                                let size = [renderer.config.width, renderer.config.height];
-+                                let batch = HudBatch::new(size);
-+                                let (scale, w, h) = (batch.scale, batch.width as i32, batch.height as i32);
-+                                // `Hud.extractItemHotbar`: 182x22 sprite centred, slots 20 wide from +1.
-+                                let rect = [
-+                                    (w / 2 - 91) as f32 * scale,
-+                                    (h - 22) as f32 * scale,
-+                                    20.0 * scale,
-+                                    22.0 * scale,
-+                                ];
-+                                for (slot, v) in ANDROID_HOTBAR.iter().zip(rect) {
-+                                    slot.store(v.to_bits(), Ordering::Relaxed);
-+                                }
-+                            }
-+                        }
-                         horizon_client::crash::debug_crash_tick();
-                         if self.fps_at.elapsed() >= Duration::from_secs(1) {
-                             self.fps = self.fps_frames as f32 / self.fps_at.elapsed().as_secs_f32();
-+                            #[cfg(target_os = "android")]
-+                            ANDROID_GAME_FPS.store(self.fps.round().max(0.0) as u32, Ordering::Relaxed);
-                             self.fps_frames = 0;
-                             self.fps_at = Instant::now();
-                         }
-@@ -17317,6 +18228,71 @@ impl Game<'_> {
-         }
-         self.finish_perf();
-     }
-+    #[cfg(target_os = "android")]
-+    fn android_poll_input(&mut self, event_loop: &ActiveEventLoop) {
-+            ANDROID_GAME_ACTIVE.store(
-+                self.screen == Screen::Playing && self.title.is_none() && self.player.is_some(),
-+                Ordering::Relaxed,
-+            );
-+            if let Some(inputs) = ANDROID_CONTROL_INPUTS.get() {
-+                let queued = std::mem::take(&mut *inputs.lock().unwrap());
-+                for (name, pressed) in queued {
-+                    if let Some(button) = name.strip_prefix("GLFW_MOUSE_BUTTON_") {
-+                        let button = match button {
-+                            "LEFT" => Some(MouseButton::Left),
-+                            "RIGHT" => Some(MouseButton::Right),
-+                            "MIDDLE" => Some(MouseButton::Middle),
-+                            _ => None,
-+                        };
-+                        if let Some(button) = button {
-+                            if let Err(error) = self.play_mouse(button, pressed) { self.error = Some(error); }
-+                        }
-+                        continue;
-+                    }
-+                    let key = name.strip_prefix("GLFW_KEY_").unwrap_or(&name);
-+                    let key = match key {
-+                        "SPACE" => "Space", "LEFT_SHIFT" => "ShiftLeft", "RIGHT_SHIFT" => "ShiftRight",
-+                        "LEFT_CONTROL" => "ControlLeft", "RIGHT_CONTROL" => "ControlRight",
-+                        "LEFT_ALT" => "AltLeft", "RIGHT_ALT" => "AltRight", "ESCAPE" => "Escape",
-+                        "ENTER" => "Enter", "BACKSPACE" => "Backspace", "TAB" => "Tab",
-+                        "UP" => "ArrowUp", "DOWN" => "ArrowDown", "LEFT" => "ArrowLeft", "RIGHT" => "ArrowRight",
-+                        "PAGE_UP" => "PageUp", "PAGE_DOWN" => "PageDown",
-+                        other => other,
-+                    };
-+                    if let Some(AndroidTouchRole::Key(code)) = android_touch_output(key) {
-+                        if let Err(error) = self.mapped_key(code, pressed, false) { self.error = Some(error); }
-+                    }
-+                }
-+            }
-+            if let Some(delta) = ANDROID_LOOK_DELTA.get() {
-+                let (dx, dy) = std::mem::replace(&mut *delta.lock().unwrap(), (0.0, 0.0));
-+                if dx != 0.0 || dy != 0.0 {
-+                    self.mouse.on_move(0.0, 0.0, dx, dy, true, true);
-+                    self.last_input = Instant::now();
-+                }
-+            }
-+            if !ANDROID_GAME_ACTIVE.load(Ordering::Relaxed)
-+                && let Some(touches) = ANDROID_MENU_TOUCHES.get()
-+                && let Some(window_id) = self.window.as_ref().map(|window| window.id())
-+            {
-+                let queued = std::mem::take(&mut *touches.lock().unwrap());
-+                for (id, x, y, phase) in queued {
-+                    let touch = winit::event::Touch {
-+                        device_id: DeviceId::dummy(),
-+                        id,
-+                        phase: match phase {
-+                            0 => TouchPhase::Started,
-+                            1 => TouchPhase::Moved,
-+                            3 => TouchPhase::Cancelled,
-+                            _ => TouchPhase::Ended,
-+                        },
-+                        location: winit::dpi::PhysicalPosition::new(x, y),
-+                        force: None,
-+                    };
-+                    self.window_event(event_loop, window_id, WindowEvent::Touch(touch));
-+                }
-+            }
++        })
 +    }
-     /// winit's `about_to_wait`: what happens between frames (stop requests, the closing
-     /// save, world entry, the control socket, pads), then the next frame.
-     pub(super) fn idle(&mut self, event_loop: &dyn EventLoopCtl) {
-@@ -17528,6 +18504,7 @@ impl<'a> Game<'a> {
-             physical_keys: HashSet::new(),
-             physical_buttons: HashSet::new(),
-             drag_button: None,
-+            android_touch: AndroidTouchState::from_environment(),
-             right_click_emulation: Default::default(),
-             left: false,
-             right: false,
-@@ -19357,7 +20334,7 @@ fn run_event_loop(mut game: Game<'_>) -> Result<()> {
-         return game.error.take().map_or(Ok(()), Err);
-     }
-     let mut split = split::Split::new(game);
--    let result = EventLoop::new()?.run_app(&mut split);
-+    let result = new_event_loop()?.run_app(&mut split);
-     game = split.host;
-     narrator::stop();
-     leave_fullscreen_after(&result, &mut game.settings);
-@@ -19396,8 +20373,27 @@ struct Loading {
-     error: Option<Box<dyn std::error::Error>>,
- }
- impl Loading {
-+    /// Android destroys the native window on pause: the surface made for it is dead from here on.
-+    fn suspended(&mut self) {
-+        if cfg!(target_os = "android")
-+            && let Some(renderer) = self.renderer.as_mut()
-+        {
-+            renderer.drop_surface();
-+        }
-+    }
-     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-         if self.window.is_some() {
-+            // Back from a pause on Android: the window has a new native surface.
-+            if cfg!(target_os = "android") {
-+                if let Some(renderer) = self.renderer.as_mut()
-+                    && let Err(error) = renderer.recreate_surface()
-+                {
-+                    log::error!("Horizon Android: cannot recreate the surface: {error}");
-+                }
-+                if let Some(window) = &self.window {
-+                    window.request_redraw();
-+                }
-+            }
-             return;
-         }
-         // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
-@@ -19669,6 +20665,12 @@ enum App {
-     Ready(Box<split::Split<'static>>),
- }
- impl ApplicationHandler for App {
-+    fn suspended(&mut self, event_loop: &ActiveEventLoop) {
-+        match self {
-+            App::Loading(loading) => loading.suspended(),
-+            App::Ready(game) => game.suspended(event_loop),
-+        }
-+    }
-     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-         match self {
-             App::Loading(loading) => loading.resumed(event_loop),
-@@ -19792,7 +20794,7 @@ fn run_loading(
-         error: None,
-     };
-     let mut app = App::Loading(Box::new(loading));
--    let result = EventLoop::new()?.run_app(&mut app);
-+    let result = new_event_loop()?.run_app(&mut app);
-     narrator::stop();
-     match &mut app {
-         // Ready: splitscreen around P1's game.
++}
 diff --git a/crates/horizon-client/src/game/ime.rs b/crates/horizon-client/src/game/ime.rs
-index dc3f46193..38c40a0ff 100644
+index f3109ef93..dab98892b 100644
 --- a/crates/horizon-client/src/game/ime.rs
 +++ b/crates/horizon-client/src/game/ime.rs
-@@ -38,6 +38,8 @@ impl Game<'_> {
+@@ -45,6 +45,8 @@ impl Game<'_> {
      /// Allow the input method only while a text box has focus.
      pub(super) fn sync_ime(&mut self) {
          let want = self.text_field_focused();
@@ -3034,10 +3280,10 @@ index dc3f46193..38c40a0ff 100644
              && let Some(window) = &self.window
          {
 diff --git a/crates/horizon-client/src/game/no_resources.rs b/crates/horizon-client/src/game/no_resources.rs
-index 634b8db0e..6017b81f6 100644
+index 12e1cf5b0..c3ef8e593 100644
 --- a/crates/horizon-client/src/game/no_resources.rs
 +++ b/crates/horizon-client/src/game/no_resources.rs
-@@ -35,7 +35,7 @@ pub(super) fn show(looked_in: &std::path::Path, settings: &Settings) -> Result<(
+@@ -32,7 +32,7 @@ pub(super) fn show(looked_in: &std::path::Path, settings: &Settings) -> Result<(
          error: None,
      };
      horizon_client::hud::GUI_SCALE.store(settings.gui_scale, Ordering::Relaxed);
@@ -3047,10 +3293,10 @@ index 634b8db0e..6017b81f6 100644
  }
  
 diff --git a/crates/horizon-client/src/game/split.rs b/crates/horizon-client/src/game/split.rs
-index 680060dbd..0a6f12eac 100644
+index 3c90d2f52..f9eb1aea6 100644
 --- a/crates/horizon-client/src/game/split.rs
 +++ b/crates/horizon-client/src/game/split.rs
-@@ -557,6 +557,10 @@ impl<'a> Split<'a> {
+@@ -577,6 +577,10 @@ impl<'a> Split<'a> {
  }
  
  impl ApplicationHandler for Split<'_> {
@@ -3061,51 +3307,22 @@ index 680060dbd..0a6f12eac 100644
      fn resumed(&mut self, event_loop: &ActiveEventLoop) {
          self.host.resumed(event_loop);
          if !self.surfaces.is_empty() {
-diff --git a/crates/horizon-client/src/lib.rs b/crates/horizon-client/src/lib.rs
-index 76bfeb8e9..dba9ee49a 100644
---- a/crates/horizon-client/src/lib.rs
-+++ b/crates/horizon-client/src/lib.rs
-@@ -1,6 +1,10 @@
- //! Horizon native client: resources, world streaming, rendering and the
- //! bindings between the validated simulation pieces and the game loop.
- #![forbid(unsafe_code)]
-+// Android: `game` lives here (not in the binary) so the cdylib in horizon-android-game can drive it, and its
-+// `horizon_client::` paths keep resolving from inside this crate.
-+extern crate self as horizon_client;
-+pub mod game;
- pub mod advancements;
- pub mod ambience;
- pub mod animate_tick;
-diff --git a/crates/horizon-client/src/main.rs b/crates/horizon-client/src/main.rs
-index 279faef58..01e8e300a 100644
---- a/crates/horizon-client/src/main.rs
-+++ b/crates/horizon-client/src/main.rs
-@@ -1,8 +1,6 @@
- //! Horizon: native Rust client for Minecraft Java Edition 26.3 gameplay.
- #![forbid(unsafe_code)]
--mod game;
--
--use horizon_client::{crash, logging};
-+use horizon_client::{crash, game, logging};
- 
- #[global_allocator]
- static ALLOCATOR: horizon_threads::Allocator = horizon_threads::Allocator;
 diff --git a/launcher/Cargo.toml b/launcher/Cargo.toml
-index 168700db2..3b2f1913e 100644
+index 278542c9c..ed750b520 100644
 --- a/launcher/Cargo.toml
 +++ b/launcher/Cargo.toml
-@@ -8,10 +8,6 @@ description = "Downloads, prepares and starts Horizon builds"
- [workspace]
- 
+@@ -10,10 +10,6 @@ description = "Downloads, prepares and starts Horizon builds"
  [dependencies]
+ # The catalog and mod-owned trait injections share their generation rules.
+ horizon-mod-api-gen = { path = "../crates/horizon-mod-api-gen" }
 -# GPUI Fast (longbridge/gpui-fast): Zed's GPUI with retained views and cached scroll layers, under
 -# its own name. wgpu renders on Linux, not blade (#3812).
--gpui = { package = "gpui-fast", version = "0.1.12" }
--gpui_platform = { package = "gpui-fast-platform", version = "0.1.12", features = ["wayland", "x11", "font-kit"] }
+-gpui = { package = "gpui-fast", version = "0.1.13" }
+-gpui_platform = { package = "gpui-fast-platform", version = "0.1.13", features = ["wayland", "x11", "font-kit"] }
  ureq = { version = "2", features = ["json", "tls"], default-features = false }
  serde = { version = "1", features = ["derive"] }
  serde_json = "1"
-@@ -50,7 +46,6 @@ horizon-protocol = { path = "../crates/horizon-protocol" }
+@@ -58,7 +54,6 @@ horizon-protocol = { path = "../crates/horizon-protocol" }
  # level.dat and servers.dat (the worlds and server lists of instances)
  horizon-world = { path = "../crates/horizon-world" }
  # Deleting a world moves it to the system's trash
@@ -3113,15 +3330,15 @@ index 168700db2..3b2f1913e 100644
  # Backup names carry the local time, as vanilla's do
  base64 = "0.22"
  chrono = { version = "0.4", default-features = false, features = ["clock"] }
-@@ -61,6 +56,13 @@ getrandom = "0.3"
+@@ -69,6 +64,13 @@ getrandom = "0.3"
  image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
  
  # Native builds at low priority (rust_toolchain::low_priority); already in the lockfile.
 +[target.'cfg(not(target_os = "android"))'.dependencies]
 +# GPUI Fast (longbridge/gpui-fast): Zed's GPUI with retained views and cached scroll layers, under
 +# its own name. wgpu renders on Linux, not blade (#3812).
-+gpui = { package = "gpui-fast", version = "0.1.12" }
-+gpui_platform = { package = "gpui-fast-platform", version = "0.1.12", features = ["wayland", "x11", "font-kit"] }
++gpui = { package = "gpui-fast", version = "0.1.13" }
++gpui_platform = { package = "gpui-fast-platform", version = "0.1.13", features = ["wayland", "x11", "font-kit"] }
 +trash = "5"
 +
  [target.'cfg(unix)'.dependencies]
@@ -3153,10 +3370,10 @@ index 8767bfdb7..5cab8a4c8 100644
      std::thread::scope(|s| s.spawn(f).join()).unwrap_or_else(|panic| {
          let why = panic
 diff --git a/launcher/src/lib.rs b/launcher/src/lib.rs
-index 5b41f0346..f3025d755 100644
+index 2cfb35999..3f4d437e2 100644
 --- a/launcher/src/lib.rs
 +++ b/launcher/src/lib.rs
-@@ -7,7 +7,7 @@ pub mod datapacks;
+@@ -8,7 +8,7 @@ pub mod datapacks;
  pub mod desktop;
  pub mod desktop_seams;
  pub mod export;
@@ -3164,7 +3381,7 @@ index 5b41f0346..f3025d755 100644
 +#[cfg(all(unix, not(target_os = "android")))]
  pub mod game_app;
  pub mod game_log;
- pub mod github_mods;
+ pub mod github;
 diff --git a/packaging/android/bedrock-controls.json b/packaging/android/bedrock-controls.json
 new file mode 100644
 index 000000000..2f97af93b
