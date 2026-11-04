@@ -96,7 +96,7 @@ fun MinecraftFilesScreen(gameDirectory: File, onMessage: (String) -> Unit) {
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
-                        onClick = { current = current.parent ?: root },
+                        onClick = { current = current.parentFile ?: root },
                         enabled = current != root,
                         modifier = Modifier.weight(1f),
                     ) { Icon(Icons.Outlined.ArrowBack, null); Spacer(Modifier.width(4.dp)); Text("Up") }

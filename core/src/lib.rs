@@ -1190,9 +1190,9 @@ pub extern "system" fn Java_dev_horizon_launcher_core_Native_nativeLaunch(
         let settings = Settings::load();
         let tag = backend::resolve_version(None)?;
         backend::need_prepared(&tag)?;
-        let (session, offline) =
-            account::session_for_game(&backend::game_home(), settings.dev_offline)
-                .map_err(|e| e.to_string())?;
+        let game_session = account::session_for_game(&backend::game_home(), settings.dev_offline)
+            .map_err(|e| e.to_string())?;
+        let (session, offline) = (game_session.file, game_session.offline);
         let accounts = Accounts::load();
         let mut cmd = backend::client_command(&tag);
         if let Some(file) = session {
