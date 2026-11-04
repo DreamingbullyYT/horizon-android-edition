@@ -29,6 +29,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Mouse
+import androidx.compose.material.icons.outlined.ScreenRotation
+import androidx.compose.material.icons.outlined.SportsEsports
+import androidx.compose.material.icons.outlined.TouchApp
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -90,13 +96,26 @@ import dev.horizon.launcher.game.controls.LayoutProfiles
 import dev.horizon.launcher.game.controls.LookTuner
 import dev.horizon.launcher.game.controls.ProfilesPanel
 import dev.horizon.launcher.game.controls.StylesPanel
+import dev.horizon.launcher.game.zalith.DualMenuSubscreen
+import dev.horizon.launcher.game.zalith.FloatingBall
+import dev.horizon.launcher.game.zalith.MenuClearButton
+import dev.horizon.launcher.game.zalith.MenuHint
+import dev.horizon.launcher.game.zalith.MenuIconTabs
+import dev.horizon.launcher.game.zalith.MenuListLayout
+import dev.horizon.launcher.game.zalith.MenuPage
+import dev.horizon.launcher.game.zalith.MenuSectionLabel
+import dev.horizon.launcher.game.zalith.MenuSliderLayout
+import dev.horizon.launcher.game.zalith.MenuState
+import dev.horizon.launcher.game.zalith.MenuSwitchButton
+import dev.horizon.launcher.game.zalith.MenuTextButton
+import dev.horizon.launcher.game.zalith.ZalithTheme
 import dev.horizon.launcher.game.controls.ToggleRow
 import dev.horizon.launcher.game.controls.WidgetInspector
 import kotlinx.coroutines.launch
 import java.util.UUID
 
 private val EDITOR_TABS = listOf("Control", "Layers", "Styles", "Layouts")
-private val QUICK_TABS = listOf("Controls", "Mouse", "Gamepad", "Gestures", "Gyro", "System")
+private val QUICK_ICONS = listOf(Icons.Outlined.Tune, Icons.Outlined.Mouse, Icons.Outlined.SportsEsports, Icons.Outlined.TouchApp, Icons.Outlined.ScreenRotation)
 
 @Composable
 internal fun HorizonGameControls(
@@ -137,6 +156,7 @@ internal fun HorizonGameControls(
     var hapticLevel by remember { mutableIntStateOf(prefs.getInt("haptic_level", 0)) }
     var autoHideForPad by remember { mutableStateOf(prefs.getBoolean("hide_hud_for_gamepad", false)) }
     var quickTab by remember { mutableIntStateOf(0) }
+    var ballPos by remember { mutableStateOf(Offset(prefs.getFloat("ball_x", 0f), prefs.getFloat("ball_y", 0f))) }
     val quickScroll = remember(quickTab) { ScrollState(0) }
     var keepAwake by remember { mutableStateOf(prefs.getBoolean("keep_awake", true)) }
     var brightness by remember { mutableFloatStateOf(prefs.getFloat("screen_brightness", -1f)) }
@@ -526,12 +546,19 @@ internal fun HorizonGameControls(
                 hideLayerWhen = if (autoHideForPad && padConnected) HideLayerWhen.WhenGamepad else HideLayerWhen.None,
                 isDark = true
             ) {}
-            Button(onClick = { quickSettings = !quickSettings }, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp).graphicsLayer { alpha = quickButtonOpacity }) {
-                Text("⚙")
+            FloatingBall(
+                position = ballPos,
+                onPositionChanged = { ballPos = it; prefs.edit().putFloat("ball_x", it.x).putFloat("ball_y", it.y).apply() },
+                onClick = { quickSettings = !quickSettings },
+                alpha = quickButtonOpacity,
+            ) {
+                Text(
+                    if (showFps && fpsMode == 0) "$currentFps FPS" else "⚙",
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp), color = Color.White,
+                )
             }
-            if (showFps || showMemory) {
+            if ((showFps && fpsMode == 1) || showMemory) {
                 Column(Modifier.align(Alignment.TopStart).padding(12.dp)) {
-                    if (showFps && fpsMode == 0) Text("$currentFps FPS", color = Color.White)
                     if (showFps && fpsMode == 1) Canvas(Modifier.width(120.dp).height(42.dp)) {
                         if (fpsHistory.size > 1) {
                             val maxFps = (fpsHistory.maxOrNull() ?: 1f).coerceAtLeast(1f)
@@ -544,187 +571,172 @@ internal fun HorizonGameControls(
                     if (showMemory) Text("${currentMemoryMb} MB", color = Color.White)
                 }
             }
-            if (quickSettings) {
-                androidx.compose.material3.Surface(
-                    modifier = Modifier.align(Alignment.TopEnd).padding(top = 72.dp, end = 12.dp)
-                        .width(340.dp).fillMaxHeight(0.82f),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-                    shape = RoundedCornerShape(16.dp), tonalElevation = 8.dp
-                ) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text("Horizon quick settings", style = MaterialTheme.typography.titleMedium)
-                        ScrollableTabRow(selectedTabIndex = quickTab, edgePadding = 0.dp) {
-                            QUICK_TABS.forEachIndexed { i, label -> Tab(selected = quickTab == i, onClick = { quickTab = i }, text = { Text(label) }) }
-                        }
-                        Column(Modifier.weight(1f).verticalScroll(quickScroll), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            ZalithTheme {
+                DualMenuSubscreen(
+                    state = if (quickSettings) MenuState.SHOW else MenuState.HIDE,
+                    closeScreen = { quickSettings = false },
+                    leftMenuContent = {
+                        MenuIconTabs(QUICK_ICONS, quickTab) { quickTab = it }
+                        MenuPage(Modifier.weight(1f)) {
                             when (quickTab) {
                                 0 -> {
-                                    Text("On-screen controls", style = MaterialTheme.typography.titleSmall)
-                                    ToggleRow("Show touch HUD", storedHud) { storedHud = it; prefs.edit().putBoolean("hud_visible", it).apply() }
-                                    LabeledSlider("Control opacity", opacity, 0.2f..1f, { "${(it * 100).toInt()}%" }) {
+                                    MenuSectionLabel("On-screen controls")
+                                    MenuSwitchButton(text = "Show touch HUD", switch = storedHud) { storedHud = it; prefs.edit().putBoolean("hud_visible", it).apply() }
+                                    MenuSliderLayout(title = "Control opacity", value = opacity, valueRange = 0.2f..1f, format = { "${(it * 100).toInt()}%" }) {
                                         opacity = it; prefs.edit().putFloat("opacity", it).apply()
                                     }
-                                    Button(onClick = { startEditing() }) { Text("Customize controls") }
-                                    Text("Haptic feedback", style = MaterialTheme.typography.bodySmall)
-                                    ChipChoice(listOf(0, 1, 2, 3), hapticLevel, { Haptics.labels[it] }) {
+                                    MenuTextButton(text = "Customize controls") { startEditing() }
+                                    MenuListLayout(title = "Haptic feedback", items = listOf(0, 1, 2, 3), currentItem = hapticLevel, getItemText = { Haptics.labels[it] }) {
                                         hapticLevel = it; prefs.edit().putInt("haptic_level", it).apply(); haptics.level = it; haptics.tick()
                                     }
-                                    ToggleRow("Hide on-screen controls when a gamepad is connected", autoHideForPad) {
+                                    MenuSwitchButton(text = "Hide controls when a gamepad is connected", switch = autoHideForPad) {
                                         autoHideForPad = it; prefs.edit().putBoolean("hide_hud_for_gamepad", it).apply()
                                     }
-                                    Text("Saved layouts", style = MaterialTheme.typography.titleSmall)
+                                    MenuSectionLabel("Layouts")
                                     val saved = remember(quickSettings) { profiles.names() }
-                                    if (saved.isEmpty()) Text("Save layouts from Customize controls → Layouts to switch between them here.", style = MaterialTheme.typography.bodySmall)
-                                    else ChipChoice(saved, profiles.activeName.takeIf { it in saved }, { it }) { name ->
+                                    if (saved.isEmpty()) MenuHint("Save layouts from Customize controls → Layouts to switch between them here.")
+                                    else MenuListLayout(
+                                        title = "Saved layouts", items = saved, currentItem = profiles.activeName.takeIf { it in saved } ?: "",
+                                        getItemText = { it.ifEmpty { "Choose a layout" } },
+                                    ) { name ->
                                         runCatching { profiles.load(name) }
                                             .onSuccess { swapLayout(it); save(it); profiles.activeName = name }
                                             .onFailure { activity?.toast("Could not load $name: ${it.message}") }
                                     }
-                                    OutlinedButton(onClick = {
+                                    MenuTextButton(text = "Import layout file") {
                                         activity?.chooseTouchLayout { imported -> swapLayout(imported); save(imported); profiles.activeName = "" }
-                                    }) { Text("Import layout file") }
-                                    ToggleRow("Tap hotbar slots directly", hotbarTouch) { hotbarTouch = it; prefs.edit().putBoolean("hotbar_touch", it).apply() }
-                                    ToggleRow("Auto-show keyboard in text fields", autoKeyboard) { autoKeyboard = it; prefs.edit().putBoolean("auto_keyboard", it).apply() }
-                                    OutlinedButton(onClick = {
+                                    }
+                                    MenuSectionLabel("Input")
+                                    MenuSwitchButton(text = "Tap hotbar slots directly", switch = hotbarTouch) { hotbarTouch = it; prefs.edit().putBoolean("hotbar_touch", it).apply() }
+                                    MenuSwitchButton(text = "Auto-show keyboard in text fields", switch = autoKeyboard) { autoKeyboard = it; prefs.edit().putBoolean("auto_keyboard", it).apply() }
+                                    MenuTextButton(text = "Choose Android keyboard") {
                                         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
-                                    }) { Text("Choose Android keyboard") }
-                                    LabeledSlider("Quick button opacity", quickButtonOpacity, 0.25f..1f, { "${(it * 100).toInt()}%" }) {
+                                    }
+                                    MenuSliderLayout(title = "Menu button opacity", value = quickButtonOpacity, valueRange = 0.25f..1f, format = { "${(it * 100).toInt()}%" }) {
                                         quickButtonOpacity = it; prefs.edit().putFloat("quick_button_opacity", it).apply()
                                     }
                                 }
                                 1 -> {
-                                    Text("Touch mouse / camera", style = MaterialTheme.typography.titleSmall)
-                                    ToggleRow("Swipe to look", swipeLook) { swipeLook = it; prefs.edit().putBoolean("swipe_look", it).apply() }
-                                    LabeledSlider("Look sensitivity", lookSensitivity, 0.25f..3f, { "%.2f×".format(it) }) {
+                                    MenuSectionLabel("Touch mouse / camera")
+                                    MenuSwitchButton(text = "Swipe to look", switch = swipeLook) { swipeLook = it; prefs.edit().putBoolean("swipe_look", it).apply() }
+                                    MenuSliderLayout(title = "Look sensitivity", value = lookSensitivity, valueRange = 0.25f..3f, format = { "%.2f×".format(it) }) {
                                         lookSensitivity = it; prefs.edit().putFloat("look_sensitivity", it).apply()
                                     }
-                                    LabeledSlider("Horizontal multiplier", lookSensX, 0.25f..3f, { "%.2f×".format(it) }) {
+                                    MenuSliderLayout(title = "Horizontal multiplier", value = lookSensX, valueRange = 0.25f..3f, format = { "%.2f×".format(it) }) {
                                         lookSensX = it; prefs.edit().putFloat("look_sens_x", it).apply()
                                     }
-                                    LabeledSlider("Vertical multiplier", lookSensY, 0.25f..3f, { "%.2f×".format(it) }) {
+                                    MenuSliderLayout(title = "Vertical multiplier", value = lookSensY, valueRange = 0.25f..3f, format = { "%.2f×".format(it) }) {
                                         lookSensY = it; prefs.edit().putFloat("look_sens_y", it).apply()
                                     }
-                                    LabeledSlider("Flick acceleration", lookAccel, 0f..1f, { "${(it * 100).toInt()}%" }) {
+                                    MenuSliderLayout(title = "Flick acceleration", value = lookAccel, valueRange = 0f..1f, format = { "${(it * 100).toInt()}%" }) {
                                         lookAccel = it; prefs.edit().putFloat("look_accel", it).apply()
                                     }
-                                    LabeledSlider("Smoothing", lookSmoothing, 0f..0.9f, { "${(it * 100).toInt()}%" }) {
+                                    MenuSliderLayout(title = "Smoothing", value = lookSmoothing, valueRange = 0f..0.9f, format = { "${(it * 100).toInt()}%" }) {
                                         lookSmoothing = it; prefs.edit().putFloat("look_smoothing", it).apply()
                                     }
-                                    Text("Look area", style = MaterialTheme.typography.bodySmall)
-                                    ChipChoice(listOf(0, 1, 2), lookArea, { listOf("Full screen", "Right 70%", "Right half")[it] }) {
+                                    MenuListLayout(title = "Look area", items = listOf(0, 1, 2), currentItem = lookArea, getItemText = { listOf("Full screen", "Right 70%", "Right half")[it] }) {
                                         lookArea = it; prefs.edit().putInt("look_area", it).apply()
                                     }
-                                    ToggleRow("Invert horizontal look", invertLookX) { invertLookX = it; prefs.edit().putBoolean("invert_look_x", it).apply() }
-                                    ToggleRow("Invert vertical look", invertLookY) { invertLookY = it; prefs.edit().putBoolean("invert_look_y", it).apply() }
-                                    Text("Drag empty screen space while the game captures the pointer. Touch controls stay clickable. Restricting the look area keeps stray thumbs on the left side from moving the camera.", style = MaterialTheme.typography.bodySmall)
+                                    MenuSwitchButton(text = "Invert horizontal look", switch = invertLookX) { invertLookX = it; prefs.edit().putBoolean("invert_look_x", it).apply() }
+                                    MenuSwitchButton(text = "Invert vertical look", switch = invertLookY) { invertLookY = it; prefs.edit().putBoolean("invert_look_y", it).apply() }
+                                    MenuHint("Drag empty screen space while the game captures the pointer. Touch controls stay clickable. Restricting the look area keeps stray thumbs on the left side from moving the camera.")
                                 }
                                 2 -> {
-                                    Text("Controller input", style = MaterialTheme.typography.titleSmall)
-                                    Text(if (padConnected) "A game controller is connected." else "No game controller detected. Connect a Bluetooth or USB controller.")
-                                    Text("Tap a slot to choose any key or mouse button. ✕ clears it.", style = MaterialTheme.typography.bodySmall)
+                                    MenuSectionLabel("Controller input")
+                                    MenuHint(if (padConnected) "A game controller is connected." else "No game controller detected. Connect a Bluetooth or USB controller.")
+                                    MenuHint("Tap a slot to choose any key or mouse button. ✕ clears it.")
                                     padSlots.forEach { slot ->
                                         val title = slot.replace('_', ' ').replaceFirstChar { it.uppercase() }
                                         val binding = padMappings[slot] ?: ""
-                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            Button(onClick = { padPick = slot }, modifier = Modifier.weight(1f)) {
-                                                Text("$title → ${if (binding.isBlank()) "None" else KeyCatalog.label(binding)}")
-                                            }
-                                            OutlinedButton(onClick = { padMappings[slot] = ""; prefs.edit().putString("pad_$slot", "").apply() }) { Text("✕") }
-                                        }
+                                        MenuTextButton(
+                                            text = "$title → ${if (binding.isBlank()) "None" else KeyCatalog.label(binding)}",
+                                            appendLayout = { MenuClearButton { padMappings[slot] = ""; prefs.edit().putString("pad_$slot", "").apply() } },
+                                        ) { padPick = slot }
                                     }
-                                    OutlinedButton(onClick = {
+                                    MenuTextButton(text = "Reset bindings") {
                                         padSlots.forEach { slot ->
                                             val default = HorizonGameActivity.PAD_DEFAULTS[slot] ?: ""
                                             padMappings[slot] = default; prefs.edit().putString("pad_$slot", default).apply()
                                         }
-                                    }) { Text("Reset bindings") }
-                                    ToggleRow("Swap sticks (right moves, left looks)", padSwapSticks) { padSwapSticks = it; prefs.edit().putBoolean("pad_swap_sticks", it).apply() }
-                                    ToggleRow("Invert camera Y", padInvertY) { padInvertY = it; prefs.edit().putBoolean("pad_invert_y", it).apply() }
-                                    Text("Stick deadzone · ${(padDeadzone * 100).toInt()}%")
-                                    Slider(value = padDeadzone, onValueChange = { padDeadzone = it }, onValueChangeFinished = {
-                                        prefs.edit().putFloat("pad_deadzone", padDeadzone).apply()
-                                    }, valueRange = 0.05f..0.6f)
-                                    Text("Trigger threshold · ${(padTriggerThreshold * 100).toInt()}%")
-                                    Slider(value = padTriggerThreshold, onValueChange = { padTriggerThreshold = it }, onValueChangeFinished = {
-                                        prefs.edit().putFloat("pad_trigger_threshold", padTriggerThreshold).apply()
-                                    }, valueRange = 0.05f..0.9f)
-                                    Text("Camera sensitivity · ${"%.1f".format(padCameraSensitivity)}×")
-                                    Slider(value = padCameraSensitivity, onValueChange = { padCameraSensitivity = it }, onValueChangeFinished = {
-                                        prefs.edit().putFloat("pad_camera_sensitivity", padCameraSensitivity).apply()
-                                    }, valueRange = 0.2f..4f)
+                                    }
+                                    MenuSwitchButton(text = "Swap sticks (right moves, left looks)", switch = padSwapSticks) { padSwapSticks = it; prefs.edit().putBoolean("pad_swap_sticks", it).apply() }
+                                    MenuSwitchButton(text = "Invert camera Y", switch = padInvertY) { padInvertY = it; prefs.edit().putBoolean("pad_invert_y", it).apply() }
+                                    MenuSliderLayout(title = "Stick deadzone", value = padDeadzone, valueRange = 0.05f..0.6f, format = { "${(it * 100).toInt()}%" }) {
+                                        padDeadzone = it; prefs.edit().putFloat("pad_deadzone", it).apply()
+                                    }
+                                    MenuSliderLayout(title = "Trigger threshold", value = padTriggerThreshold, valueRange = 0.05f..0.9f, format = { "${(it * 100).toInt()}%" }) {
+                                        padTriggerThreshold = it; prefs.edit().putFloat("pad_trigger_threshold", it).apply()
+                                    }
+                                    MenuSliderLayout(title = "Camera sensitivity", value = padCameraSensitivity, valueRange = 0.2f..4f, format = { "%.1f×".format(it) }) {
+                                        padCameraSensitivity = it; prefs.edit().putFloat("pad_camera_sensitivity", it).apply()
+                                    }
                                 }
                                 3 -> {
-                                    Text("Touch gestures", style = MaterialTheme.typography.titleSmall)
-                                    ToggleRow("Enable tap and long-press actions", gesturesEnabled) {
-                                        gesturesEnabled = it
-                                        prefs.edit().putBoolean("touch_gestures_enabled", it).apply()
+                                    MenuSectionLabel("Touch gestures")
+                                    MenuSwitchButton(text = "Enable tap and long-press actions", switch = gesturesEnabled) {
+                                        gesturesEnabled = it; prefs.edit().putBoolean("touch_gestures_enabled", it).apply()
                                     }
-                                    Text("Short tap action", style = MaterialTheme.typography.bodySmall)
-                                    ChipChoice(listOf(0, 1, 2), tapAction, { listOf("None", "Break / Attack", "Place / Use")[it] }) {
-                                        tapAction = it
-                                        prefs.edit().putInt("gesture_tap_action", it).apply()
+                                    MenuListLayout(title = "Short tap action", items = listOf(0, 1, 2), currentItem = tapAction, getItemText = { listOf("None", "Break / Attack", "Place / Use")[it] }) {
+                                        tapAction = it; prefs.edit().putInt("gesture_tap_action", it).apply()
                                     }
-                                    Text("Long-press action", style = MaterialTheme.typography.bodySmall)
-                                    ChipChoice(listOf(0, 1, 2), longPressAction, { listOf("None", "Break / Attack", "Place / Use")[it] }) {
-                                        longPressAction = it
-                                        prefs.edit().putInt("gesture_long_action", it).apply()
+                                    MenuListLayout(title = "Long-press action", items = listOf(0, 1, 2), currentItem = longPressAction, getItemText = { listOf("None", "Break / Attack", "Place / Use")[it] }) {
+                                        longPressAction = it; prefs.edit().putInt("gesture_long_action", it).apply()
                                     }
-                                    Text("Long-press delay · ${longPressDelay} ms (default 300 ms)")
-                                    Slider(
-                                        value = longPressDelay.toFloat(),
-                                        onValueChange = { longPressDelay = it.toInt() },
-                                        onValueChangeFinished = { prefs.edit().putInt("gesture_long_delay", longPressDelay).apply() },
-                                        valueRange = 100f..1000f,
-                                        steps = 17,
-                                    )
-                                    Text("Gestures are active only while the game captures the pointer. A stationary short tap sends the tap action; reaching the long-press delay holds the selected mouse button until you lift your finger. Menus continue to receive normal touches.", style = MaterialTheme.typography.bodySmall)
-                                }
-                                4 -> {
-                                    val manager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-                                    val gyroAvailable = manager.getDefaultSensor(Sensor.TYPE_GYROSCOPE) != null
-                                    Text("Gyroscope camera", style = MaterialTheme.typography.titleSmall)
-                                    ToggleRow("Enable gyro look", gyroEnabled && gyroAvailable) { gyroEnabled = it; prefs.edit().putBoolean("gyro_enabled", it).apply() }
-                                    Text(if (gyroAvailable) "Move the phone to look while the game has captured the pointer." else "This device has no gyroscope sensor.", style = MaterialTheme.typography.bodySmall)
-                                    LabeledSlider("Gyro sensitivity", gyroSensitivity, 0.2f..3f, { "%.1f×".format(it) }, onChange = {
-                                        gyroSensitivity = it; prefs.edit().putFloat("gyro_sensitivity", it).apply()
-                                    })
+                                    MenuSliderLayout(title = "Long-press delay", value = longPressDelay.toFloat(), valueRange = 100f..1000f, steps = 17, format = { "${it.toInt()} ms" }) {
+                                        longPressDelay = it.toInt(); prefs.edit().putInt("gesture_long_delay", longPressDelay).apply()
+                                    }
+                                    MenuHint("Gestures are active only while the game captures the pointer. A stationary short tap sends the tap action; reaching the long-press delay holds the selected mouse button until you lift your finger. Menus continue to receive normal touches.")
                                 }
                                 else -> {
-                                    Text("Device and session", style = MaterialTheme.typography.titleSmall)
-                                    val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                                    var volume by remember { mutableFloatStateOf(audio.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()) }
-                                    Text("Media volume · ${volume.toInt()}/${audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)}")
-                                    Slider(value = volume, onValueChange = { volume = it }, onValueChangeFinished = {
-                                        audio.setStreamVolume(AudioManager.STREAM_MUSIC, volume.toInt(), 0)
-                                    }, valueRange = 0f..audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).toFloat())
-                                    ToggleRow("Keep screen awake", keepAwake) { keepAwake = it; prefs.edit().putBoolean("keep_awake", it).apply(); setKeepAwake(it) }
-                                    Text("Screen brightness · ${if (brightness < 0f) "system" else "${(brightness * 100).toInt()}%"}")
-                                    Slider(value = if (brightness < 0f) 0.5f else brightness, onValueChange = { value ->
-                                        brightness = value
-                                        (context as? Activity)?.window?.let { w ->
-                                            val a = w.attributes; a.screenBrightness = value; w.attributes = a
-                                        }
-                                        prefs.edit().putFloat("screen_brightness", value).apply()
-                                    }, valueRange = 0.05f..1f)
-                                    Button(onClick = {
-                                        brightness = -1f
-                                        (context as? Activity)?.window?.let { w ->
-                                            val a = w.attributes; a.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE; w.attributes = a
-                                        }
-                                        prefs.edit().putFloat("screen_brightness", -1f).apply()
-                                    }) { Text("Use system brightness") }
-                                    ToggleRow("Show FPS", showFps) { showFps = it; prefs.edit().putBoolean("show_fps", it).apply() }
-                                    ToggleRow("Show process memory", showMemory) { showMemory = it; prefs.edit().putBoolean("show_memory", it).apply() }
-                                    Button(onClick = { fpsMode = (fpsMode + 1) % 2; prefs.edit().putInt("fps_mode", fpsMode).apply() }) {
-                                        Text("FPS display: ${if (fpsMode == 0) "Number" else "Chart"}")
+                                    val manager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+                                    val gyroAvailable = manager.getDefaultSensor(Sensor.TYPE_GYROSCOPE) != null
+                                    MenuSectionLabel("Gyroscope camera")
+                                    MenuSwitchButton(text = "Enable gyro look", switch = gyroEnabled && gyroAvailable, enabled = gyroAvailable) { gyroEnabled = it; prefs.edit().putBoolean("gyro_enabled", it).apply() }
+                                    MenuHint(if (gyroAvailable) "Move the phone to look while the game has captured the pointer." else "This device has no gyroscope sensor.")
+                                    MenuSliderLayout(title = "Gyro sensitivity", value = gyroSensitivity, valueRange = 0.2f..3f, enabled = gyroAvailable, format = { "%.1f×".format(it) }) {
+                                        gyroSensitivity = it; prefs.edit().putFloat("gyro_sensitivity", it).apply()
                                     }
-                                    ToggleRow("Request maximum refresh rate", maxRefresh) { maxRefresh = it; prefs.edit().putBoolean("max_refresh", it).apply(); setMaxRefresh(it) }
-                                    Button(onClick = { (context as? Activity)?.finish() }) { Text("Close game") }
                                 }
                             }
                         }
-                    }
-                }
+                    },
+                    rightMenuTitle = { Text("Game menu", modifier = Modifier.padding(8.dp), style = MaterialTheme.typography.titleMedium) },
+                    rightMenuContent = {
+                        MenuPage(Modifier.weight(1f)) {
+                            val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                            var volume by remember { mutableFloatStateOf(audio.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()) }
+                            val maxVolume = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                            MenuSectionLabel("Device")
+                            MenuSliderLayout(title = "Media volume", value = volume, valueRange = 0f..maxVolume.toFloat(), steps = (maxVolume - 1).coerceAtLeast(0), format = { "${it.toInt()}/$maxVolume" }) {
+                                volume = it; audio.setStreamVolume(AudioManager.STREAM_MUSIC, it.toInt(), 0)
+                            }
+                            MenuSliderLayout(title = "Screen brightness", value = if (brightness < 0f) 0.5f else brightness, valueRange = 0.05f..1f, format = { if (brightness < 0f) "system" else "${(brightness * 100).toInt()}%" }) { value ->
+                                brightness = value
+                                (context as? Activity)?.window?.let { w ->
+                                    val a = w.attributes; a.screenBrightness = value; w.attributes = a
+                                }
+                                prefs.edit().putFloat("screen_brightness", value).apply()
+                            }
+                            MenuTextButton(text = "Use system brightness") {
+                                brightness = -1f
+                                (context as? Activity)?.window?.let { w ->
+                                    val a = w.attributes; a.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE; w.attributes = a
+                                }
+                                prefs.edit().putFloat("screen_brightness", -1f).apply()
+                            }
+                            MenuSwitchButton(text = "Keep screen awake", switch = keepAwake) { keepAwake = it; prefs.edit().putBoolean("keep_awake", it).apply(); setKeepAwake(it) }
+                            MenuSwitchButton(text = "Request maximum refresh rate", switch = maxRefresh) { maxRefresh = it; prefs.edit().putBoolean("max_refresh", it).apply(); setMaxRefresh(it) }
+                            MenuSectionLabel("Overlay")
+                            MenuSwitchButton(text = "Show FPS", switch = showFps) { showFps = it; prefs.edit().putBoolean("show_fps", it).apply() }
+                            MenuListLayout(title = "FPS display", items = listOf(0, 1), currentItem = fpsMode, getItemText = { if (it == 0) "Number" else "Chart" }) {
+                                fpsMode = it; prefs.edit().putInt("fps_mode", it).apply()
+                            }
+                            MenuSwitchButton(text = "Show process memory", switch = showMemory) { showMemory = it; prefs.edit().putBoolean("show_memory", it).apply() }
+                            MenuSectionLabel("Session")
+                            MenuTextButton(text = "Close game") { (context as? Activity)?.finish() }
+                        }
+                    },
+                )
             }
             padPick?.let { slot ->
                 KeyPickerDialog(title = "Bind ${slot.replace('_', ' ')}", onPick = { id ->

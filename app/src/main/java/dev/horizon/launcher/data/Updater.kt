@@ -8,6 +8,7 @@ import dev.horizon.launcher.core.Native
 import dev.horizon.launcher.core.NativeLoader
 import org.json.JSONObject
 import java.io.File
+import java.io.InputStream
 import java.security.MessageDigest
 
 /**
@@ -111,6 +112,9 @@ object Updater {
         // A newer APK obsoletes updates older than itself.
         if (context != null) {
             current(files)?.let { if (buildOf(it) <= apkBuild(context)) write(files, "current", null) }
+            // Local builds carry the core of the app they were made under: a newer APK retires them.
+            root(files).listFiles { f -> f.isDirectory && isLocal(f.name) && buildOf(f) <= apkBuild(context) }
+                ?.forEach { it.deleteRecursively() }
         }
         NativeLoader.corePath = current(files)?.let { File(it, CORE).absolutePath }
     }
@@ -222,7 +226,8 @@ object Updater {
                 return Result.UpToDate(apkBuild(context))
             }
             val held = read(files, "hold") == version
-            if (activateIt && !held && version !in bad(files)) write(files, "current", version)
+            val onLocal = isLocal(activeVersion(files))
+            if (activateIt && !held && !onLocal && version !in bad(files)) write(files, "current", version)
             prune(files)
             Result.Installed(build, manifest.optString("upstream"))
         } catch (t: Throwable) {
@@ -230,10 +235,80 @@ object Updater {
         }
     }
 
+    /** Name prefix of builds made on the phone (Termux, android/termux/build-with-mods.sh). */
+    const val LOCAL = "local-"
+
+    fun isLocal(name: String?) = name?.startsWith(LOCAL) == true
+
+    sealed class Imported {
+        data class Ok(val name: String, val sha: String) : Imported()
+        data class Bad(val message: String) : Imported()
+    }
+
+    /**
+     * Blocking: stores a game library built on the phone as its own version and makes it the active one.
+     * It is NOT signed (nothing vouches for it but the player), so the UI asks first. The core library
+     * and engine data are the ones in use now (the active update's, else the APK's). The build number is
+     * the APK's + 1, so a newer APK retires it (its core would be older than the app).
+     */
+    fun importLocal(context: Context, source: InputStream): Imported {
+        val files = context.filesDir
+        val staging = File(root(files), "local.partial").apply { deleteRecursively(); mkdirs() }
+        return try {
+            val game = File(staging, GAME)
+            val digest = MessageDigest.getInstance("SHA-256")
+            source.use { input ->
+                game.outputStream().use { out ->
+                    val buf = ByteArray(65536)
+                    while (true) { val n = input.read(buf); if (n < 0) break; out.write(buf, 0, n); digest.update(buf, 0, n) }
+                }
+            }
+            val head = ByteArray(20)
+            game.inputStream().use { it.read(head) }
+            val elf = head[0] == 0x7f.toByte() && head[1] == 'E'.code.toByte() && head[2] == 'L'.code.toByte() && head[3] == 'F'.code.toByte()
+            val aarch64 = (head[18].toInt() and 0xff) == 183 && head[19].toInt() == 0
+            if (!elf || !aarch64) return Imported.Bad("This is not a 64-bit ARM (aarch64) library.")
+            if (game.length() < 1_000_000) return Imported.Bad("The file is too small to be the game library.")
+            val sha = digest.digest().joinToString("") { "%02x".format(it) }
+
+            val active = current(files)
+            val core = active?.let { File(it, CORE) } ?: File(context.applicationInfo.nativeLibraryDir, CORE)
+            if (!core.isFile) return Imported.Bad("The launcher core library was not found.")
+            core.copyTo(File(staging, CORE), overwrite = true)
+            val data = dataPath(files)
+            (data?.inputStream() ?: context.assets.open(DATA)).use { src ->
+                File(staging, DATA).outputStream().use { src.copyTo(it) }
+            }
+            val build = apkBuild(context) + 1
+            val name = "$LOCAL${sha.take(8)}"
+            File(staging, MANIFEST).writeText(
+                JSONObject().put("abi_level", ABI_LEVEL).put("build", build).put("version", name)
+                    .put("local", true).put("game_sha256", sha).toString()
+            )
+            val finalDir = File(root(files), name)
+            finalDir.deleteRecursively()
+            if (!staging.renameTo(finalDir)) return Imported.Bad("Could not store the build.")
+            write(files, "current", name)
+            // The newest published Nightly must not replace a build the player made on purpose.
+            write(files, "hold", versions(files).firstOrNull { !isLocal(it.name) }?.name)
+            prune(files)
+            Imported.Ok(name, sha)
+        } catch (t: Throwable) {
+            staging.deleteRecursively()
+            Imported.Bad(t.message ?: t.javaClass.simpleName)
+        }
+    }
+
+    /** Removes an installed version (a local build, say). If it was the active one, the APK's runtime is used. */
+    fun remove(files: File, name: String) {
+        if (activeVersion(files) == name) write(files, "current", null)
+        File(root(files), name).deleteRecursively()
+    }
+
     /** Keeps the active version and the newest few; the rest go. */
     private fun prune(files: File) {
         val active = activeVersion(files)
-        versions(files).drop(KEEP).filter { it.name != active }.forEach { File(root(files), it.name).deleteRecursively() }
+        versions(files).filter { !isLocal(it.name) }.drop(KEEP).filter { it.name != active }.forEach { File(root(files), it.name).deleteRecursively() }
         root(files).listFiles { f -> f.name.endsWith(".partial") }?.forEach { it.deleteRecursively() }
     }
 

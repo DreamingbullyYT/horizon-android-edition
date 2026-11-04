@@ -1,5 +1,7 @@
 package dev.horizon.launcher.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,7 +16,9 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Update
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import android.net.Uri
 import dev.horizon.launcher.data.AccountsInfo
 import dev.horizon.launcher.data.PlatformInfo
 import dev.horizon.launcher.data.ReleasesState
@@ -70,10 +75,44 @@ fun SettingsScreen(
     var apkOffer by remember { mutableStateOf<AppUpdater.Offer?>(null) }
     var apkProgress by remember { mutableStateOf<Float?>(null) }
     var installedNativeBuild by remember { mutableStateOf(Updater.installedBuild(context.filesDir)) }
+    var pickedBuild by remember { mutableStateOf<Uri?>(null) }
+    val buildPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? -> pickedBuild = uri }
     var autoInstall by remember(settings?.installNewVersions) { mutableStateOf(settings?.installNewVersions ?: true) }
     var prune by remember(settings?.pruneOldVersions) { mutableStateOf(settings?.pruneOldVersions ?: true) }
     var skipOpening by remember(settings?.skipOpening) { mutableStateOf(settings?.skipOpening ?: false) }
     var noAi by remember(settings?.noAi) { mutableStateOf(settings?.noAi ?: false) }
+
+    pickedBuild?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { pickedBuild = null },
+            title = { Text("Import an unsigned build?") },
+            text = { Text("Nothing checks who made this file: it runs inside the game with the app's rights. Import it only if you compiled it yourself. The previous build stays installed and is restored if the new one fails to start.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pickedBuild = null
+                    updateBusy = true
+                    updateStatus = "Importing…"
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            runCatching { context.contentResolver.openInputStream(uri) }.getOrNull()
+                                ?.let { Updater.importLocal(context, it) }
+                                ?: Updater.Imported.Bad("Could not open the file.")
+                        }
+                        updateBusy = false
+                        when (result) {
+                            is Updater.Imported.Ok -> {
+                                versions = Updater.versions(context.filesDir)
+                                activeVersion = Updater.activeVersion(context.filesDir)
+                                updateStatus = "Imported ${result.name} (sha256 ${result.sha.take(12)}…). It starts with the next game launch."
+                            }
+                            is Updater.Imported.Bad -> updateStatus = "Update failed: ${result.message}"
+                        }
+                    }
+                }) { Text("Import") }
+            },
+            dismissButton = { TextButton(onClick = { pickedBuild = null }) { Text("Cancel") } },
+        )
+    }
 
     LazyColumn(
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
@@ -229,7 +268,7 @@ fun SettingsScreen(
                     InfoRow(
                         icon = Icons.Outlined.Update,
                         title = v.name,
-                        subtitle = "Build #${v.build}",
+                        subtitle = if (Updater.isLocal(v.name)) "Built on this phone · not signed" else "Build #${v.build}",
                         trailing = if (v.name == activeVersion) "In use" else "Use",
                         onClick = {
                             if (v.name != activeVersion) {
@@ -240,6 +279,14 @@ fun SettingsScreen(
                         },
                     )
                 }
+                Spacer(Modifier.height(8.dp))
+                SoftButton("Import local build", modifier = Modifier.fillMaxWidth(), icon = Icons.Outlined.Update) {
+                    buildPicker.launch(arrayOf("*/*"))
+                }
+                Text(
+                    "A game library you compiled on this phone with android/termux/build-with-mods.sh (libhorizon_android_game.so). It is not signed, so only import one you made yourself.",
+                    color = c.muted, style = MaterialTheme.typography.bodySmall,
+                )
                 if (updateStatus != null) {
                     Spacer(Modifier.height(8.dp))
                     Text(updateStatus!!, color = if (updateStatus!!.startsWith("Update failed")) c.danger else c.muted, style = MaterialTheme.typography.bodySmall)
