@@ -9,231 +9,6 @@ index 469760ca6..2ea42d7bc 100644
  /target/
  **/__pycache__/
  *.py[cod]
-diff --git a/Cargo.lock b/Cargo.lock
-index 1eb02f73f..3e93046fa 100644
---- a/Cargo.lock
-+++ b/Cargo.lock
-@@ -120,6 +120,23 @@ version = "0.2.2"
- source = "registry+https://github.com/rust-lang/crates.io-index"
- checksum = "fc7eb209b1518d6bb87b283c20095f5228ecda460da70b44f0802523dea6da04"
- 
-+[[package]]
-+name = "android_log-sys"
-+version = "0.3.2"
-+source = "registry+https://github.com/rust-lang/crates.io-index"
-+checksum = "84521a3cf562bc62942e294181d9eef17eb38ceb8c68677bc49f144e4c3d4f8d"
-+
-+[[package]]
-+name = "android_logger"
-+version = "0.14.1"
-+source = "registry+https://github.com/rust-lang/crates.io-index"
-+checksum = "05b07e8e73d720a1f2e4b6014766e6039fd2e96a4fa44e2a78d0e1fa2ff49826"
-+dependencies = [
-+ "android_log-sys",
-+ "env_filter",
-+ "log",
-+]
-+
- [[package]]
- name = "android_system_properties"
- version = "0.1.6"
-@@ -129,6 +146,15 @@ dependencies = [
-  "libc",
- ]
- 
-+[[package]]
-+name = "arbitrary"
-+version = "1.5.0"
-+source = "registry+https://github.com/rust-lang/crates.io-index"
-+checksum = "3bc62ac97cc33321f50863d514c3bc38a453947a8f9e781137e47c7401020aed"
-+dependencies = [
-+ "derive_arbitrary",
-+]
-+
- [[package]]
- name = "arboard"
- version = "3.6.1"
-@@ -373,7 +399,7 @@ version = "0.1.0"
- dependencies = [
-  "horizon-mods",
-  "serde_json",
-- "zip",
-+ "zip 9.1.3",
- ]
- 
- [[package]]
-@@ -768,6 +794,17 @@ version = "0.5.9"
- source = "registry+https://github.com/rust-lang/crates.io-index"
- checksum = "9e9de72ce2ad1f90dc62fa25f0f430ef85eb4b0d8fa0be4f30373bc40a21d28e"
- 
-+[[package]]
-+name = "derive_arbitrary"
-+version = "1.5.0"
-+source = "registry+https://github.com/rust-lang/crates.io-index"
-+checksum = "1b034bd7d5f032402a2479444dcc6f74e36a03f31854d41680fb240ef682a1ac"
-+dependencies = [
-+ "proc-macro2",
-+ "quote",
-+ "syn 3.0.6",
-+]
-+
- [[package]]
- name = "des"
- version = "0.8.1"
-@@ -877,6 +914,16 @@ dependencies = [
-  "simdutf8",
- ]
- 
-+[[package]]
-+name = "env_filter"
-+version = "0.1.4"
-+source = "registry+https://github.com/rust-lang/crates.io-index"
-+checksum = "1bf3c259d255ca70051b30e2e95b5446cdb8949ac4cd22c0d7fd634d89f568e2"
-+dependencies = [
-+ "log",
-+ "regex",
-+]
-+
- [[package]]
- name = "equivalent"
- version = "1.0.2"
-@@ -1266,6 +1313,33 @@ dependencies = [
-  "digest",
- ]
- 
-+[[package]]
-+name = "horizon-android-game"
-+version = "0.1.0"
-+dependencies = [
-+ "android_logger",
-+ "horizon-client",
-+ "jni 0.21.1",
-+ "log",
-+ "serde_json",
-+ "winit",
-+]
-+
-+[[package]]
-+name = "horizon-android-installer"
-+version = "0.1.0"
-+dependencies = [
-+ "horizon-core",
-+ "log",
-+ "serde",
-+ "serde_json",
-+ "sha1",
-+ "sha2",
-+ "ureq",
-+ "url",
-+ "zip 2.6.1",
-+]
-+
- [[package]]
- name = "horizon-anticheat"
- version = "0.1.0"
-@@ -1368,7 +1442,7 @@ dependencies = [
-  "wgpu",
-  "winit",
-  "winresource",
-- "zip",
-+ "zip 9.1.3",
- ]
- 
- [[package]]
-@@ -1445,7 +1519,7 @@ dependencies = [
-  "ureq",
-  "wgpu",
-  "winit",
-- "zip",
-+ "zip 9.1.3",
- ]
- 
- [[package]]
-@@ -1497,7 +1571,7 @@ dependencies = [
-  "ureq",
-  "wgpu",
-  "winit",
-- "zip",
-+ "zip 9.1.3",
-  "zune-jpeg",
- ]
- 
-@@ -1615,7 +1689,7 @@ dependencies = [
-  "sha2",
-  "toml",
-  "wasmparser",
-- "zip",
-+ "zip 9.1.3",
- ]
- 
- [[package]]
-@@ -1650,7 +1724,7 @@ dependencies = [
-  "sha1",
-  "toml",
-  "ureq",
-- "zip",
-+ "zip 9.1.3",
- ]
- 
- [[package]]
-@@ -1662,7 +1736,7 @@ dependencies = [
-  "regex",
-  "sha1",
-  "sha2",
-- "zip",
-+ "zip 9.1.3",
- ]
- 
- [[package]]
-@@ -1726,7 +1800,7 @@ dependencies = [
-  "toml_edit",
-  "ureq",
-  "windows-sys 0.61.2",
-- "zip",
-+ "zip 9.1.3",
- ]
- 
- [[package]]
-@@ -1752,7 +1826,7 @@ dependencies = [
-  "serde_json",
-  "sha2",
-  "toml",
-- "zip",
-+ "zip 9.1.3",
- ]
- 
- [[package]]
-@@ -1763,7 +1837,7 @@ dependencies = [
-  "horizon-core",
-  "naga",
-  "png",
-- "zip",
-+ "zip 9.1.3",
- ]
- 
- [[package]]
-@@ -5322,6 +5396,21 @@ dependencies = [
-  "syn 3.0.6",
- ]
- 
-+[[package]]
-+name = "zip"
-+version = "2.6.1"
-+source = "registry+https://github.com/rust-lang/crates.io-index"
-+checksum = "1dcb24d0152526ae49b9b96c1dcf71850ca1e0b882e4e28ed898a93c41334744"
-+dependencies = [
-+ "arbitrary",
-+ "crc32fast",
-+ "crossbeam-utils",
-+ "flate2",
-+ "indexmap",
-+ "memchr",
-+ "zopfli",
-+]
-+
- [[package]]
- name = "zip"
- version = "9.1.3"
 diff --git a/Cargo.toml b/Cargo.toml
 index 1944ef889..d29d9d4cd 100644
 --- a/Cargo.toml
@@ -1951,10 +1726,10 @@ index 439df2a0b..601b92bdf 100644
  
  /// Current bindings by mapping name.
 diff --git a/crates/horizon-client-render/src/audio.rs b/crates/horizon-client-render/src/audio.rs
-index 1e87b0737..52349d8ad 100644
+index 43441ebed..a337787ff 100644
 --- a/crates/horizon-client-render/src/audio.rs
 +++ b/crates/horizon-client-render/src/audio.rs
-@@ -1129,45 +1129,56 @@ impl Audio {
+@@ -1132,45 +1132,56 @@ impl Audio {
              self.devices_seen = output_devices();
              return true;
          }
@@ -2047,10 +1822,10 @@ index 1e87b0737..52349d8ad 100644
      /// `SoundManager.tick(paused)`, once per client tick.
      pub fn tick(&mut self, paused: bool, ctx: &TickContext) {
 diff --git a/crates/horizon-client-render/src/gfx.rs b/crates/horizon-client-render/src/gfx.rs
-index 3bb0db791..68067e095 100644
+index cf62c2528..ca5ef1c2f 100644
 --- a/crates/horizon-client-render/src/gfx.rs
 +++ b/crates/horizon-client-render/src/gfx.rs
-@@ -2106,6 +2106,11 @@ impl Renderer {
+@@ -2268,6 +2268,11 @@ impl Renderer {
                      size.height.clamp(1, max_side),
                  )
                  .ok_or("surface has no supported configuration")?;
@@ -2062,7 +1837,7 @@ index 3bb0db791..68067e095 100644
              let caps = surface.get_capabilities(&adapter);
              config.format = surface_format(&caps.formats, config.format);
              config.view_formats = vec![config.format.remove_srgb_suffix()];
-@@ -4325,6 +4330,15 @@ impl Renderer {
+@@ -4580,6 +4585,15 @@ impl Renderer {
              .unwrap_or_else(std::sync::PoisonError::into_inner) =
              self.surface.take().and_then(|s| Arc::try_unwrap(s).ok());
      }
@@ -2100,10 +1875,10 @@ index 3fab033ba..9af77707b 100644
  # Use the registered URI handler without routing links through Explorer/cmd.
  open = { version = "5.4.5", features = ["shellexecute-on-windows"] }
 diff --git a/crates/horizon-client/src/entry.rs b/crates/horizon-client/src/entry.rs
-index b37fc9f25..3e8611c16 100644
+index 2fd12c0c6..b25fcb7b8 100644
 --- a/crates/horizon-client/src/entry.rs
 +++ b/crates/horizon-client/src/entry.rs
-@@ -180,6 +180,8 @@ pub fn main_with(mods: crate::mod_api::Mods) {
+@@ -190,6 +190,8 @@ pub fn main_with(mods: crate::mod_api::Mods) {
              eprintln!("Press Enter to close.");
              let _ = std::io::stdin().read_line(&mut String::new());
          }
@@ -2113,10 +1888,10 @@ index b37fc9f25..3e8611c16 100644
              game::exit_code::USAGE
          } else {
 diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.rs
-index 27dfd813f..8b89b618f 100644
+index dd91773a0..eada0f3f8 100644
 --- a/crates/horizon-client/src/game.rs
 +++ b/crates/horizon-client/src/game.rs
-@@ -422,17 +422,39 @@ use std::{
+@@ -429,17 +429,39 @@ use std::{
      collections::{HashMap, HashSet},
      path::PathBuf,
      sync::{
@@ -2159,7 +1934,7 @@ index 27dfd813f..8b89b618f 100644
      event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
      keyboard::{KeyCode, PhysicalKey},
      window::{CursorGrabMode, Window, WindowId},
-@@ -2417,6 +2439,7 @@ struct Game<'a> {
+@@ -2425,6 +2447,7 @@ struct Game<'a> {
      physical_keys: HashSet<KeyCode>,
      physical_buttons: HashSet<MouseButton>,
      drag_button: Option<MouseButton>,
@@ -2167,7 +1942,7 @@ index 27dfd813f..8b89b618f 100644
      /// Control + left click as a right click (macOS).
      right_click_emulation: horizon_client_input::mouse::RightClickEmulation,
      left: bool,
-@@ -3164,6 +3187,7 @@ struct Game<'a> {
+@@ -3184,6 +3207,7 @@ struct Game<'a> {
      /// The local player as a model (third person, the inventory).
      player_model: Option<Mob>,
  }
@@ -2175,7 +1950,7 @@ index 27dfd813f..8b89b618f 100644
  #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
  enum Dim {
      Overworld,
-@@ -3657,7 +3681,7 @@ impl Game<'_> {
+@@ -3713,7 +3737,7 @@ impl Game<'_> {
          player.mobility_restricted = blind;
          player.yaw = self.yaw;
          player.pitch = self.pitch;
@@ -2184,7 +1959,7 @@ index 27dfd813f..8b89b618f 100644
          player.item_use_speed = item_use_speed;
          player.item_use_slows_sprint = item_use_slows_sprint;
          player.respiration = respiration;
-@@ -7834,7 +7858,15 @@ impl Game<'_> {
+@@ -7999,7 +8023,15 @@ impl Game<'_> {
      fn apply_mouse_look(&mut self) {
          let look = self.look_options();
          let time = self.started.elapsed().as_secs_f64();
@@ -2201,7 +1976,7 @@ index 27dfd813f..8b89b618f 100644
          let grabbed = pointer && self.screen == Screen::Playing && self.player.is_some();
          let active = self.focused || self.agent_pointer;
          if let Some((xo, yo)) = self
-@@ -8723,6 +8755,7 @@ impl Game<'_> {
+@@ -8888,6 +8920,7 @@ impl Game<'_> {
          };
          self.native_screen_render_post(batch, &view);
      }
@@ -2209,7 +1984,7 @@ index 27dfd813f..8b89b618f 100644
      /// `CreativeModeInventoryScreen.hasPermissions` (`canUseGameMasterBlocks`
      /// and the Operator Items Tab option) given to `tryRefreshInvalidatedTabs`,
      /// as the screen's constructor and `containerTick` do.
-@@ -16863,8 +16896,28 @@ fn autosave_interval(rate: f32) -> i64 {
+@@ -17050,8 +17083,28 @@ fn autosave_interval(rate: f32) -> i64 {
      i64::from((rate * 300.0) as i32).max(100)
  }
  impl ApplicationHandler for Game<'_> {
@@ -2238,7 +2013,7 @@ index 27dfd813f..8b89b618f 100644
              return;
          }
          // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
-@@ -16951,6 +17004,8 @@ impl ApplicationHandler for Game<'_> {
+@@ -17138,6 +17191,8 @@ impl ApplicationHandler for Game<'_> {
          }
      }
      fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -2247,7 +2022,7 @@ index 27dfd813f..8b89b618f 100644
          self.idle(event_loop);
      }
      /// The application is ending. On macOS, Quit (Cmd+Q) ends it through
-@@ -16982,6 +17037,14 @@ impl Game<'_> {
+@@ -17169,6 +17224,14 @@ impl Game<'_> {
          if !ours {
              return;
          }
@@ -2262,7 +2037,7 @@ index 27dfd813f..8b89b618f 100644
          follow_keymap(&mut event);
          // MacosUtil.setCtrlClickEmulatesRightClick: Control + left click is a right click.
          if let WindowEvent::MouseInput { state, button, .. } = &mut event
-@@ -18414,9 +18477,29 @@ impl Game<'_> {
+@@ -18609,9 +18672,29 @@ impl Game<'_> {
                          }
                          self.frames += 1;
                          self.fps_frames += 1;
@@ -2292,7 +2067,7 @@ index 27dfd813f..8b89b618f 100644
                              self.fps_frames = 0;
                              self.fps_at = Instant::now();
                          }
-@@ -18685,6 +18768,7 @@ impl<'a> Game<'a> {
+@@ -18880,6 +18963,7 @@ impl<'a> Game<'a> {
              physical_keys: HashSet::new(),
              physical_buttons: HashSet::new(),
              drag_button: None,
@@ -2300,7 +2075,7 @@ index 27dfd813f..8b89b618f 100644
              right_click_emulation: Default::default(),
              left: false,
              right: false,
-@@ -20718,7 +20802,7 @@ fn run_event_loop(mut game: Game<'_>) -> Result<()> {
+@@ -20946,7 +21030,7 @@ fn run_event_loop(mut game: Game<'_>) -> Result<()> {
          return game.error.take().map_or(Ok(()), Err);
      }
      let mut split = split::Split::new(game);
@@ -2309,7 +2084,7 @@ index 27dfd813f..8b89b618f 100644
      game = split.host;
      narrator::stop();
      leave_fullscreen_after(&result, &mut game.settings);
-@@ -20773,8 +20857,27 @@ impl Loading {
+@@ -21001,8 +21085,27 @@ impl Loading {
              || self.menu.pending.is_some()
              || self.ui_at.is_none_or(|at| at.elapsed() >= TITLE_FRAME_WAIT)
      }
@@ -2337,7 +2112,7 @@ index 27dfd813f..8b89b618f 100644
              return;
          }
          // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
-@@ -21066,6 +21169,12 @@ enum App {
+@@ -21295,6 +21398,12 @@ enum App {
      Ready(Box<split::Split<'static>>),
  }
  impl ApplicationHandler for App {
@@ -2350,7 +2125,7 @@ index 27dfd813f..8b89b618f 100644
      fn resumed(&mut self, event_loop: &ActiveEventLoop) {
          match self {
              App::Loading(loading) => loading.resumed(event_loop),
-@@ -21210,7 +21319,7 @@ fn run_loading(
+@@ -21439,7 +21548,7 @@ fn run_loading(
          error: None,
      };
      let mut app = App::Loading(Box::new(loading));
@@ -3307,10 +3082,10 @@ index 12e1cf5b0..c3ef8e593 100644
  }
  
 diff --git a/crates/horizon-client/src/game/split.rs b/crates/horizon-client/src/game/split.rs
-index 3c90d2f52..f9eb1aea6 100644
+index 5a9682e99..9d7f537cd 100644
 --- a/crates/horizon-client/src/game/split.rs
 +++ b/crates/horizon-client/src/game/split.rs
-@@ -577,6 +577,10 @@ impl<'a> Split<'a> {
+@@ -595,6 +595,10 @@ impl<'a> Split<'a> {
  }
  
  impl ApplicationHandler for Split<'_> {
@@ -3322,7 +3097,7 @@ index 3c90d2f52..f9eb1aea6 100644
          self.host.resumed(event_loop);
          if !self.surfaces.is_empty() {
 diff --git a/launcher/Cargo.toml b/launcher/Cargo.toml
-index 278542c9c..ed750b520 100644
+index 8539d8d0a..1e8fef9a7 100644
 --- a/launcher/Cargo.toml
 +++ b/launcher/Cargo.toml
 @@ -10,10 +10,6 @@ description = "Downloads, prepares and starts Horizon builds"
@@ -3384,7 +3159,7 @@ index 8767bfdb7..5cab8a4c8 100644
      std::thread::scope(|s| s.spawn(f).join()).unwrap_or_else(|panic| {
          let why = panic
 diff --git a/launcher/src/lib.rs b/launcher/src/lib.rs
-index 2cfb35999..3f4d437e2 100644
+index 4ad7fcd5d..8efd75a0b 100644
 --- a/launcher/src/lib.rs
 +++ b/launcher/src/lib.rs
 @@ -8,7 +8,7 @@ pub mod datapacks;
