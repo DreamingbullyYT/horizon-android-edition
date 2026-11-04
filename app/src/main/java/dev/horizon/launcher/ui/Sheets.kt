@@ -291,21 +291,3 @@ fun AddServerDialog(onAdd: (String, String) -> Unit, onDismiss: () -> Unit) {
         }
     }
 }
-
-@Composable
-fun TextPromptDialog(title: String, label: String, initial: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
-    val c = LocalHorizon.current
-    var value by remember { mutableStateOf(initial) }
-    Dialog(onDismissRequest = onDismiss) {
-        Plate(color = c.side, contentPadding = PaddingValues(20.dp)) {
-            Text(title, color = c.ink, style = MaterialTheme.typography.headlineLarge)
-            Spacer(Modifier.height(14.dp))
-            PixelField(value, { value = it }, label)
-            Spacer(Modifier.height(14.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SoftButton("Cancel", Modifier.weight(1f), onClick = onDismiss)
-                PrimaryButton("Save", Modifier.weight(1f)) { onSave(value) }
-            }
-        }
-    }
-}

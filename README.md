@@ -200,7 +200,7 @@ The Android project uses:
 
 The Rust JNI core and game "cdylib" are built as part of the Android build rather than relying on archived prebuilt native libraries as build inputs.
 
-For the detailed build environment and commands, see ""ANDROID_BUILD.md"" (ANDROID_BUILD.md).
+For the detailed build environment and commands, see [ANDROID_BUILD.md](ANDROID_BUILD.md).
 
 The Android synchronization process is documented in the "android/" tooling and keeps a pinned upstream Horizon revision rather than silently following arbitrary upstream changes.
 
@@ -259,7 +259,6 @@ Known limitations
 - Android multiplayer joining and other platform integrations continue to evolve with upstream compatibility.
 - Hardware behaviour can differ substantially between Android vendors and GPUs.
 
-See ""ANDROID_PORT_STATUS.md"" (ANDROID_PORT_STATUS.md) for detailed port status and verification notes.
 
 ---
 

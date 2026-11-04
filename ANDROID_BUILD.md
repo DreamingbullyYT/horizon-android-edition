@@ -1,15 +1,15 @@
 # Build the Android preview
 
-The source ZIP contains the Android launcher, Horizon Rust workspace, and the
-vendored Zalith LayerController/InputMap modules. It excludes Cargo/Gradle build
-outputs and prebuilt native libraries.
+`horizon/` (the Horizon engine plus our Android patch) is not stored in this repository: it is built
+from `android/UPSTREAM_PIN` and `android/android.patch` by `android/sync.sh`, which needs `git`.
 
 Requirements: Android SDK with NDK 26.3.11579264, JDK 17+, Gradle 8.7, Rust,
 and the `aarch64-linux-android` Rust target.
 
-From the extracted project root, set `ANDROID_HOME` to the SDK path and run:
+From the project root, set `ANDROID_HOME` to the SDK path and run:
 
 ```sh
+bash android/sync.sh
 gradle assembleDebug
 ```
 

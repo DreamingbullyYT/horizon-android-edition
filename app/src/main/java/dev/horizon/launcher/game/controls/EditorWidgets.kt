@@ -81,16 +81,6 @@ fun <T> ChipChoice(options: List<T>, selected: T?, label: (T) -> String, onSelec
 }
 
 /** Small "−  value  +" nudge row used for pixel-precise position and size tweaks. */
-@Composable
-fun NudgeRow(label: String, onMinus: () -> Unit, onPlus: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-        OutlinedButton(onClick = onMinus) { Text("−") }
-        Box(Modifier.width(8.dp))
-        OutlinedButton(onClick = onPlus) { Text("+") }
-    }
-}
-
 // ---------------------------------------------------------------------------------------------
 // Colour picker
 // ---------------------------------------------------------------------------------------------
