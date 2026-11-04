@@ -275,10 +275,10 @@ index 000000000..027d51134
 +workspace = true
 diff --git a/crates/horizon-android-game/src/lib.rs b/crates/horizon-android-game/src/lib.rs
 new file mode 100644
-index 000000000..8f9ca3bd8
+index 000000000..d771f2aaa
 --- /dev/null
 +++ b/crates/horizon-android-game/src/lib.rs
-@@ -0,0 +1,235 @@
+@@ -0,0 +1,236 @@
 +//! NativeActivity entry point that hosts Horizon's shared winit game loop.
 +
 +#[cfg(target_os = "android")]
@@ -510,9 +510,10 @@ index 000000000..8f9ca3bd8
 +        unsafe { std::env::set_var("HORIZON_ANDROID_TOUCH_CONTROLS", controls) };
 +    }
 +    horizon_client::game::set_android_app(app);
-+    if let Err(error) = horizon_client::game::run() {
-+        log::error!("Horizon Android game stopped: {error}");
-+    }
++    // Upstream's entry installs the mod hooks and renderers, then runs the game; on Android it
++    // returns on failure instead of exiting the shared process.
++    horizon_client::entry::main_with(Default::default());
++    log::info!("Horizon Android: game loop ended");
 +}
 diff --git a/crates/horizon-android-installer/Cargo.toml b/crates/horizon-android-installer/Cargo.toml
 new file mode 100644
@@ -2098,6 +2099,19 @@ index 3fab033ba..9af77707b 100644
  [target.'cfg(windows)'.dependencies]
  # Use the registered URI handler without routing links through Explorer/cmd.
  open = { version = "5.4.5", features = ["shellexecute-on-windows"] }
+diff --git a/crates/horizon-client/src/entry.rs b/crates/horizon-client/src/entry.rs
+index b37fc9f25..3e8611c16 100644
+--- a/crates/horizon-client/src/entry.rs
++++ b/crates/horizon-client/src/entry.rs
+@@ -180,6 +180,8 @@ pub fn main_with(mods: crate::mod_api::Mods) {
+             eprintln!("Press Enter to close.");
+             let _ = std::io::stdin().read_line(&mut String::new());
+         }
++        // Android: the game shares the launcher's process, so a failed game must not end it.
++        #[cfg(not(target_os = "android"))]
+         std::process::exit(if usage {
+             game::exit_code::USAGE
+         } else {
 diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.rs
 index 27dfd813f..8b89b618f 100644
 --- a/crates/horizon-client/src/game.rs
