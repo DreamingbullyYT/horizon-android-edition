@@ -362,6 +362,7 @@ Project links
 - Android repository: https://github.com/DreamingbullyYT/horizon-android-edition
 - Upstream Horizon: https://github.com/horizon-rust/horizon
 - Upstream documentation: https://github.com/horizon-rust/horizon/tree/main/docs
+- Discord server: https://discord.gg/EbWKRES4kT
 
 ---
 
