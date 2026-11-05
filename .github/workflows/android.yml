@@ -217,6 +217,9 @@ jobs:
           print(f"nightly-{m.group(1)}-{m.group(2)}" if m else "")
           PY
           )
+            if [ -n "$oldtag" ] && gh api "repos/$repo/releases/tags/$oldtag" >/dev/null 2>&1; then
+              oldtag=""   # that archive name is taken already (same day and commit): just replace nightly
+            fi
             if [ -n "$oldtag" ]; then
               gh api -X PATCH "repos/$repo/releases/$id" -f tag_name="$oldtag" -f target_commitish="${GITHUB_SHA}" >/dev/null
               git push origin ":refs/tags/nightly" || true
