@@ -324,59 +324,55 @@ private fun EditWidgetNavigation(
 ) {
     val currentKey = backStack.lastOrNull()
 
-    when (currentKey) {
-        EditWidgetCategory.Info -> EditWidgetInfo(
-            modifier = modifier,
-            screenKey = EditWidgetCategory.Info,
-            currentKey = currentKey,
-            data = data,
-            onPreviewRequested = onPreviewRequested,
-            onDismissRequested = onDismissRequested
-        )
-        EditWidgetCategory.TextStyle -> EditTextStyle(
-            modifier = modifier,
-            screenKey = EditWidgetCategory.TextStyle,
-            currentKey = currentKey,
-            data = data,
-            onEditWidgetText = onEditWidgetText
-        )
-        EditWidgetCategory.ClickEvent -> EditWidgetClickEvent(
-            modifier = modifier,
-            screenKey = EditWidgetCategory.ClickEvent,
-            currentKey = currentKey,
-            data = data as ObservableNormalData,
-            switchControlLayers = switchControlLayers,
-            sendText = sendText
-        )
-        EditWidgetCategory.Style -> EditWidgetStyle(
-            modifier = modifier,
-            screenKey = EditWidgetCategory.Style,
-            currentKey = currentKey,
-            data = data,
-            styles = styles,
-            openStyleList = openStyleList
-        )
-        EditWidgetCategory.JoystickConfig -> EditJoystickConfig(
-            modifier = modifier,
-            screenKey = EditWidgetCategory.JoystickConfig,
-            currentKey = currentKey,
-            data = data as ObservableJoystickData
-        )
-        EditWidgetCategory.DirectionEvents -> EditJoystickEvents(
-            modifier = modifier,
-            data = data as ObservableJoystickData,
-            switchControlLayers = switchControlLayers,
-            sendText = sendText
-        )
-        EditWidgetCategory.JoystickStyle -> EditJoystickStyle(
-            modifier = modifier,
-            screenKey = EditWidgetCategory.JoystickStyle,
-            currentKey = currentKey,
-            data = data as ObservableJoystickData,
-            joystickStyles = joystickStyles,
-            openJoystickStyleList = openJoystickStyleList
-        )
-        else -> Box(modifier)
+    Box(modifier) {
+        when (currentKey) {
+            EditWidgetCategory.Info -> EditWidgetInfo(
+                            screenKey = EditWidgetCategory.Info,
+                currentKey = currentKey,
+                data = data,
+                onPreviewRequested = onPreviewRequested,
+                onDismissRequested = onDismissRequested
+            )
+            EditWidgetCategory.TextStyle -> EditTextStyle(
+                            screenKey = EditWidgetCategory.TextStyle,
+                currentKey = currentKey,
+                data = data,
+                onEditWidgetText = onEditWidgetText
+            )
+            EditWidgetCategory.ClickEvent -> EditWidgetClickEvent(
+                            screenKey = EditWidgetCategory.ClickEvent,
+                currentKey = currentKey,
+                data = data as ObservableNormalData,
+                switchControlLayers = switchControlLayers,
+                sendText = sendText
+            )
+            EditWidgetCategory.Style -> EditWidgetStyle(
+                            screenKey = EditWidgetCategory.Style,
+                currentKey = currentKey,
+                data = data,
+                styles = styles,
+                openStyleList = openStyleList
+            )
+            EditWidgetCategory.JoystickConfig -> EditJoystickConfig(
+                            screenKey = EditWidgetCategory.JoystickConfig,
+                currentKey = currentKey,
+                data = data as ObservableJoystickData
+            )
+            EditWidgetCategory.DirectionEvents -> EditJoystickEvents(
+                            data = data as ObservableJoystickData,
+                switchControlLayers = switchControlLayers,
+                sendText = sendText
+            )
+            EditWidgetCategory.JoystickStyle -> EditJoystickStyle(
+                            screenKey = EditWidgetCategory.JoystickStyle,
+                currentKey = currentKey,
+                data = data as ObservableJoystickData,
+                joystickStyles = joystickStyles,
+                openJoystickStyleList = openJoystickStyleList
+            )
+            else -> Box(modifier)
+        }
+    
     }
 
 }
