@@ -21,6 +21,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -48,7 +50,7 @@ enum class EdgeDirection { Horizontal, Vertical }
   },color=color,contentColor=contentColor,shape=shape,onClick=onClick) { Box(Modifier.onSizeChanged{size=it}){content()} }
  }
 }
-@Composable fun MenuBox(modifier:Modifier=Modifier,position:Offset,onPositionChanged:(Offset)->Unit,opened:Boolean,onClick:()->Unit) { FloatingBall(position,onPositionChanged,modifier,onClick=onClick){ Text(if(opened)"☰" else "≡",Modifier.padding(8.dp)) } }
+@Composable fun MenuBox(modifier:Modifier=Modifier,position:Offset,onPositionChanged:(Offset)->Unit,opened:Boolean,content:@Composable ()->Unit) { FloatingBall(position,onPositionChanged,modifier,onClick=content){ Text(if(opened)"☰" else "≡",Modifier.padding(8.dp)) } }
 
 @Composable fun DualMenuSubscreen(state:MenuState,closeScreen:()->Unit,leftMenuTitle:(@Composable BoxScope.()->Unit)?=null,leftMenuContent:@Composable ColumnScope.()->Unit={},rightMenuTitle:(@Composable BoxScope.()->Unit)?=null,rightMenuContent:@Composable ColumnScope.()->Unit={}) {
  AnimatedVisibility(state==MenuState.SHOW,enter=fadeIn(),exit=fadeOut()) {
