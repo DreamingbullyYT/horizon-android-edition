@@ -16,7 +16,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -72,6 +74,7 @@ class MainActivity : ComponentActivity() {
         }
         setContentView(ScrollView(this).apply { addView(column) })
         refreshStatus()
+        startUpdateMonitor()
     }
 
     override fun onDestroy() {
@@ -86,6 +89,43 @@ class MainActivity : ComponentActivity() {
             val ready = GameSetup.ready()
             val problem = initError?.let { "\nCore problem: $it" } ?: ""
             status.text = "Core ${Core.coreVersion()} · Minecraft ${if (ready) "installed" else "not installed"}$problem"
+        }
+    }
+
+    /**
+     * Keep the signed Android Nightly updater alive independently of the UI implementation.
+     * The previous Compose LaunchedEffect did this at startup and every 30 minutes; moving the
+     * launcher shell must not silently remove that lifecycle hook.
+     */
+    private fun startUpdateMonitor() {
+        if (initError != null) return
+        scope.launch {
+            var announcedAppTag = ""
+            while (true) {
+                if (dev.horizon.launcher.data.Updater.autoEnabled(applicationContext)) {
+                    val result = withContext(Dispatchers.IO) {
+                        dev.horizon.launcher.data.Updater.checkAndInstall(applicationContext)
+                    }
+                    when (result) {
+                        is dev.horizon.launcher.data.Updater.Result.Installed ->
+                            show("A new Horizon Nightly runtime was downloaded. It will be used on the next game launch.")
+                        is dev.horizon.launcher.data.Updater.Result.Failed ->
+                            show("Nightly check failed: ${result.message}")
+                        is dev.horizon.launcher.data.Updater.Result.UpToDate -> Unit
+                    }
+
+                    val appOffer = runCatching {
+                        withContext(Dispatchers.IO) {
+                            dev.horizon.launcher.data.AppUpdater.check(applicationContext)
+                        }
+                    }.getOrNull()
+                    if (appOffer != null && announcedAppTag != appOffer.tag) {
+                        announcedAppTag = appOffer.tag
+                        show("A new Horizon app build is available: ${appOffer.tag}.")
+                    }
+                }
+                delay(30 * 60 * 1000L)
+            }
         }
     }
 
