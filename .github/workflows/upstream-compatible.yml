@@ -137,6 +137,7 @@ jobs:
               echo "PATCH_FAIL $sha"
               continue
             fi
+            cp -a "$GITHUB_WORKSPACE/android/overlay/." .horizon-candidates/
             mkdir -p horizon
             (cd .horizon-candidates && tar --exclude=.git -cf - .) | tar -x -C horizon
 

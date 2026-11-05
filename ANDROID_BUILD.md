@@ -1,7 +1,7 @@
 # Build the Android preview
 
 `horizon/` (the Horizon engine plus our Android patch) is not stored in this repository: it is built
-from `android/UPSTREAM_PIN` and `android/android.patch` by `android/sync.sh`, which needs `git`.
+from `android/UPSTREAM_PIN` and `android/android.patch` and `android/overlay/` by `android/sync.sh`, which needs `git`.
 
 Requirements: Android SDK with NDK 26.3.11579264, JDK 17+, Gradle 8.7, Rust,
 and the `aarch64-linux-android` Rust target.
