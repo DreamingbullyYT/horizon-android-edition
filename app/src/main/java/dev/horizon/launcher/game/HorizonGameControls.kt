@@ -18,6 +18,7 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -66,6 +67,11 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import com.movtery.layer_controller.ControlBoxLayout
 import com.movtery.layer_controller.ControlEditorLayer
+import com.movtery.zalithlauncher.viewmodel.EditorViewModel
+import com.movtery.zalithlauncher.ui.screens.main.control_editor.ControlEditor
+import com.movtery.zalithlauncher.path.PathManager
+import com.movtery.zalithlauncher.setting.AllSettings
+import java.io.File
 import com.movtery.layer_controller.data.ButtonPosition
 import com.movtery.layer_controller.data.DefaultSize
 import com.movtery.layer_controller.data.HideLayerWhen
@@ -133,6 +139,8 @@ internal fun HorizonGameControls(
 
     var grabbing by remember { mutableStateOf(true) }
     var editing by remember { mutableStateOf(false) }
+    var editorViewModel by remember { mutableStateOf<EditorViewModel?>(null) }
+    LaunchedEffect(context) { PathManager.initialize(context.filesDir); AllSettings.initialize(context) }
     var quickSettings by remember { mutableStateOf(false) }
 
     // ---- touch HUD / look settings -------------------------------------------------------
@@ -204,10 +212,13 @@ internal fun HorizonGameControls(
 
     fun startEditing() {
         editSnapshot = activeLayout.pack(); history.clear()
-        selected = null; panelOpen = true; editTab = 0; quickSettings = false; editing = true
+        selected = null; panelOpen = true; editTab = 0; quickSettings = false
+        editorViewModel = EditorViewModel().apply { initLayout(activeLayout.pack()); styleCabinet.load() }
+        editing = true
     }
-    fun finishEditing(keep: Boolean) {
+    fun finishEditing(keep: Boolean, updated: ControlLayout? = null) {
         if (keep) {
+            updated?.let { activeLayout = ObservableControlLayout(it) }
             activeLayout.applyEditorHide()
             save(activeLayout.pack())
             profiles.activeName.takeIf { it.isNotBlank() }?.let { name ->
@@ -215,7 +226,7 @@ internal fun HorizonGameControls(
                 runCatching { if (name in profiles.names()) profiles.save(name, activeLayout.pack()) }
             }
         } else editSnapshot?.let { swapLayout(it) }
-        selected = null; editing = false; editSnapshot = null
+        selected = null; editing = false; editSnapshot = null; editorViewModel = null
     }
     fun addButton() {
         val layer = selectedLayer ?: activeLayout.layers.value.firstOrNull() ?: return
@@ -342,7 +353,7 @@ internal fun HorizonGameControls(
     }
 
     MaterialTheme {
-    Box(
+    BoxWithConstraints(
         Modifier.fillMaxSize().pointerInput(Unit) {
             val pointerScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.currentCoroutineContext())
             awaitPointerEventScope {
@@ -458,7 +469,19 @@ internal fun HorizonGameControls(
             }
         }
     ) {
-        if (editing) {
+        if (editing && editorViewModel != null) {
+            val activeEditor = editorViewModel!!
+            ControlEditor(
+                viewModel = activeEditor,
+                targetFile = File(context.filesDir, "zalith-control-layout.json"),
+                exit = { finishEditing(keep = true, updated = activeEditor.observableLayout.pack()) },
+                menuExit = { finishEditing(keep = false) },
+                onSaveLayout = { updated ->
+                    activeLayout = ObservableControlLayout(updated)
+                    save(updated)
+                }
+            )
+        } else if (editing) {
             ControlEditorLayer(
                 observedLayout = activeLayout,
                 selectedWidget = selected,
