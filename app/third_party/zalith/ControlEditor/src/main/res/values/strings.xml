@@ -167,4 +167,12 @@
     <string name="theme_color_picker_title">Color Picker</string>
     <string name="theme_color_picker_edit_hex">Edit Hex</string>
     <string name="theme_color_picker_edit_hex_invalid">Invalid Hex</string>
+    <string name="control_editor_edit_text_default">Text Box</string>
+    <string name="generic_collapse">Collapse</string>
+    <string name="control_editor_edit_category_info">Information</string>
+    <string name="control_editor_edit_category_event">Click Event</string>
+    <string name="control_editor_edit_category_style">Control Style</string>
+    <string name="control_editor_edit_category_joystick_config">Joystick Config</string>
+    <string name="control_editor_edit_category_joystick_events">Direction Events</string>
+    <string name="control_editor_edit_category_joystick_style">Joystick Style</string>
 </resources>
