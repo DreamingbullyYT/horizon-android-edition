@@ -57,6 +57,15 @@ object Registry {
         "platform" to { Native.nativePlatformJson() },
         "telemetry" to { Native.nativeTelemetryJson() },
         "installProgress" to { Native.nativeInstallProgress() },
+        "signInInfo" to { Native.nativeSignInInfo() },
+        "touchControls" to { Native.nativeTouchControlsJson() },
+        "updates" to { Native.nativeUpdateList() },
+        "updateProgress" to { Native.nativeUpdateProgress() },
+        "browseCatalog" to { Native.nativeBrowseCatalog() },
+        "browseProgress" to { Native.nativeBrowseProgress() },
+        "browseInstalled" to { Native.nativeBrowseInstalled() },
+        "gameReady" to { """{"ready":${Native.nativeGameReady()}}""" },
+        "about" to { """{"version":${JSONObject.quote(Native.nativeVersion())},"dataDir":${JSONObject.quote(Native.nativeDataDir())}}""" },
     )
 
     /** What a button or switch can do: name -> function of the arguments the UI file gave. */
@@ -80,6 +89,19 @@ object Registry {
         "removeServer" to { a -> Native.nativeRemoveServer(a.optInt("index")) },
         "removeMod" to { a -> Native.nativeRemoveMod(a.optString("id")) },
         "removeShader" to { a -> Native.nativeRemoveShader(a.optString("name")) },
+        "importMod" to { a -> Native.nativeImportMod(a.optString("source")) },
+        "importShader" to { a -> Native.nativeImportShader(a.optString("source")) },
+        "saveTouchControls" to { a -> Native.nativeSaveTouchControls((a.optJSONObject("patch") ?: JSONObject()).toString()) },
+        "browseSearch" to { a ->
+            Native.nativeBrowseSearch(a.optString("source"), a.optString("kind"), a.optString("text"), a.optInt("offset"), a.optBoolean("everything"))
+        },
+        "browseDetails" to { a -> Native.nativeBrowseDetails(a.optString("source"), a.optString("id")) },
+        "browseInstall" to { a -> Native.nativeBrowseInstall(a.optString("source"), a.optString("id")) },
+        "browseRemove" to { a -> Native.nativeBrowseRemove(a.optString("name")) },
+        "updateDownload" to { a -> Native.nativeUpdateDownload(a.optString("tag"), a.optString("what"), a.optString("dest")) },
+        "installGame" to { a -> Native.nativeInstallGame(a.optString("cache")) },
+        "setImportCache" to { a -> Native.nativeSetImportCache(a.optString("cache")) },
+        "importCachedFile" to { a -> Native.nativeImportCachedFile(a.optString("name"), a.optString("source")) },
     )
 
     /** Icon names a UI file can use. */
