@@ -35,7 +35,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.nonInteractiveScrollbar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
@@ -145,10 +144,7 @@ fun EditSwitchLayersVisibilityDialog(
                             .fadeEdge(state = scrollState)
                             .weight(1f, fill = false)
                             .fillMaxWidth()
-                            .nonInteractiveScrollbar(
-                                state = scrollState.scrollIndicatorState!!,
-                                orientation = Orientation.Vertical,
-                            ),
+                            ,
                         state = scrollState,
                         contentPadding = PaddingValues(horizontal = 2.dp, vertical = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)

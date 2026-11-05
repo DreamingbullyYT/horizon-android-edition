@@ -32,7 +32,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.nonInteractiveScrollbar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,10 +69,7 @@ fun KeyEventEdit(
 
     LazyColumn(
         modifier = Modifier
-            .nonInteractiveScrollbar(
-                state = scrollState.scrollIndicatorState!!,
-                orientation = Orientation.Vertical,
-            )
+            
             .then(modifier),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(vertical = 12.dp),

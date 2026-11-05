@@ -30,4 +30,4 @@ fun rememberTransitionSpec(): AnimatedContentTransitionScope<*>.() -> ContentTra
     remember { { fadeIn() togetherWith fadeOut() } }
 
 @Composable
-fun rememberSwapTween(): FiniteAnimationSpec<Float> = remember { tween(220) }
+fun rememberSwapTween(): FiniteAnimationSpec<Float> = remember { tween<Float>(220) }
