@@ -1,6 +1,6 @@
 package com.movtery.zalithlauncher.ui.guide
 import com.movtery.guide.GuideKey
-private data class Key(val id:String):GuideKey
+data class Key(val id:String):GuideKey
 object GuideKeys {
  object Editor { object Step {
   val MenuBall=Key("editor-menu-ball")
