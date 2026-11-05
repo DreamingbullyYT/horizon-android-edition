@@ -25,19 +25,19 @@ import com.movtery.zalithlauncher.ui.screens.content.elements.CategoryItem
 
 sealed interface EditWidgetCategory : TitledNavKey {
     /** 基本信息 */
-    @Serializable data object Info : EditWidgetCategory
+data object Info : EditWidgetCategory
     /** 文本样式 */
-    @Serializable data object TextStyle : EditWidgetCategory
+data object TextStyle : EditWidgetCategory
     /** 点击事件 */
-    @Serializable data object ClickEvent : EditWidgetCategory
+data object ClickEvent : EditWidgetCategory
     /** 控件样式 */
-    @Serializable data object Style : EditWidgetCategory
+data object Style : EditWidgetCategory
     /** 摇杆配置 */
-    @Serializable data object JoystickConfig : EditWidgetCategory
+data object JoystickConfig : EditWidgetCategory
     /** 方向事件 */
-    @Serializable data object DirectionEvents : EditWidgetCategory
+data object DirectionEvents : EditWidgetCategory
     /** 摇杆样式 */
-    @Serializable data object JoystickStyle : EditWidgetCategory
+data object JoystickStyle : EditWidgetCategory
 }
 
 /**

@@ -39,6 +39,7 @@ import kotlin.math.roundToInt
 @Composable fun Modifier.verticalScrollWithBar(state: androidx.compose.foundation.lazy.LazyListState) = this
 @Composable fun Modifier.lazyScrollWithBar(state: androidx.compose.foundation.lazy.LazyListState) = this
 @Composable fun Modifier.fadeEdge(state: androidx.compose.foundation.ScrollState, direction: EdgeDirection = EdgeDirection.Vertical) = this
+@Composable fun Modifier.fadeEdge(state: androidx.compose.foundation.lazy.LazyListState, direction: EdgeDirection = EdgeDirection.Vertical) = this
 enum class EdgeDirection { Horizontal, Vertical }
 
 @Composable fun FloatingBall(position:Offset,onPositionChanged:(Offset)->Unit,modifier:Modifier=Modifier,onClick:()->Unit={},alpha:Float=1f,color:Color=Color.Black.copy(alpha=.35f),contentColor:Color=Color.White,shape:Shape=RoundedCornerShape(14.dp),content:@Composable ()->Unit) {

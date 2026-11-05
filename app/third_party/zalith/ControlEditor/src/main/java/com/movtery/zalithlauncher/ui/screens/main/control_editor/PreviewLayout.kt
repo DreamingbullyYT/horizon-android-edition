@@ -49,7 +49,7 @@ fun BoxWithConstraintsScope.PreviewControlBox(
     modifier: Modifier = Modifier,
 ) {
     val occupiedPointers = remember(observableLayout) { mutableStateListOf<PointerId>() }
-    val moveOnlyPointers = remember(observableLayout) { mutableStateSetOf<PointerId>() }
+    val moveOnlyPointers = remember(observableLayout) { mutableStateListOf<PointerId>() }
 
     val screenSize = rememberBoxSize()
 
