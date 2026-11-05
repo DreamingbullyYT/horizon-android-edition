@@ -15,8 +15,6 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Toast
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -89,51 +87,28 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
             or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
             or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
 
-        val initialLayout = loadLayout()
-        val profiles = LayoutProfiles(this)
-        val overlay = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@HorizonGameActivity)
-            Class.forName("androidx.savedstate.ViewTreeSavedStateRegistryOwner")
-                .getMethod("set", View::class.java, SavedStateRegistryOwner::class.java)
-                .invoke(null, this, this@HorizonGameActivity)
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-            setContent {
-                HorizonGameControls(
-                    layout = initialLayout,
-                    profiles = profiles,
-                    defaultLayout = { defaultLayout() },
-                    setKeepAwake = { enabled ->
-                        if (enabled) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                    },
-                    setMaxRefresh = { enabled ->
-                        val attributes = window.attributes
-                        attributes.preferredRefreshRate = if (enabled) windowManager.defaultDisplay.refreshRate else 0f
-                        window.attributes = attributes
-                    },
-                    save = { packed -> saveCurrentLayout(packed) }
-                )
-            }
-        }
+        // No UI toolkit here: touches go straight to the router, which drives look, hotbar taps and menu
+        // touches through GameInput. The launcher UI is being rebuilt separately.
+        router = TouchInputRouter(this, window.decorView)
+        gyro = GyroLook(this)
         window.decorView.post {
-            val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                PixelFormat.TRANSLUCENT
-            ).apply {
-                token = window.decorView.windowToken
-                gravity = Gravity.TOP or Gravity.START
-                title = "Horizon touch controls"
-            }
-            windowManager.addView(overlay, params)
+            val prefs = getSharedPreferences("zalith-touch-settings", MODE_PRIVATE)
+            runCatching { GameInput.nativeSetImeAllowed(prefs.getBoolean("auto_keyboard", true)) }
         }
     }
 
+    private var router: TouchInputRouter? = null
+    private var gyro: GyroLook? = null
+
+    /** Consume every touch: the router forwards what the game needs, nothing reaches the native window twice. */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        val r = router ?: return super.dispatchTouchEvent(ev)
+        return r.onTouchEvent(ev)
+    }
+
     override fun onStart() { super.onStart(); lifecycleRegistry.currentState = Lifecycle.State.STARTED }
-    override fun onResume() { super.onResume(); lifecycleRegistry.currentState = Lifecycle.State.RESUMED }
-    override fun onPause() { lifecycleRegistry.currentState = Lifecycle.State.STARTED; super.onPause() }
+    override fun onResume() { super.onResume(); lifecycleRegistry.currentState = Lifecycle.State.RESUMED; gyro?.start() }
+    override fun onPause() { gyro?.stop(); router?.cancelAll(); lifecycleRegistry.currentState = Lifecycle.State.STARTED; super.onPause() }
     override fun onStop() { lifecycleRegistry.currentState = Lifecycle.State.CREATED; super.onStop() }
     override fun onDestroy() {
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED

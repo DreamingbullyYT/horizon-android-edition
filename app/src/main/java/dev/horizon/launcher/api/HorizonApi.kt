@@ -46,7 +46,6 @@ object HorizonApi {
         .put("apiVersion", VERSION)
         .put("sources", JSONArray(Registry.sources.keys.sorted()))
         .put("calls", JSONArray(Registry.calls.keys.sorted()))
-        .put("icons", JSONArray(Registry.icons.keys.sorted()))
 
     private fun parse(text: String): Any = runCatching {
         val t = text.trimStart()

@@ -29,19 +29,7 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".SduiActivity"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
-            android:exported="false"
-            android:label="Horizon"
-            android:theme="@style/Theme.Horizon" />
 
-        <activity
-            android:name=".NewUiActivity"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
-            android:exported="false"
-            android:label="Horizon"
-            android:theme="@style/Theme.Horizon" />
 
         <activity
             android:name=".game.HorizonGameActivity"

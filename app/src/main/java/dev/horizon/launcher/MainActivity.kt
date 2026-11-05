@@ -1,42 +1,106 @@
 package dev.horizon.launcher
 
+import android.net.Uri
 import android.os.Bundle
+import android.view.Gravity
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.core.view.WindowCompat
+import androidx.activity.result.contract.ActivityResultContracts
 import dev.horizon.launcher.core.Native
-import dev.horizon.launcher.ui.HorizonApp
+import dev.horizon.launcher.data.Core
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.io.File
 
+/**
+ * Temporary launcher shell with no UI toolkit: just enough buttons to install, restore, export and play
+ * while the real launcher UI is rebuilt piece by piece. All behaviour lives in [GameSetup].
+ */
 class MainActivity : ComponentActivity() {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private lateinit var status: TextView
+    private val buttons = mutableListOf<Button>()
+    private var busy = false
+    private var initError: String? = null
+
+    private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        if (uri != null) run("Importing Minecraft folder") { GameSetup.importFolder(this, uri, this::show).let { "Imported $it files." } }
+    }
+    private val backupPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) run("Restoring backup") { GameSetup.restoreBackup(this, uri, this::show).let { "Restored $it Minecraft resource set(s)." } }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         dev.horizon.launcher.data.Updater.prepare(filesDir, this)
-        enableEdgeToEdge()
-        WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = false
-            isAppearanceLightNavigationBars = false
-        }
 
         val home = File(filesDir, "launcher").apply { mkdirs() }
         val gameHome = File(home, "game").apply { mkdirs() }
-        val resourceError = runCatching {
-            dev.horizon.launcher.data.Updater.syncEngineData(this, gameHome)
-        }.exceptionOrNull()?.message
-        val initError = runCatching { Native.nativeInit(home.absolutePath) }
-            .exceptionOrNull()
-            ?.message ?: resourceError
-        val error = Native.loadError ?: initError
+        val resourceError = runCatching { dev.horizon.launcher.data.Updater.syncEngineData(this, gameHome) }.exceptionOrNull()?.message
+        initError = Native.loadError ?: runCatching { Native.nativeInit(home.absolutePath) }.exceptionOrNull()?.message ?: resourceError
         dev.horizon.launcher.data.Updater.armGuard(filesDir)
-        val start = intent?.getStringExtra("screen") ?: "home"
 
-        setContent {
-            HorizonApp(
-                initialScreen = start,
-                homeDir = home.absolutePath,
-                loadError = error,
-            )
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad * 2, pad, pad)
+        }
+        status = TextView(this).apply { textSize = 15f; setPadding(0, 0, 0, pad) }
+        column.addView(TextView(this).apply { text = "Horizon"; textSize = 26f; gravity = Gravity.START })
+        column.addView(status)
+        fun button(label: String, onClick: () -> Unit) = Button(this).also {
+            it.text = label
+            it.setOnClickListener { if (!busy) onClick() }
+            buttons += it
+            column.addView(it, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        button("Play") {
+            GameSetup.play(this).onFailure { show("Could not open the game: ${it.message}") }
+        }
+        button("Install Minecraft (download)") { run("Installing Minecraft") { GameSetup.install(this, this::show); "Minecraft is ready." } }
+        button("Import Minecraft folder") { folderPicker.launch(null) }
+        button("Restore backup (.zip)") { backupPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }
+        button("Export backup to Downloads") {
+            run("Exporting backup") { "Saved to ${GameSetup.exportBackup(this, this::show)}" }
+        }
+        setContentView(ScrollView(this).apply { addView(column) })
+        refreshStatus()
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
+    }
+
+    private fun show(text: String) { status.text = text }
+
+    private fun refreshStatus() {
+        scope.launch {
+            val ready = GameSetup.ready()
+            val problem = initError?.let { "\nCore problem: $it" } ?: ""
+            status.text = "Core ${Core.coreVersion()} · Minecraft ${if (ready) "installed" else "not installed"}$problem"
+        }
+    }
+
+    /** Runs one setup action with the buttons locked and the result (or the error) shown as status. */
+    private fun run(label: String, action: suspend () -> String) {
+        if (busy) return
+        busy = true
+        buttons.forEach { it.isEnabled = false }
+        show("$label…")
+        scope.launch {
+            val message = try { action() } catch (e: Exception) { e.message ?: "$label failed" }
+            busy = false
+            buttons.forEach { it.isEnabled = true }
+            refreshStatus()
+            status.append("\n$message")
         }
     }
 }
