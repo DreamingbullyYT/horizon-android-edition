@@ -13,5 +13,5 @@ import androidx.compose.animation.togetherWith
 interface TitledNavKey : NavKey
 @Composable fun rememberTitledNavBackStack(vararg elements: TitledNavKey): NavBackStack<TitledNavKey> = remember { NavBackStack(*elements) }
 fun NavBackStack<TitledNavKey>.clearWith(key: TitledNavKey) { clear(); add(key) }
-@Composable fun rememberTransitionSpec(): AnimatedContentTransitionScope<NavKey>.() -> ContentTransform = remember { { fadeIn() togetherWith fadeOut() } }
-@Composable fun rememberSwapTween() = androidx.compose.animation.core.tween<Float>(220)
+@Composable fun <T : NavKey> rememberTransitionSpec(): AnimatedContentTransitionScope<T>.() -> ContentTransform = remember { { fadeIn() togetherWith fadeOut() } }
+@Composable fun <T> rememberSwapTween(): androidx.compose.animation.core.FiniteAnimationSpec<T> = androidx.compose.animation.core.tween(220)

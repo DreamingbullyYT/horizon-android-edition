@@ -1,2 +1,3 @@
 package com.movtery.zalithlauncher.setting.unit
-fun ClosedFloatingPointRange<Float>.toFloatRange(): ClosedFloatingPointRange<Float> = this
+fun IntRange.toFloatRange(): ClosedFloatingPointRange<Float> = first.toFloat()..last.toFloat()
+fun ClosedFloatingPointRange<Int>.toFloatRange(): ClosedFloatingPointRange<Float> = start.toFloat()..endInclusive.toFloat()

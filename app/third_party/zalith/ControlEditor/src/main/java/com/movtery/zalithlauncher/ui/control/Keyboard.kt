@@ -39,12 +39,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
-import androidx.compose.material3.nonInteractiveScrollbar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -372,12 +370,7 @@ fun GamepadSpecialArea(
 ) {
     val scrollState = rememberLazyListState()
     LazyColumn(
-        modifier = modifier
-            .nonInteractiveScrollbar(
-                state = scrollState.scrollIndicatorState!!,
-                orientation = Orientation.Vertical,
-            )
-            .padding(horizontal = 2.dp),
+        modifier = modifier.padding(horizontal = 2.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(all = 12.dp),
         state = scrollState
@@ -662,8 +655,7 @@ private fun KeyButton(
                 modifier = Modifier.basicMarquee(Int.MAX_VALUE),
                 text = name,
                 style = style,
-                maxLines = 1,
-                autoSize = TextAutoSize.StepBased(maxFontSize = maxFontSize)
+                maxLines = 1
             )
         }
     }
