@@ -15,7 +15,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalContext
@@ -23,7 +22,6 @@ import androidx.compose.ui.res.stringResource
 import com.movtery.zalithlauncher.R
 import com.movtery.zalithlauncher.ui.theme.cardColor
 import com.movtery.zalithlauncher.ui.theme.onCardColor
-import com.movtery.zalithlauncher.ui.screens.main.control_editor.MenuState
 import dev.horizon.launcher.game.zalith.FloatingBall as HorizonFloatingBall
 import dev.horizon.launcher.game.zalith.DualMenuSubscreen as HorizonDualMenuSubscreen
 import dev.horizon.launcher.game.zalith.MenuTextButton as HorizonMenuTextButton
@@ -79,7 +77,7 @@ enum class EdgeDirection { Horizontal, Vertical }
 @Composable fun DefaultSwitch(checked:Boolean,onCheckedChange:(Boolean)->Unit,enabled:Boolean=true) { Switch(checked,onCheckedChange,enabled=enabled) }
 @Composable fun CheckChip(selected:Boolean,onClick:()->Unit,label:String) { FilterChip(selected,onClick,label={Text(label)}) }
 @Composable fun WarningCard(title:String,text:String) { Card { Column(Modifier.padding(12.dp)){Text(title,style=MaterialTheme.typography.titleSmall);Text(text)} } }
-@Composable fun <T> SimpleTextSlider(value:Float,onValueChange:(Float)->Unit,valueRange:ClosedFloatingPointRange<Float>,modifier:Modifier=Modifier,enabled:Boolean=true,shorter:Boolean=false,decimalFormat:String="#0.00",suffix:String?=null,onValueChangeFinished:(()->Unit)?=null,onTextClick:(()->Unit)?=null,fineTuningControl:Boolean=true,fineTuningStep:Float=0.5f) { Slider(value.coerceIn(valueRange),onValueChange,valueRange=valueRange,enabled=enabled,onValueChangeFinished=onValueChangeFinished,modifier=modifier) }
+@Composable fun SimpleTextSlider(value:Float,onValueChange:(Float)->Unit,valueRange:ClosedFloatingPointRange<Float>,modifier:Modifier=Modifier,enabled:Boolean=true,shorter:Boolean=false,decimalFormat:String="#0.00",suffix:String?=null,onValueChangeFinished:(()->Unit)?=null,onTextClick:(()->Unit)?=null,fineTuningControl:Boolean=true,fineTuningStep:Float=0.5f) { Slider(value.coerceIn(valueRange),onValueChange,valueRange=valueRange,enabled=enabled,onValueChangeFinished=onValueChangeFinished,modifier=modifier) }
 @Composable fun SliderValueEditDialog(onDismissRequest:()->Unit,title:String,valueRange:ClosedFloatingPointRange<Float>,value:Float,onValueChange:(Float)->Unit,onValueChangeFinished:()->Unit={}) { var v by remember { mutableFloatStateOf(value) }; AlertDialog(onDismissRequest=onDismissRequest,title={Text(title)},text={Slider(v,{v=it},valueRange=valueRange)},confirmButton={TextButton(onClick={onValueChange(v);onValueChangeFinished();onDismissRequest()}){Text(stringResource(R.string.generic_confirm))}}) }
 @Composable fun LittleTextLabel(text:String) { Text(text,style=MaterialTheme.typography.labelSmall) }
 @Composable fun ButtonPosition() {}
