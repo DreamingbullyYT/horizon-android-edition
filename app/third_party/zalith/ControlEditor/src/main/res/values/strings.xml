@@ -164,4 +164,7 @@
     <string name="control_editor_special_joystick_style_joystick_size">Joystick Size</string>
     <string name="control_editor_exit_message">Are you sure you want to exit directly? This will cause any changes to be unsaved. If you need to save, please check the editor menu.</string>
     <string name="control_editor_exit_confirm">Exit Directly</string>
+    <string name="theme_color_picker_title">Color Picker</string>
+    <string name="theme_color_picker_edit_hex">Edit Hex</string>
+    <string name="theme_color_picker_edit_hex_invalid">Invalid Hex</string>
 </resources>
