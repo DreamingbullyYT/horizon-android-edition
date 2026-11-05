@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::{BTreeMap, BTreeSet}, io::{Read, Seek}, path::Path};
+use std::{collections::{BTreeMap, BTreeSet}, io::{Read, Seek}};
 
 pub const MANIFEST_FILE: &str = "horizon-native.json";
 pub const MIXIN_MANIFEST: &str = "horizon-mixin.toml";
@@ -98,13 +98,13 @@ pub fn read_bundle<R: Read + Seek>(reader: R) -> Result<Bundle, Error> {
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| Error::Archive(e.to_string()))?;
         let name = entry.name().to_owned();
-        if entry.is_dir() { continue; }
-        safe_path(&name)?;
         if entry.unix_mode().is_some_and(|m| {
             let kind = m & 0o170000; kind != 0 && kind != 0o100000
         }) {
             return Err(Error::UnsafePath(format!("non-regular archive entry: {name}")));
         }
+        if entry.is_dir() { continue; }
+        safe_path(&name)?;
         if name == "mod.wasm" {
             return Err(Error::Manifest("legacy WebAssembly payloads are unsupported".into()));
         }
@@ -159,7 +159,8 @@ pub struct Compatibility {
     pub warnings: Vec<String>,
 }
 
-/// Selects a single explicitly available engine candidate for every enabled mod.
+/// Selects the first explicitly available engine candidate satisfying every enabled mod.
+/// Candidates must be supplied newest-first using verified Git ancestry, never hash sorting.
 /// Commit IDs are opaque: this function never guesses chronology from their spelling.
 pub fn resolve_compatibility(bundles: &[Bundle], candidates: &[EngineCandidate]) -> Result<Compatibility, Error> {
     if bundles.is_empty() { return Err(Error::Compatibility("no native mods selected".into())); }
@@ -169,16 +170,14 @@ pub fn resolve_compatibility(bundles: &[Bundle], candidates: &[EngineCandidate])
             return Err(Error::Compatibility(format!("duplicate mod id: {}", b.manifest.id)));
         }
     }
-    let mut eligible: Vec<_> = candidates.iter().filter(|c| bundles.iter().all(|b| {
+    let selected = candidates.iter().find(|c| bundles.iter().all(|b| {
         let m = &b.manifest;
         let engine_ok = match m.hooks {
             Some(required) => c.hooks_api >= required,
             None => c.revision == m.horizon,
         };
         engine_ok && c.mixins_revision == m.mixins
-    })).cloned().collect();
-    eligible.sort_by(|a, b| a.revision.cmp(&b.revision));
-    let selected = eligible.pop().ok_or_else(|| {
+    })).cloned().ok_or_else(|| {
         let requirements = bundles.iter().map(|b| match b.manifest.hooks {
             Some(n) => format!("{} needs hooks API >= {n}, tested on {}", b.manifest.id, b.manifest.horizon),
             None => format!("{} is pinned to {}", b.manifest.id, b.manifest.horizon),
