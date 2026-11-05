@@ -330,6 +330,10 @@ fun SettingsScreen(
             Plate {
                 SectionLabel("ABOUT")
                 Spacer(Modifier.height(8.dp))
+                val ctx = LocalContext.current
+                InfoRow(Icons.Outlined.Settings, "New UI (preview)", "Loaded from JSON files", onClick = {
+                    ctx.startActivity(android.content.Intent(ctx, dev.horizon.launcher.SduiActivity::class.java))
+                })
                 InfoRow(Icons.Outlined.Info, "Horizon Android", platform?.version ?: "Android preview")
                 InfoRow(Icons.Outlined.Settings, "Data directory", platform?.dataDir ?: homeDir)
                 InfoRow(Icons.Outlined.Security, "Account storage", if (accounts?.keychain == true) "Persistent secret store" else "Session/file-backed store")

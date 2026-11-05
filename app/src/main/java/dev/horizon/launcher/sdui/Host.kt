@@ -57,6 +57,7 @@ class HostState(
     private var vars = JSONObject()
     private var strings = JSONObject()
     private var layout: JSONObject? = null
+    private val errors = mutableListOf<String>()
 
     override fun font(name: String?): FontFamily? {
         if (name.isNullOrBlank()) return null
@@ -100,16 +101,36 @@ class HostState(
         io.launch {
             val data = withContext(Dispatchers.IO) {
                 val out = JSONObject()
+                errors.clear()
                 val wanted = screen.optJSONArray("sources")
                 for (i in 0 until (wanted?.length() ?: 0)) {
                     val key = wanted!!.optString(i)
-                    val text = Registry.sources[key]?.let { runCatching { it() }.getOrNull() } ?: continue
-                    out.put(key, parse(text))
+                    val text = Registry.sources[key]?.let { runCatching { it() }.getOrElse { e -> """{"error":"${e.message}"}""" } } ?: continue
+                    val value = parse(text)
+                    if (value is JSONObject && value.has("error")) {
+                        errors.add("$key: ${value.optString("error")}")
+                        out.put(key, if (key == "instances") JSONArray() else JSONObject())
+                    } else out.put(key, value)
                 }
                 out
             }
+            // Handy shortcuts so a screen never depends on one lookup working.
+            val list = data.optJSONArray("instances")
+            val chosen = data.optJSONObject("settings")?.optString("instance").orEmpty()
+            var current: JSONObject? = null
+            for (i in 0 until (list?.length() ?: 0)) {
+                val o = list!!.optJSONObject(i) ?: continue
+                if (current == null || o.optString("id") == chosen) current = o
+            }
+            data.put("current", current ?: JSONObject().put("name", strings.optString("no_instances")).put("version", ""))
+            val acc = data.optJSONObject("accounts")
+            val who = acc?.optJSONObject("player")?.optString("name").orEmpty().ifEmpty {
+                acc?.optJSONArray("accounts")?.optJSONObject(0)?.optString("name").orEmpty()
+            }.ifEmpty { acc?.optString("offlineSelected").orEmpty() }
+            data.put("me", JSONObject().put("name", who.ifEmpty { strings.optString("account") }))
             data.put("t", strings)
             data.put("vars", vars)
+            data.put("errors", errors.joinToString("\n"))
             root = JSONObject().apply {
                 put("data", data)
                 put("node", screen.optJSONObject("root") ?: JSONObject())

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -323,7 +324,11 @@ private fun ButtonNode(n: JSONObject, scope: Scope, rt: SduiRuntime) {
     var mod = nodeModifier(merged, scope, rt)
     if (!enabled) mod = mod.alpha(0.4f)
     val fg = rt.theme.color(merged.optString("fg"), Color.White)
-    Row(mod, Arrangement.spacedBy(merged.dp("gap") ?: 8.dp), Alignment.CenterVertically) {
+    Row(
+        mod.heightIn(min = 44.dp),
+        Arrangement.spacedBy(merged.dp("gap") ?: 8.dp, Alignment.CenterHorizontally),
+        Alignment.CenterVertically,
+    ) {
         CompositionLocalProvider(LocalFg provides fg) {
             merged.optString("icon").takeIf { it.isNotEmpty() }?.let {
                 IconView(Expr.text(it, scope), merged.dp("iconSize") ?: 18.dp, null, Modifier, rt)

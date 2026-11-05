@@ -32,14 +32,9 @@
         <activity
             android:name=".SduiActivity"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
-            android:exported="true"
-            android:label="Horizon UI"
-            android:theme="@style/Theme.Horizon">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:exported="false"
+            android:label="Horizon"
+            android:theme="@style/Theme.Horizon" />
 
         <activity
             android:name=".game.HorizonGameActivity"
