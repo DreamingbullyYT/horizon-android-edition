@@ -76,7 +76,8 @@ fun BoxWithConstraintsScope.ControlEditor(
     viewModel: EditorViewModel,
     targetFile: File,
     exit: () -> Unit,
-    menuExit: () -> Unit
+    menuExit: () -> Unit,
+    onSaveLayout: (com.movtery.layer_controller.layout.ControlLayout) -> Unit
 ) {
     val layers by viewModel.observableLayout.layers.collectAsStateWithLifecycle()
     val styles by viewModel.observableLayout.styles.collectAsStateWithLifecycle()
@@ -242,10 +243,10 @@ fun BoxWithConstraintsScope.ControlEditor(
             viewModel.previewHideLayerWhen = hideWhen
         },
         onSave = {
-            viewModel.save(targetFile, onSaved = {})
+            viewModel.save(targetFile, onSaved = { onSaveLayout(viewModel.observableLayout.pack()) })
         },
         saveAndExit = {
-            viewModel.save(targetFile, onSaved = exit)
+            viewModel.save(targetFile, onSaved = { onSaveLayout(viewModel.observableLayout.pack()); exit() })
         },
         onExit = menuExit,
     )
