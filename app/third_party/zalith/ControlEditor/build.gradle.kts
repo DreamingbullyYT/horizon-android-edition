@@ -38,6 +38,7 @@ dependencies {
     implementation("androidx.navigation3:navigation3-ui:1.0.0-alpha06")
     implementation("androidx.constraintlayout:constraintlayout-compose:1.1.0")
     implementation("sh.calvin.reorderable:reorderable:2.4.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:0.3.8")
     implementation("com.google.android.material:material:1.12.0")
 
 }

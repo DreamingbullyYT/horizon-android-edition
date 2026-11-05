@@ -184,7 +184,7 @@ fun EditWidgetDialog(
                             EditWidgetTabLayout(
                                 modifier = Modifier.fillMaxHeight(),
                                 items = categories,
-                                currentKey = backStack.lastOrNull(),
+                                currentKey = backStack.value.lastOrNull(),
                                 navigateTo = { key ->
                                     backStack.clearWith(key)
                                 }
@@ -194,7 +194,7 @@ fun EditWidgetDialog(
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxHeight(),
-                                backStack = backStack,
+                                backStack = backStack.value,
                                 data = data.data,
                                 styles = styles,
                                 joystickStyles = joystickStyles,
@@ -316,7 +316,7 @@ private fun EditWidgetTabLayout(
 @Composable
 private fun EditWidgetNavigation(
     modifier: Modifier = Modifier,
-    backStack: NavBackStack<TitledNavKey>,
+    backStack: NavBackStack,
     data: ObservableWidget,
     styles: List<ObservableButtonStyle>,
     joystickStyles: List<ObservableJoystickStyle>,
