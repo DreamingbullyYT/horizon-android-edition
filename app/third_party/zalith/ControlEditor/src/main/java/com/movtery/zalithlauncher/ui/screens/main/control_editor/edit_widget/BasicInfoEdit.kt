@@ -18,6 +18,8 @@
 
 package com.movtery.zalithlauncher.ui.screens.main.control_editor.edit_widget
 
+import com.movtery.zalithlauncher.ui.components.rememberBoxSize
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -31,7 +33,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.movtery.layer_controller.data.ButtonPosition
@@ -67,7 +68,7 @@ fun EditWidgetInfo(
         screenKey = screenKey,
         currentKey = currentKey
     ) {
-        val screenSize = LocalWindowInfo.current.containerSize
+        val screenSize = rememberBoxSize()
         val density = LocalDensity.current
         val screenWidth = remember(screenSize, density) {
             with(density) { screenSize.width.toDp() }.value

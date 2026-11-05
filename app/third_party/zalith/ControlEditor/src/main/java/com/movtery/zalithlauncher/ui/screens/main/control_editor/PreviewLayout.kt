@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraintsScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateSetOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerId
@@ -48,7 +48,7 @@ fun BoxWithConstraintsScope.PreviewControlBox(
     previewHideLayerWhen: HideLayerWhen,
     modifier: Modifier = Modifier,
 ) {
-    val occupiedPointers = remember(observableLayout) { mutableStateSetOf<PointerId>() }
+    val occupiedPointers = remember(observableLayout) { mutableStateListOf<PointerId>() }
     val moveOnlyPointers = remember(observableLayout) { mutableStateSetOf<PointerId>() }
 
     val screenSize = rememberBoxSize()

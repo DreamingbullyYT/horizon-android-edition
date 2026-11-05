@@ -16,6 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.txt>.
  */
 
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.movtery.zalithlauncher.ui.control
 
 import androidx.compose.animation.core.animateDpAsState

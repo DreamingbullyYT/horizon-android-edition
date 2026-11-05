@@ -32,7 +32,7 @@ import com.movtery.zalithlauncher.R
 import kotlin.math.roundToInt
 
 
-@Composable fun MarqueeText(text: String, modifier: Modifier = Modifier, style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyMedium) { Text(text, modifier, maxLines=1, style=style) }
+@Composable fun MarqueeText(text: String, modifier: Modifier = Modifier, style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyMedium, textAlign: TextAlign = TextAlign.Start) { Text(text, modifier, maxLines=1, style=style, textAlign=textAlign) }
 @Composable fun rememberDialogMaxHeight(): Dp = 520.dp
 @Composable fun ImePanContainer(modifier: Modifier = Modifier, contentAlignment: Alignment = Alignment.Center, content: @Composable BoxWithConstraintsScope.() -> Unit) { BoxWithConstraints(modifier, contentAlignment=contentAlignment, content=content) }
 @Composable fun Modifier.verticalScrollWithBar(state: androidx.compose.foundation.ScrollState) = verticalScroll(state)

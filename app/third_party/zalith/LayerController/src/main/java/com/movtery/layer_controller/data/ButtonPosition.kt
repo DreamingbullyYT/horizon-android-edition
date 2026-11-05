@@ -40,6 +40,12 @@ data class ButtonPosition(
     @SerialName("y")
     val y: Int
 ): Modifiable<ButtonPosition> {
+    companion object {
+        val TopStart = ButtonPosition(0, 0)
+        val TopEnd = ButtonPosition(10000, 0)
+        val BottomStart = ButtonPosition(0, 10000)
+        val BottomEnd = ButtonPosition(10000, 10000)
+    }
     init {
         checkInRange("x", x, POSITION_RANGE)
         checkInRange("y", y, POSITION_RANGE)
