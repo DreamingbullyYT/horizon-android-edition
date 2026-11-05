@@ -56,9 +56,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.navigation3.runtime.NavBackStack
-import androidx.navigation3.runtime.entryProvider
-import androidx.navigation3.ui.NavDisplay
 import com.movtery.layer_controller.event.ClickEvent
 import com.movtery.layer_controller.observable.ObservableButtonStyle
 import com.movtery.layer_controller.observable.ObservableClickEventsProvider
@@ -73,11 +70,8 @@ import com.movtery.zalithlauncher.ui.components.EdgeDirection
 import com.movtery.zalithlauncher.ui.components.MarqueeText
 import com.movtery.zalithlauncher.ui.components.fadeEdge
 import com.movtery.zalithlauncher.ui.screens.TitledNavKey
-import com.movtery.zalithlauncher.ui.screens.clearWith
 import com.movtery.zalithlauncher.ui.screens.content.elements.CategoryItem
 import com.movtery.zalithlauncher.ui.screens.rememberSwapTween
-import com.movtery.zalithlauncher.ui.screens.rememberTitledNavBackStack
-import com.movtery.zalithlauncher.ui.screens.rememberTransitionSpec
 import com.movtery.zalithlauncher.ui.theme.cardColor
 import com.movtery.zalithlauncher.ui.theme.onCardColor
 
@@ -125,7 +119,7 @@ fun EditWidgetDialog(
         enter = fadeIn(animationSpec = tween),
         exit = fadeOut(animationSpec = tween)
     ) {
-        val backStack = rememberTitledNavBackStack(EditWidgetCategory.Info)
+        var backStack by remember { mutableStateOf(listOf<TitledNavKey>(EditWidgetCategory.Info)) }
         var dialogTransparent by remember { mutableStateOf(EditWidgetDialogState.OPAQUE) }
 
         val alpha by animateFloatAsState(
@@ -184,9 +178,9 @@ fun EditWidgetDialog(
                             EditWidgetTabLayout(
                                 modifier = Modifier.fillMaxHeight(),
                                 items = categories,
-                                currentKey = backStack.value.lastOrNull(),
+                                currentKey = backStack.lastOrNull(),
                                 navigateTo = { key ->
-                                    backStack.clearWith(key)
+                                    backStack = listOf(key)
                                 }
                             )
 
@@ -194,7 +188,7 @@ fun EditWidgetDialog(
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxHeight(),
-                                backStack = backStack.value,
+                                backStack = backStack,
                                 data = data.data,
                                 styles = styles,
                                 joystickStyles = joystickStyles,
@@ -316,7 +310,7 @@ private fun EditWidgetTabLayout(
 @Composable
 private fun EditWidgetNavigation(
     modifier: Modifier = Modifier,
-    backStack: NavBackStack,
+    backStack: List<TitledNavKey>,
     data: ObservableWidget,
     styles: List<ObservableButtonStyle>,
     joystickStyles: List<ObservableJoystickStyle>,
@@ -330,73 +324,59 @@ private fun EditWidgetNavigation(
 ) {
     val currentKey = backStack.lastOrNull()
 
-    if (backStack.isNotEmpty()) {
-        NavDisplay(
+    when (currentKey) {
+        EditWidgetCategory.Info -> EditWidgetInfo(
             modifier = modifier,
-            backStack = backStack,
-            onBack = { /* 忽略 */ },
-            transitionSpec = rememberTransitionSpec(),
-            popTransitionSpec = rememberTransitionSpec(),
-            entryProvider = entryProvider {
-                entry<EditWidgetCategory.Info> { key ->
-                    EditWidgetInfo(
-                        screenKey = key,
-                        currentKey = currentKey,
-                        data = data,
-                        onPreviewRequested = onPreviewRequested,
-                        onDismissRequested = onDismissRequested
-                    )
-                }
-                entry<EditWidgetCategory.TextStyle> { key ->
-                    EditTextStyle(
-                        screenKey = key,
-                        currentKey = currentKey,
-                        data = data,
-                        onEditWidgetText = onEditWidgetText
-                    )
-                }
-                entry<EditWidgetCategory.ClickEvent> { key ->
-                    EditWidgetClickEvent(
-                        screenKey = key,
-                        currentKey = currentKey,
-                        data = data as ObservableNormalData,
-                        switchControlLayers = switchControlLayers,
-                        sendText = sendText
-                    )
-                }
-                entry<EditWidgetCategory.Style> { key ->
-                    EditWidgetStyle(
-                        screenKey = key,
-                        currentKey = currentKey,
-                        data = data,
-                        styles = styles,
-                        openStyleList = openStyleList
-                    )
-                }
-                entry<EditWidgetCategory.JoystickConfig> { key ->
-                    EditJoystickConfig(
-                        screenKey = key,
-                        currentKey = currentKey,
-                        data = data as ObservableJoystickData
-                    )
-                }
-                entry<EditWidgetCategory.DirectionEvents> { key ->
-                    EditJoystickEvents(
-                        data = data as ObservableJoystickData,
-                        switchControlLayers = switchControlLayers,
-                        sendText = sendText,
-                    )
-                }
-                entry<EditWidgetCategory.JoystickStyle> { key ->
-                    EditJoystickStyle(
-                        screenKey = key,
-                        currentKey = currentKey,
-                        data = data as ObservableJoystickData,
-                        joystickStyles = joystickStyles,
-                        openJoystickStyleList = openJoystickStyleList,
-                    )
-                }
-            }
+            screenKey = EditWidgetCategory.Info,
+            currentKey = currentKey,
+            data = data,
+            onPreviewRequested = onPreviewRequested,
+            onDismissRequested = onDismissRequested
         )
+        EditWidgetCategory.TextStyle -> EditTextStyle(
+            modifier = modifier,
+            screenKey = EditWidgetCategory.TextStyle,
+            currentKey = currentKey,
+            data = data,
+            onEditWidgetText = onEditWidgetText
+        )
+        EditWidgetCategory.ClickEvent -> EditWidgetClickEvent(
+            modifier = modifier,
+            screenKey = EditWidgetCategory.ClickEvent,
+            currentKey = currentKey,
+            data = data as ObservableNormalData,
+            switchControlLayers = switchControlLayers,
+            sendText = sendText
+        )
+        EditWidgetCategory.Style -> EditWidgetStyle(
+            modifier = modifier,
+            screenKey = EditWidgetCategory.Style,
+            currentKey = currentKey,
+            data = data,
+            styles = styles,
+            openStyleList = openStyleList
+        )
+        EditWidgetCategory.JoystickConfig -> EditJoystickConfig(
+            modifier = modifier,
+            screenKey = EditWidgetCategory.JoystickConfig,
+            currentKey = currentKey,
+            data = data as ObservableJoystickData
+        )
+        EditWidgetCategory.DirectionEvents -> EditJoystickEvents(
+            modifier = modifier,
+            data = data as ObservableJoystickData,
+            switchControlLayers = switchControlLayers,
+            sendText = sendText
+        )
+        EditWidgetCategory.JoystickStyle -> EditJoystickStyle(
+            modifier = modifier,
+            screenKey = EditWidgetCategory.JoystickStyle,
+            currentKey = currentKey,
+            data = data as ObservableJoystickData,
+            joystickStyles = joystickStyles,
+            openJoystickStyleList = openJoystickStyleList
+        )
+        else -> Box(modifier)
     }
+
 }
