@@ -1,0 +1,28 @@
+name: HNMod core tests
+
+on:
+  push:
+    branches: [feature/hnmod-core]
+    paths:
+      - "hnmod-core/**"
+      - ".github/workflows/hnmod-core.yml"
+  pull_request:
+    paths:
+      - "hnmod-core/**"
+      - ".github/workflows/hnmod-core.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt --manifest-path hnmod-core/Cargo.toml -- --check
+      - name: Run unit tests
+        run: cargo test --manifest-path hnmod-core/Cargo.toml --locked
