@@ -97,7 +97,7 @@ pub fn read_bundle<R: Read + Seek>(reader: R) -> Result<Bundle, Error> {
     let mut total = 0u64;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| Error::Archive(e.to_string()))?;
-        let name = entry.name().to_owned();
+        let name = entry.name().map_err(|e| Error::Archive(format!("invalid entry name: {e}")))?.into_owned();
         if entry.unix_mode().is_some_and(|m| {
             let kind = m & 0o170000; kind != 0 && kind != 0o100000
         }) {
