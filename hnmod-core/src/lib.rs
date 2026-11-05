@@ -194,7 +194,7 @@ pub fn resolve_compatibility(bundles: &[Bundle], candidates: &[EngineCandidate])
 /// Stable build key, independent of the order in which mods were selected.
 pub fn build_key(candidate: &EngineCandidate, bundles: &[Bundle], profile: &str) -> String {
     let mut h = Sha256::new();
-    for part in [&candidate.revision, &candidate.mixins_revision, &profile.to_owned()] {
+    for part in [candidate.revision.as_str(), candidate.mixins_revision.as_str(), profile] {
         h.update((part.len() as u64).to_le_bytes()); h.update(part.as_bytes());
     }
     let mut sorted: Vec<_> = bundles.iter().collect();
