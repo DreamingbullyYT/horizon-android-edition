@@ -354,7 +354,7 @@ impl Game<'_> {
     ) -> Result<()> {
         let role = self.android_touch.output(id, fallback);
         match role {
-            AndroidTouchRole::Key(key) => self.mapped_key(key, pressed, false, key, horizon_client::held::Source::Pad),
+            AndroidTouchRole::Key(key) => self.mapped_key(key, pressed, false, key),
             AndroidTouchRole::Mouse(button) => self.play_mouse(button, pressed),
             _ => Ok(()),
         }
@@ -364,11 +364,11 @@ impl Game<'_> {
         if id == "sprint" && self.android_touch.hold_to_sprint && key == KeyCode::ControlLeft {
             let toggle = self.settings.toggle_sprint;
             self.settings.toggle_sprint = false;
-            let result = self.mapped_key(key, pressed, false, key, horizon_client::held::Source::Pad);
+            let result = self.mapped_key(key, pressed, false, key);
             self.settings.toggle_sprint = toggle;
             result
         } else {
-            self.mapped_key(key, pressed, false, key, horizon_client::held::Source::Pad)
+            self.mapped_key(key, pressed, false, key)
         }
     }
 
@@ -624,7 +624,7 @@ impl Game<'_> {
                     AndroidTouchRole::Key(key) if key == KeyCode::ControlLeft => {
                         self.touch_key("sprint", key, true)?
                     }
-                    AndroidTouchRole::Key(key) => self.mapped_key(key, true, false, key, horizon_client::held::Source::Pad)?,
+                    AndroidTouchRole::Key(key) => self.mapped_key(key, true, false, key)?,
                     AndroidTouchRole::Mouse(button) => self.play_mouse(button, true)?,
                     AndroidTouchRole::QuickSettings => {
                         self.android_touch.quick_settings_open =
@@ -704,7 +704,7 @@ impl Game<'_> {
                         AndroidTouchRole::Key(key) if key == KeyCode::ControlLeft => {
                             self.touch_key("sprint", key, false)?
                         }
-                        AndroidTouchRole::Key(key) => self.mapped_key(key, false, false, key, horizon_client::held::Source::Pad)?,
+                        AndroidTouchRole::Key(key) => self.mapped_key(key, false, false, key)?,
                         AndroidTouchRole::Mouse(button) => self.play_mouse(button, false)?,
                         AndroidTouchRole::Joystick { .. } => {
                             for (id, key) in [
@@ -765,7 +765,7 @@ impl Game<'_> {
                         other => other,
                     };
                     if let Some(AndroidTouchRole::Key(code)) = android_touch_output(key) {
-                        if let Err(error) = self.mapped_key(code, pressed, false, code, horizon_client::held::Source::Pad) { self.error = Some(error); }
+                        if let Err(error) = self.mapped_key(code, pressed, false, code) { self.error = Some(error); }
                     }
                 }
             }
