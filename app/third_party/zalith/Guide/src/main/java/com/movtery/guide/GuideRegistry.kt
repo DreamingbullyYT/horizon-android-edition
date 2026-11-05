@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.movtery.guide
 
 import androidx.compose.foundation.relocation.BringIntoViewRequester
