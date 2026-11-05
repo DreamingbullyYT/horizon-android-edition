@@ -8,5 +8,8 @@ object GuideKeys {
   val CreateLayer=Key("editor-create-layer")
   val Preview=Key("editor-preview")
   val Save=Key("editor-save")
+  val AddButtons=Key("editor-add-buttons")
+  val AddStyles=Key("editor-add-styles")
+  val StyleCabinet=Key("editor-style-cabinet")
  } }
 }
