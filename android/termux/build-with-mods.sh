@@ -187,7 +187,9 @@ if [ "$PLAIN" = 0 ]; then
     toml="$MODS/$id/horizon-mixin.toml"
     # The PC launcher stages trait API crates and resolves their Cargo dependency
     # graph before invoking horizon-mixins. Do not silently compile a partial build.
-    if grep -Eq '^\[(api|dependencies)\][[:space:]]*
+    if grep -q '^\[api\]' "$toml" || grep -q '^\[dependencies\]' "$toml"; then
+      die "$id declares [api] or [dependencies]. PC trait-API crate staging is not yet ported to Android; refusing an incomplete build."
+    fi
     if [ -n "$hooks" ] || { [ -n "$mod_pin" ] && [ "$mod_pin" != "$PIN" ]; }; then
       python3 - "$toml" "$PIN" <<'PY'
 import pathlib, re, sys
