@@ -90,8 +90,10 @@ if [ "$PLAIN" = 0 ]; then
 
   HOOKS_API=$(sed -n 's/^pub(crate) const NATIVE_HOOKS_API: u32 = \\([0-9]*\\);.*/\\1/p' \
     "$SRC/crates/horizon-client/src/game/native_hooks.rs" | head -1)
+  REV=$(sed -n 's/^pub const MIXINS_REV: &str = "\\([0-9a-f]*\\)";.*/\\1/p' \
     "$SRC/launcher/src/native_mods.rs" | head -1)
   [ -n "$HOOKS_API" ] || die "could not read NATIVE_HOOKS_API from the engine"
+  [ -n "$REV" ] || die "could not read MIXINS_REV from the engine"
 
   HNMOD_CLI=(cargo run --quiet --manifest-path "$REPO/hnmod-core/Cargo.toml" --bin hnmod --)
   say "Checking all mods against Horizon $PIN (hooks API $HOOKS_API; mixins $REV)"
