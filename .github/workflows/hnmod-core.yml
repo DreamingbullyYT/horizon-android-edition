@@ -5,6 +5,7 @@ on:
     branches: [feature/hnmod-core]
     paths:
       - "hnmod-core/**"
+      - "android/termux/**"
       - ".github/workflows/hnmod-core.yml"
   pull_request:
     paths:
