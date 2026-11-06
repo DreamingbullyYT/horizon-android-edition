@@ -71,11 +71,14 @@ jobs:
           test -f app/src/main/java/dev/horizon/launcher/data/HnmodBuildAdapter.kt
           grep -q 'HnmodBuildAdapter.compile' app/src/main/java/dev/horizon/launcher/data/EmbeddedToolchain.kt
           grep -q 'SYMLINKS.txt' app/src/main/java/dev/horizon/launcher/data/EmbeddedBootstrapInstaller.kt
-          grep -q 'TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE' app/src/main/java/dev/horizon/launcher/data/EmbeddedProcessRunner.kt
+          grep -q 'TERMUX_IS_TERMUX' app/src/main/java/dev/horizon/launcher/data/EmbeddedProcessRunner.kt
           grep -q 'HORIZON_EMBEDDED' app/src/main/java/dev/horizon/launcher/data/EmbeddedProcessRunner.kt
           grep -q 'BOOTSTRAP_SHA256' app/src/main/java/dev/horizon/launcher/data/EmbeddedToolchain.kt
           grep -q 'GUEST_PREFIX' app/src/main/java/dev/horizon/launcher/data/EmbeddedProcessRunner.kt
+          grep -q 'libtalloc.so.2' app/src/main/java/dev/horizon/launcher/data/EmbeddedProcessRunner.kt
+          grep -q 'bootstrap-aarch64.zip' app/src/main/java/dev/horizon/launcher/data/EmbeddedToolchain.kt
           test -f scripts/fetch-hnmod-runtime-assets.sh
+          grep -q 'targetSdk = 28' app/build.gradle.kts
 
       - name: Fetch official Termux PRoot runtime assets
         run: bash scripts/fetch-hnmod-runtime-assets.sh
