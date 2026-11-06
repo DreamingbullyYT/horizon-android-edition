@@ -329,6 +329,16 @@ if readelf -d "$LIB" | grep -q 'libc++_shared.so'; then
   echo "note: needs libc++_shared.so; the app must ship it (it does when built with the NDK's)." >&2
 fi
 
+# ---- 6. import bundle data before post-build programs -------------------------------------------
+# horizon-mixins stages each mod's archive data at native-data/<mod-id>. The launcher imports
+# OUT/native-data into the selected game version, so copy that payload beside the library first.
+# Post-build programs then write into the same per-version directories without losing bundle files.
+if [ -d "$STAGE/native-data" ]; then
+  say "Copying native mod bundle data into the imported version"
+  mkdir -p "$OUT/native-data"
+  rsync -a "$STAGE/native-data/" "$OUT/native-data/"
+fi
+
 # ---- 6. PC-compatible post-build programs -------------------------------------------------------
 POST="$STAGE/native-post-build.json"
 if [ -f "$POST" ]; then
