@@ -131,11 +131,11 @@ pub fn stage(mods_dir: &Path, stage: &Path, plan_path: &Path) -> Result<bool, St
         let row = by_id[id];
         packages.insert(*id, row["package"].as_str().ok_or("missing API package name")?.to_owned());
     }
-    let mut game_deps = table(&stage_dir.join("crates/horizon-android-game/Cargo.toml"))?;
+    let mut game_deps = table(&stage.join("crates/horizon-android-game/Cargo.toml"))?;
     let game_dependencies = game_deps.entry("dependencies")
         .or_insert_with(|| toml::Value::Table(toml::Table::new()))
         .as_table_mut().ok_or("horizon-android-game dependencies is not a table")?;
-    let mut workspace = table(&stage_dir.join("Cargo.toml"))?;
+    let mut workspace = table(&stage.join("Cargo.toml"))?;
     let members = workspace.get_mut("workspace").and_then(|w| w.get_mut("members"))
         .and_then(toml::Value::as_array_mut).ok_or("workspace has no members array")?;
 
