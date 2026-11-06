@@ -73,8 +73,12 @@ jobs:
           grep -q 'SYMLINKS.txt' app/src/main/java/dev/horizon/launcher/data/EmbeddedBootstrapInstaller.kt
           grep -q 'TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE' app/src/main/java/dev/horizon/launcher/data/EmbeddedProcessRunner.kt
           grep -q 'HORIZON_EMBEDDED' app/src/main/java/dev/horizon/launcher/data/EmbeddedProcessRunner.kt
-          grep -q 'TERMUX_APP__PACKAGE_NAME="dev.horizon.launcher"' .github/workflows/embedded-toolchain.yml
-          grep -q -- '--android10' .github/workflows/embedded-toolchain.yml
+          grep -q 'BOOTSTRAP_SHA256' app/src/main/java/dev/horizon/launcher/data/EmbeddedToolchain.kt
+          grep -q 'GUEST_PREFIX' app/src/main/java/dev/horizon/launcher/data/EmbeddedProcessRunner.kt
+          test -f scripts/fetch-hnmod-runtime-assets.sh
+
+      - name: Fetch official Termux PRoot runtime assets
+        run: bash scripts/fetch-hnmod-runtime-assets.sh
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
