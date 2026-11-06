@@ -84,6 +84,8 @@ jobs:
           grep -q 'bin/rustc' /tmp/bootstrap-files.txt
           grep -q 'bin/clang' /tmp/bootstrap-files.txt
           grep -q 'bin/git' /tmp/bootstrap-files.txt
+          grep -q 'lib/libtermux-exec-linker-ld-preload.so' /tmp/bootstrap-files.txt
+          grep -q 'etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh' /tmp/bootstrap-files.txt
           mkdir -p dist
           cp "$archive" dist/horizon-toolchain-aarch64.zip
           sha256sum dist/horizon-toolchain-aarch64.zip > dist/SHA256SUMS
