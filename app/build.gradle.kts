@@ -13,13 +13,13 @@ android {
     defaultConfig {
         applicationId = "dev.horizon.launcher"
         minSdk = 26
-        targetSdk = 34
+        // Match Gemini-cli-for-Android: Android 10+ permits this embedded PRoot exec path below target 29.\n        targetSdk = 28
         versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
         versionName = System.getenv("HORIZON_VERSION_NAME") ?: "0.1.0-alpha"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
-    buildFeatures { compose = true }
+    buildFeatures { compose = true }\n    androidResources { noCompress += listOf("zip") }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
