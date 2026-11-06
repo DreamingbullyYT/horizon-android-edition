@@ -51,7 +51,10 @@ if [ -z "$JOBS" ]; then
   CORES=$(nproc); [ "$JOBS" -le "$CORES" ] || JOBS=$CORES
 fi
 echo "cargo jobs: $JOBS (free RAM $(awk '/MemAvailable/{printf "%.1f", $2/1048576}' /proc/meminfo) GB)"
-command -v termux-wake-lock >/dev/null && { termux-wake-lock; trap 'termux-wake-unlock || true' EXIT; }
+if [ "${HORIZON_EMBEDDED:-0}" != "1" ] && command -v termux-wake-lock >/dev/null; then
+  termux-wake-lock
+  trap 'termux-wake-unlock || true' EXIT
+fi
 
 # ---- 1. the engine: upstream at our pin + our Android patch -------------------------------------
 PIN=$(tr -d '[:space:]' < "$REPO/android/UPSTREAM_PIN")
