@@ -76,7 +76,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 let manifest_path = format!("mixins/{}/horizon-mixin.toml", bundle.manifest.id);
                 let raw = bundle.files.get(&manifest_path)
                     .ok_or_else(|| format!("{}: missing mixin manifest", bundle.manifest.id))?;
-                let value: toml::Value = toml::from_slice(raw)
+                let manifest_text = std::str::from_utf8(raw)
+                    .map_err(|e| format!("{}: {e}", manifest_path))?;
+                let value: toml::Value = toml::from_str(manifest_text)
                     .map_err(|e| format!("{}: {e}", manifest_path))?;
                 let api_path = value.get("api").and_then(|v| v.get("path")).and_then(toml::Value::as_str);
                 let has_api = if let Some(path) = api_path {
