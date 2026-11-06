@@ -56,7 +56,6 @@ install -m 0755 "$PROOT_LOADER" "$PROOT_ASSETS/loader"
 for package in libtalloc libandroid-shmem; do
   find "$WORK/$package" -path '*/usr/lib/*' -name '*.so*' -print |
     while IFS= read -r library; do
-      install -m 0644 /dev/null "$PROOT_ASSETS/lib/$(basename "$library")"
       cp -L "$library" "$PROOT_ASSETS/lib/$(basename "$library")"
     done
 done
