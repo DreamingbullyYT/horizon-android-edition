@@ -194,6 +194,7 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
     let launcher = files.join("launcher");
     // Android's process executable is app_process, not the installed game library.
     // Resolve post-build data beside the active local HNMod build instead.
+    unsafe { std::env::remove_var("HORIZON_NATIVE_DATA_ROOT"); }
     if let Ok(active) = std::fs::read_to_string(files.join("updates/current")) {
         let name = active.trim();
         if !name.is_empty() && !name.contains('/') && !name.contains('\\') && name != "." && name != ".." {
