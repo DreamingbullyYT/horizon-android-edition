@@ -52,6 +52,7 @@ object EmbeddedBootstrapInstaller {
         val extracted = HashSet<String>()
         val symlinks = ArrayList<Pair<String, String>>()
         var sawSymlinkTable = false
+        var prefixActivated = false
 
         try {
             ZipInputStream(BufferedInputStream(FileInputStream(archive))).use { zip ->
@@ -138,6 +139,7 @@ object EmbeddedBootstrapInstaller {
                 if (backup.exists()) backup.renameTo(prefix)
                 error("Cannot activate the extracted Horizon toolchain prefix.")
             }
+            prefixActivated = true
 
             val required = listOf("bin/bash", "bin/cargo", "bin/rustc", "bin/clang", "bin/git")
             require(required.all { File(prefix, it).exists() }) {
@@ -147,7 +149,8 @@ object EmbeddedBootstrapInstaller {
             return Result(prefix, totalBytes, symlinks.size, digest)
         } catch (error: Exception) {
             staging.deleteRecursively()
-            if (!prefix.exists() && backup.exists()) backup.renameTo(prefix)
+            if (prefixActivated) prefix.deleteRecursively()
+            if (backup.exists()) backup.renameTo(prefix)
             throw error
         }
     }
