@@ -24,7 +24,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Run unit tests and compile CLI
-        run: cargo test --manifest-path hnmod-core/Cargo.toml --all-targets
+        run: cargo test --locked --manifest-path hnmod-core/Cargo.toml --all-targets
       - name: Check Termux compiler shell syntax
         run: bash -n android/termux/build-with-mods.sh
       - name: Test engine compatibility metadata extraction
