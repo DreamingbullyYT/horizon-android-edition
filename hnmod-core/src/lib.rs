@@ -240,16 +240,16 @@ mod tests {
 
     #[test]
     fn payload_allowlist_matches_horizon_native_bundle_layout() {
-        assert!(allowed_payload("hooks.rs", "mod"));
-        assert!(allowed_payload("engine/Cargo.toml", "mod"));
-        assert!(allowed_payload("data/nested/table.bin", "mod"));
-        assert!(allowed_payload("engine/data/table.bin", "mod"));
-        assert!(allowed_payload("engine/README.md", "mod"));
-        assert!(!allowed_payload("data", "mod"));
-        assert!(!allowed_payload("engine/src/data/table.bin", "mod"));
-        assert!(!allowed_payload("engine/src/README.md", "mod"));
-        assert!(!allowed_payload("assets/icon.png", "mod"));
-        assert!(!allowed_payload("payload.dll", "mod"));
+        assert!(allowed_payload("mixins/mod/hooks.rs", "mod"));
+        assert!(allowed_payload("mixins/mod/engine/Cargo.toml", "mod"));
+        assert!(allowed_payload("mixins/mod/data/nested/table.bin", "mod"));
+        assert!(allowed_payload("mixins/mod/engine/data/table.bin", "mod"));
+        assert!(allowed_payload("mixins/mod/engine/README.md", "mod"));
+        assert!(!allowed_payload("mixins/mod/data", "mod"));
+        assert!(!allowed_payload("mixins/mod/engine/src/data/table.bin", "mod"));
+        assert!(!allowed_payload("mixins/mod/engine/src/README.md", "mod"));
+        assert!(!allowed_payload("mixins/mod/assets/icon.png", "mod"));
+        assert!(!allowed_payload("mixins/mod/payload.dll", "mod"));
     }
 
     #[test]
