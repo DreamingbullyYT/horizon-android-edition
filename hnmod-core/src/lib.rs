@@ -83,16 +83,10 @@ fn safe_path(s: &str) -> Result<(), Error> {
 }
 fn allowed_payload(name: &str, id: &str) -> bool {
     if name == MANIFEST_FILE { return true; }
-    let Some(rest) = name.strip_prefix(&format!("mixins/{id}/")) else { return false; };
-    let parts: Vec<_> = rest.split('/').collect();
-    let leaf = parts.last().copied().unwrap_or("");
-    let in_data = parts.len() >= 2 &&
-        (parts.first() == Some(&"data") || (parts.len() >= 3 && parts.get(1) == Some(&"data")));
-    let text = parts.len() <= 2 && (
-        ["README", "LICENSE", "LICENCE", "COPYING", "NOTICE"].iter().any(|p| leaf.starts_with(p)) ||
-        leaf == ".gitignore"
-    );
-    rest.ends_with(".rs") || rest.ends_with(".toml") || in_data || text
+    // PC HNMods may include mixin source, API crates, helper modules, data and
+    // supporting files. The archive path validator and extraction boundary are
+    // the security boundary; do not reject valid PC payload extensions here.
+    name.starts_with(&format!("mixins/{id}/")) && name.len() > format!("mixins/{id}/").len()
 }
 
 /// Validates an HNMod ZIP without extracting files or executing native code.
