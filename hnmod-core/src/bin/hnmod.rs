@@ -55,6 +55,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "sha256": bundle.sha256
             }))?);
         }
+        Some("prepare") => {
+            let mods = args.next().ok_or("usage: hnmod prepare MODS_DIRECTORY PLAN.json")?;
+            let plan = args.next().ok_or("usage: hnmod prepare MODS_DIRECTORY PLAN.json")?;
+            if args.next().is_some() { return Err("too many arguments".into()); }
+            let has_api = horizon_hnmod_core::pc_api::prepare(Path::new(&mods), Path::new(&plan))?;
+            println!("{}", serde_json::to_string(&json!({ "has_api": has_api, "plan": plan }))?);
+        }
+        Some("stage-api") => {
+            let mods = args.next().ok_or("usage: hnmod stage-api MODS_DIRECTORY STAGE_DIRECTORY PLAN.json")?;
+            let stage = args.next().ok_or("usage: hnmod stage-api MODS_DIRECTORY STAGE_DIRECTORY PLAN.json")?;
+            let plan = args.next().ok_or("usage: hnmod stage-api MODS_DIRECTORY STAGE_DIRECTORY PLAN.json")?;
+            if args.next().is_some() { return Err("too many arguments".into()); }
+            let has_api = horizon_hnmod_core::pc_api::stage(Path::new(&mods), Path::new(&stage), Path::new(&plan))?;
+            println!("{}", serde_json::to_string(&json!({ "has_api": has_api }))?);
+        }
         Some("resolve") => {
             let revision = args.next().ok_or("usage: hnmod resolve REVISION HOOKS_API MIXINS_REV MOD...")?;
             let hooks_api: u32 = args.next().ok_or("missing hooks API")?.parse()?;
@@ -119,6 +134,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("Usage:");
             eprintln!("  hnmod inspect FILE.hnmod");
             eprintln!("  hnmod extract FILE.hnmod NEW_DIRECTORY");
+            eprintln!("  hnmod prepare MODS_DIRECTORY PLAN.json");
+            eprintln!("  hnmod stage-api MODS_DIRECTORY STAGE_DIRECTORY PLAN.json");
             eprintln!("  hnmod resolve REVISION HOOKS_API MIXINS_REV MOD.hnmod...");
             return Err("unknown command".into());
         }
