@@ -29,6 +29,7 @@ object HnmodBuildAdapter {
         "android/overlay/tools/android_prepare.py",
         "android/termux/build-with-mods.sh",
         "hnmod-core/Cargo.toml",
+        "hnmod-core/Cargo.lock",
         "hnmod-core/README.md",
         "hnmod-core/src/lib.rs",
         "hnmod-core/src/dependencies.rs",
