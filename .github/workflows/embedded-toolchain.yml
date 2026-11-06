@@ -81,7 +81,7 @@ jobs:
           ./scripts/run-docker.sh ./scripts/build-bootstraps.sh \
             --android10 \
             --architectures aarch64 \
-            --add rust,libllvm,git,rsync,binutils,python,cmake,make,pkg-config,coreutils
+            --add libllvm,rust,git,rsync,binutils,python,cmake,make,pkg-config,coreutils
 
       - name: Verify archive and produce integrity manifest
         run: |
