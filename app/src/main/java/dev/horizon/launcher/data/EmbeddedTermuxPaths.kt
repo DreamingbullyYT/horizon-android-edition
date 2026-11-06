@@ -3,7 +3,7 @@ package dev.horizon.launcher.data
 import android.content.Context
 import java.io.File
 
-/** Filesystem layout used by the private Termux-compatible root mounted by PRoot. */
+/** Private Termux-compatible filesystem layout, following Gemini-cli-for-Android. */
 object EmbeddedTermuxPaths {
     fun root(context: Context) = File(context.filesDir, "termux")
     fun rootfs(context: Context) = File(root(context), "rootfs")
@@ -14,7 +14,6 @@ object EmbeddedTermuxPaths {
     fun prootDir(context: Context) = File(root(context), "proot-bin")
     fun proot(context: Context) = File(prootDir(context), "proot")
     fun loader(context: Context) = File(prootDir(context), "loader")
-    fun prootLib(context: Context) = File(prootDir(context), "lib")
     fun state(context: Context) = File(context.filesDir, "horizon-toolchain")
     fun marker(context: Context) = File(state(context), ".horizon-runtime-ready")
 
