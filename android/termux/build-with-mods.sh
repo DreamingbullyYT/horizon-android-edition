@@ -95,13 +95,18 @@ if [ "$PLAIN" = 0 ]; then
   # Match the PC launcher's revision selection: pinned mods build on the newest
   # pinned Horizon revision or the installed base, determined by Git commit dates.
   # A commit hash is never treated as a timestamp.
-  PINS=(); MOD_PINS=()
+  PINS=(); MOD_PINS=(); MIXIN_PINS=()
   for f in "${FILES[@]}"; do
     info=$("${HNMOD_CLI[@]}" inspect "$f") || die "validation failed: $f"
     pin=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"].get("horizon") or "")' <<< "$info")
     if [ -n "$pin" ]; then
       [[ "$pin" =~ ^[0-9a-f]{40}$ ]] || die "invalid Horizon revision in $f: $pin"
       PINS+=("$pin"); MOD_PINS+=("$pin")
+    fi
+    mixpin=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"].get("mixins") or "")' <<< "$info")
+    if [ -n "$mixpin" ]; then
+      [[ "$mixpin" =~ ^[0-9a-f]{40}$ ]] || die "invalid horizon-mixins revision in $f: $mixpin"
+      MIXIN_PINS+=("$mixpin")
     fi
   done
   PINS+=("$PIN")
@@ -139,6 +144,31 @@ if [ "$PLAIN" = 0 ]; then
     "$SRC/launcher/src/native_mods.rs" | head -1)
   [ -n "$HOOKS_API" ] || die "could not read NATIVE_HOOKS_API from the engine"
   [ -n "$REV" ] || die "could not read MIXINS_REV from the engine"
+
+  # Match PC behavior for the mixin compiler pin: one mod pin wins; with
+  # several pins, compare their actual commit dates plus the engine default.
+  if [ "${#MIXIN_PINS[@]}" -eq 1 ]; then
+    REV="${MIXIN_PINS[0]}"
+  elif [ "${#MIXIN_PINS[@]}" -gt 1 ]; then
+    MIXIN_PINS+=("$REV")
+    MIXIN_REPO="$WORK/mixins-git"
+    if [ ! -d "$MIXIN_REPO/.git" ]; then
+      mkdir -p "$WORK"
+      git clone -q --filter=blob:none https://github.com/horizon-rust/horizon-mixins.git "$MIXIN_REPO"
+    fi
+    mapfile -t MIXIN_PINS < <(printf '%s\\n' "${MIXIN_PINS[@]}" | sort -u)
+    BEST_MIXIN="$REV"; BEST_MIXIN_DATE=""
+    for candidate in "${MIXIN_PINS[@]}"; do
+      git -C "$MIXIN_REPO" fetch -q --filter=blob:none origin "$candidate" \
+        || die "cannot fetch horizon-mixins revision $candidate"
+      committed=$(git -C "$MIXIN_REPO" show -s --format=%cI "$candidate") \
+        || die "cannot read commit date for horizon-mixins $candidate"
+      if [ -z "$BEST_MIXIN_DATE" ] || [[ "$committed" > "$BEST_MIXIN_DATE" ]]; then
+        BEST_MIXIN_DATE="$committed"; BEST_MIXIN="$candidate"
+      fi
+    done
+    REV="$BEST_MIXIN"
+  fi
 
   HNMOD_CLI=(cargo run --quiet --manifest-path "$REPO/hnmod-core/Cargo.toml" --bin hnmod --)
   say "Checking all mods against Horizon $PIN (hooks API $HOOKS_API; mixins $REV)"
