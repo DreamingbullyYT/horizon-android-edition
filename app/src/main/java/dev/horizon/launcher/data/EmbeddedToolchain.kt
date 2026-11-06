@@ -11,8 +11,6 @@ import kotlinx.coroutines.withContext
 
 /** First-run installer and entry point for Horizon's private Termux-compatible HNMod toolchain. */
 object EmbeddedToolchain {
-    private const val BOOTSTRAP_URL =
-        "https://github.com/termux/termux-packages/releases/download/bootstrap-2026.11.01-r1%2Bapt.android-7/bootstrap-aarch64.zip"
     private const val BOOTSTRAP_SHA256 =
         "5a1429b6c68ee3bdc17b5fd6e47ba42933ec924cd7283fe74992574e1d5badae"
     private const val STATE_SCHEMA = "3"
