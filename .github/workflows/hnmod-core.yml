@@ -42,6 +42,19 @@ jobs:
           asset = Path("app/src/main/assets/hnmod/android/termux/build-with-mods.sh").read_text()
           assert asset == script, "embedded compiler script must match its source"
           PY
+      - name: Verify pinned mixins build uses a local checkout
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          script = Path("android/termux/build-with-mods.sh").read_text()
+          assert 'MIXIN_SOURCE="$WORK/mixins-src"' in script
+          assert 'git_fetch_revision "$MIXIN_SOURCE" "$REV"' in script
+          assert 'git -C "$MIXIN_SOURCE" checkout -q --detach "$REV"' in script
+          assert 'cargo install --locked --path "$MIXIN_SOURCE/crates/horizon-mixins-cli" --root "$TOOL"' in script
+          assert 'cargo install --locked --git https://github.com/horizon-rust/horizon-mixins' not in script
+          asset = Path("app/src/main/assets/hnmod/android/termux/build-with-mods.sh").read_text()
+          assert asset == script, "embedded compiler script must match its source"
+          PY
       - name: Verify HNMod data is imported before post-build
         run: |
           python3 - <<'PY'
