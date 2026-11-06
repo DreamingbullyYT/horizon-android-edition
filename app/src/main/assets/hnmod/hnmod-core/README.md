@@ -4,22 +4,31 @@ Standalone, UI-independent Rust library for inspecting and planning builds from 
 
 ## Current scope
 
-- Reads and validates official Horizon `.hnmod` source bundles without extracting or executing native code.
-- Enforces Horizon's manifest ID rules, exact source revisions, allowed payload paths, duplicate-entry checks and archive size limits.
-- Resolves multiple enabled mods against the exact engine revision, hook API level and pinned horizon-mixins revision.
-- Allows stable-hook mods to target a later engine only when its declared hook API level is high enough.
-- Extracts only validated `mixins/<id>/` source into a fresh destination, with create-new semantics.
-- Produces deterministic SHA-256 build keys independent of mod selection order.
-- Provides the `hnmod` CLI used by the Termux compiler: `inspect`, `resolve` and `extract`.
+- Reads the PC launcher's `.hnmod` ZIP layout: `horizon-native.json` plus
+  `mixins/<id>/horizon-mixin.toml`.
+- Accepts PC bundle metadata fields without requiring Android-only `schema`,
+  `game`, or duplicated version fields. The mod version comes from
+  `[mod].version`; the Horizon pin may come from the native manifest or
+  `[compatibility].horizon_revision`.
+- Keeps ZIP traversal, duplicate-entry, symlink/special-file, entry-count and
+  expanded-size protections while accepting complete safe payload trees (API
+  crates, helper sources, data and other files) under the mod's own folder.
+- Resolves stable hook API requirements and reports pinned-revision differences.
+  The Termux script selects Horizon and horizon-mixins commits by their actual
+  Git commit dates, matching the PC launcher's newest-revision policy.
+- Extracts only validated `mixins/<id>/` payloads and computes deterministic
+  source digests.
 
-There are no Android, JNI, UI, storage, network or process-execution dependencies.
+The Android build runs the upstream `horizon-mixins` CLI against a staged
+workspace, then builds the Android ARM64 game library. PC binary outputs are
+never copied to Android: the source bundle format is shared, while Cargo
+recompiles for Android.
 
-## Conservative compatibility policy
-
-A mod declaring hooks: N can use a candidate engine only when candidate.hooks_api >= N. A mod without hooks is pinned to its exact horizon commit. All selected mods must agree on the exact horizon-mixins revision in this initial version.
-
-Git commit IDs are opaque identifiers. The resolver does not guess commit chronology by sorting hashes. An ancestry-aware resolver and complete dependency graph are planned next.
-
+**Compatibility boundary:** the launcher-side API-crate/dependency staging and
+full PC build-record/cache workflow are not yet ported. Bundles declaring
+`[api]` or API-to-API `[dependencies]` still need that staging layer before
+they can be considered fully supported. A source mod that uses Windows-only
+APIs or unsupported Android dependencies can also fail the ARM64 build.
 ## Android compiler integration
 
 Horizon now packages this crate and the Android build script as app assets. The launcher materializes
