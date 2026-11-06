@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Builds the Horizon game library (libhorizon_android_game.so) ON THE PHONE, in Termux, with native
-# mods (.hnmod) applied the way the PC launcher does it: horizon-mixins rewrites the game's source,
-# then cargo builds it. Then import the result in the app: Settings > Installed builds > Import local build.
+# Horizon's embedded Android HNMod build pipeline.
+# Invoked by the launcher inside its private Termux-derived ARM64 runtime; no separate Termux app,
+# RUN_COMMAND permission, shared-storage setup or manual package installation is required.
+# The same native-mod flow as the PC launcher is used: horizon-mixins rewrites the engine source,
+# then Cargo builds libhorizon_android_game.so for the exact pinned Horizon Android revision.
 #
 #   bash android/termux/build-with-mods.sh [options] mod1.hnmod [mod2.hnmod | folder-of-hnmod ...]
 #
@@ -10,9 +12,9 @@
 #   --profile P      fast (default) | release (slower, a bit faster game; much more RAM)
 #   --no-mods        build the plain game (checks that the toolchain works)
 #
-# First run: needs `pkg install rust clang git rsync binutils python cmake make pkg-config coreutils` and 10+ GB free.
-# WARNING: native mod build scripts and procedural macros execute as your Termux user. This local
-# compiler is not sandboxed; only compile mods from sources you trust. The first build is large.
+# The first build needs at least 10 GB free and can take a long time.
+# WARNING: native mod build scripts and procedural macros execute with Horizon's app UID. This local
+# compiler is not sandboxed; only compile mods from sources you trust.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
@@ -183,4 +185,4 @@ SUM=$(sha256sum "$OUT/libhorizon_android_game.so" | cut -d' ' -f1)
 say "Done: $OUT"
 echo "sha256 ${SUM:0:16}…   mods: ${IDS[*]:-none}"
 echo "In the app: Settings > Installed builds > Import local build > pick libhorizon_android_game.so"
-[ "$OUTROOT" = "$HOME" ] && echo "(run termux-setup-storage once to get it into Downloads)"
+[ "$OUTROOT" = "$HOME" ] && echo "Build remains in Horizon's private app storage; the launcher imports it automatically."
