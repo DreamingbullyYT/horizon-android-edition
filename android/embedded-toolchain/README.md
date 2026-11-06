@@ -29,16 +29,18 @@ The launcher currently has the Horizon-owned compiler boundary and intentionally
 The generated bootstrap is **not yet installed or executed by the app**. The following work remains
 before local compilation can be enabled:
 
-1. Add the bootstrap ZIP to the app's first-run download/install flow, verify the signed manifest
-   and SHA-256 before extraction, and install atomically under Horizon's private files directory.
-2. Preserve symlinks safely using the archive's symlink metadata; reject absolute paths, traversal,
-   duplicate paths and unexpected file types.
-3. Integrate an Android 10+ executable bridge compatible with app-private writable storage and
+1. The app now has a streaming, checksum-verified, atomic bootstrap extractor for `files/usr`.
+   It rejects traversal, duplicate entries, unsafe symlink destinations and oversized archives.
+2. Add the first-run downloader and pin the release manifest/checksum after the bootstrap workflow
+   produces its first verified artifact.
+3. Verify the archive's symlink map against the custom Horizon prefix and execute the bootstrap
+   second stage with Horizon's app UID.
+4. Integrate an Android 10+ executable bridge compatible with app-private writable storage and
    verify it on API 29+ devices. Merely extracting binaries and setting executable bits is not enough.
-4. Run shell, Cargo, Clang and `readelf` smoke tests before marking the runtime ready.
-5. Connect the existing HNMod validator, compatibility resolver, mixins application and game build
+5. Run shell, Cargo, Clang and `readelf` smoke tests before marking the runtime ready.
+6. Connect the existing HNMod validator, compatibility resolver, mixins application and game build
    script to this runtime. Retain Cargo cache and logs across runs.
-6. Add artifact signature verification and rollback/repair support.
+7. Add artifact signature verification and rollback/repair support.
 
 The toolchain is multi-gigabyte and should be downloaded on first compilation, not embedded in the
 base APK. The app should display the download size, free-space requirement, progress and cancellation.
