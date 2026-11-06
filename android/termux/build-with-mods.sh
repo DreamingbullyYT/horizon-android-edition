@@ -23,7 +23,7 @@ while [ $# -gt 0 ]; do
     --name) NAME=$2; shift 2;;
     --jobs) JOBS=$2; shift 2;;
     --profile) PROFILE=$2; shift 2;;
-    --force) die "--force was removed: incompatible mods must not bypass the compatibility resolver";;
+    --force) echo "--force was removed: incompatible mods must not bypass the compatibility resolver" >&2; exit 2;;
     --no-mods) PLAIN=1; shift;;
     -h|--help) sed -n 2,16p "$0"; exit 0;;
     *) INPUTS+=("$1"); shift;;
@@ -38,7 +38,7 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 # ---- 0. tools ---------------------------------------------------------------------------------
 for t in cargo rustc clang git rsync sha256sum readelf python3; do
-  command -v "$t" >/dev/null || die "missing '$t'. Run: pkg install rust clang git unzip rsync binutils"
+  command -v "$t" >/dev/null || die "missing '$t'. Run: pkg install rust clang git rsync binutils python"
 done
 case $(uname -m) in aarch64|arm64) ;; *) die "this script is for a 64-bit ARM phone (aarch64), not $(uname -m)";; esac
 FREE_GB=$(df -k "$HOME" | awk 'NR==2{printf "%d", $4/1048576}')
