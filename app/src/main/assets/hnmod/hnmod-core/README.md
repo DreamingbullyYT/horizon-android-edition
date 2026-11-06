@@ -33,11 +33,14 @@ entry point. It also validates mod-crate dependencies against Horizon's own
 `horizon-mixins`, and builds/runs `[[post_build]]` programs with the PC
 environment variables and per-mod data/cache directories.
 
-The remaining differences are the PC launcher's richer build records and
-content-addressed native-build cache, injection-conflict diagnostics and
-per-mod failure isolation. Cargo's persistent target cache is retained, but
-the Android script does not yet promise the same PC build identity/reuse
-semantics. A source mod that uses Windows-only APIs, unsupported Android
+The Android script now has a content-addressed ARM64 library cache keyed by
+the selected engine and mixins revisions, mod archive hashes, profile,
+toolchain, Android patch/overlay and compiler sources. Post-build programs
+still run for each imported version so their output is written under that
+version's own data directory. The remaining differences are the PC
+launcher's richer build records, injection-conflict diagnostics and per-mod
+failure isolation; Android's cache is not yet a full replacement for the
+PC launcher's installed-version/build-record system. A source mod that uses Windows-only APIs, unsupported Android
 dependencies, or desktop-only entry points can still fail the ARM64 build.
 Native mod and post-build code runs with the launcher's app UID; only install
 mods whose source you trust.
