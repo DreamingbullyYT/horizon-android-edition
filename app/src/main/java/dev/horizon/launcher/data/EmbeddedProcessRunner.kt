@@ -5,81 +5,78 @@ import android.os.Build
 import android.os.Process
 import java.io.File
 
-/**
- * Starts Horizon-prefix binaries through the system shell with Termux's linker-exec preload.
- *
- * Direct execve() of writable app-private binaries is not relied upon. The system shell loads the
- * pinned linker preload, which redirects child execution through Android's system linker.
- */
+/** Executes Termux commands in a private PRoot root using Termux's Android linker-exec bridge. */
 object EmbeddedProcessRunner {
     data class Result(val exitCode: Int, val output: String, val logFile: File)
 
-    fun runScript(context: Context, prefix: File, script: File, args: List<String> = emptyList()): Result {
-        require(script.isFile) { "Toolchain script not found: ${script.name}" }
-        val command = mutableListOf(
-            "/system/bin/sh",
-            "-c",
-            "exec \"\$PREFIX/bin/bash\" \"\$@\"",
-            "horizon",
-            script.absolutePath
-        )
-        command.addAll(args)
-        return run(context, prefix, command, script.name)
-    }
-
-    fun runShellCommand(context: Context, prefix: File, command: String, label: String): Result {
-        val argv = listOf(
-            "/system/bin/sh",
-            "-c",
-            "exec \"\$PREFIX/bin/bash\" -c \"\$1\"",
-            "horizon",
-            command
-        )
-        return run(context, prefix, argv, label)
-    }
-
-    private fun run(context: Context, prefix: File, command: List<String>, label: String): Result {
-        val state = File(context.filesDir, "horizon-toolchain")
-        val home = File(state, "home")
-        val tmp = File(state, "tmp")
-        val logs = File(state, "logs")
-        listOf(state, home, tmp, logs).forEach {
-            require(it.isDirectory || it.mkdirs()) { "Cannot create Horizon toolchain directory." }
+    fun runScript(context: Context, script: File, args: List<String> = emptyList()): Result {
+        require(script.isFile) { "Build script not found: ${script.name}" }
+        val guestScript = guestPath(context, script)
+        val guestArgs = args.map { arg ->
+            if (arg.startsWith("/")) runCatching { guestPath(context, File(arg)) }.getOrDefault(arg) else arg
         }
+        val command = "exec ${EmbeddedTermuxPaths.GUEST_PREFIX}/bin/bash ${shellQuote(guestScript)} " +
+            guestArgs.joinToString(" ") { shellQuote(it) }
+        return run(context, command, script.name)
+    }
 
+    fun runShellCommand(context: Context, command: String, label: String): Result =
+        run(context, command, label)
+
+    private fun run(context: Context, shellCommand: String, label: String): Result {
+        val root = EmbeddedTermuxPaths.root(context)
+        val rootfs = EmbeddedTermuxPaths.rootfs(context)
+        val termuxData = EmbeddedTermuxPaths.termuxData(context)
+        val prefix = EmbeddedTermuxPaths.prefix(context)
+        val proot = EmbeddedTermuxPaths.proot(context)
+        val loader = EmbeddedTermuxPaths.loader(context)
+        val prootLib = EmbeddedTermuxPaths.prootLib(context)
+        val state = EmbeddedTermuxPaths.state(context)
+        val home = EmbeddedTermuxPaths.home(context)
+        val tmp = EmbeddedTermuxPaths.tmp(context)
+        val logs = File(state, "logs")
+        listOf(root, rootfs, termuxData, home, tmp, logs, prootLib).forEach {
+            require(it.isDirectory || it.mkdirs()) { "Cannot create embedded Termux runtime directories." }
+        }
+        require(proot.isFile && loader.isFile) { "Embedded PRoot runtime is missing. Reinstall the Horizon app build." }
         val linkerPreload = File(prefix, "lib/libtermux-exec-linker-ld-preload.so")
-        require(linkerPreload.isFile) { "Android linker compatibility library is missing from the bootstrap." }
+        require(linkerPreload.isFile) { "Termux Android linker compatibility library is missing." }
 
-        val prefixAlias = "/data/data/${context.packageName}/files/usr"
-        val appDataAlias = "/data/data/${context.packageName}"
-        val process = ProcessBuilder(command)
-            .directory(state)
-            .redirectErrorStream(true)
+        val guestCommand = mutableListOf(
+            proot.absolutePath, "-r", "/", "--link2symlink", "--kill-on-exit",
+            "-b", "${termuxData.absolutePath}:/data/data/com.termux",
+            "-b", "${context.filesDir.absolutePath}:/horizon-host",
+            "-w", EmbeddedTermuxPaths.GUEST_HOME,
+            "${EmbeddedTermuxPaths.GUEST_PREFIX}/bin/env", "-u", "LD_LIBRARY_PATH",
+            "${EmbeddedTermuxPaths.GUEST_PREFIX}/bin/bash", "-lc", shellCommand
+        )
+        val hostCommand = mutableListOf(
+            "/system/bin/sh", "-c", "exec \"\$@\"", "horizon"
+        )
+        hostCommand.addAll(guestCommand)
 
+        val process = ProcessBuilder(hostCommand).directory(state).redirectErrorStream(true)
         val env = process.environment()
-        env["HOME"] = home.absolutePath
-        env["TMPDIR"] = tmp.absolutePath
-        env["PREFIX"] = prefixAlias
-        env["TERMUX__PREFIX"] = prefixAlias
-        env["TERMUX__USER_ID"] = Process.myUid().toString()
-        env["TERMUX_APP__PACKAGE_NAME"] = context.packageName
-        env["TERMUX_APP__DATA_DIR"] = appDataAlias
-        env["TERMUX__ROOTFS"] = "$appDataAlias/files"
-        env["TERMUX__NAME"] = "Horizon"
-        env["TERMUX_APP__NAME"] = "Horizon"
-        env["ANDROID__BUILD_VERSION_SDK"] = Build.VERSION.SDK_INT.toString()
+        env["PROOT"] = proot.absolutePath
+        env["PROOT_LOADER"] = loader.absolutePath
+        env["PROOT_TMP_DIR"] = tmp.absolutePath
+        env["PROOT_NO_SECCOMP"] = "1"
+        env["LD_LIBRARY_PATH"] = prootLib.absolutePath
+        env["LD_PRELOAD"] = linkerPreload.absolutePath
         env["TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE"] = "force"
         env["TERMUX_EXEC__SYSTEM_LINKER_EXEC__LOG_LEVEL"] = "1"
-        env["LD_PRELOAD"] = linkerPreload.absolutePath
-        env["LD_LIBRARY_PATH"] = File(prefix, "lib").absolutePath
-        env["PATH"] = listOf(
-            File(prefix, "bin").absolutePath,
-            "/system/bin",
-            "/system/xbin"
-        ).joinToString(File.pathSeparator)
-        env["SHELL"] = File(prefix, "bin/bash").absolutePath
-        env["LANG"] = "C.UTF-8"
-        env["LC_ALL"] = "C.UTF-8"
+        env["PREFIX"] = EmbeddedTermuxPaths.GUEST_PREFIX
+        env["TERMUX__PREFIX"] = EmbeddedTermuxPaths.GUEST_PREFIX
+        env["TERMUX__USER_ID"] = Process.myUid().toString()
+        env["TERMUX_APP__PACKAGE_NAME"] = "com.termux"
+        env["TERMUX_APP__DATA_DIR"] = "/data/data/com.termux"
+        env["TERMUX__ROOTFS"] = "/data/data/com.termux/files"
+        env["TERMUX__NAME"] = "Horizon"
+        env["ANDROID__BUILD_VERSION_SDK"] = Build.VERSION.SDK_INT.toString()
+        env["HOME"] = EmbeddedTermuxPaths.GUEST_HOME
+        env["TMPDIR"] = "${EmbeddedTermuxPaths.GUEST_PREFIX}/tmp"
+        env["PATH"] = "/system/bin:/system/xbin"
+        env["LANG"] = "en_US.UTF-8"
         env["TERM"] = "xterm-256color"
         env["HORIZON_EMBEDDED"] = "1"
 
@@ -98,4 +95,14 @@ object EmbeddedProcessRunner {
         val exitCode = child.waitFor()
         return Result(exitCode, output.toString(), logFile)
     }
+
+    private fun guestPath(context: Context, file: File): String {
+        val base = context.filesDir.canonicalFile.toPath()
+        val path = file.canonicalFile.toPath()
+        require(path.startsWith(base)) { "Build input is outside Horizon's private directory." }
+        val relative = base.relativize(path).toString().replace(File.separatorChar, '/')
+        return "/horizon-host/$relative"
+    }
+
+    private fun shellQuote(value: String) = "'" + value.replace("'", "'\\''") + "'"
 }

@@ -108,7 +108,7 @@ class MainActivity : ComponentActivity() {
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Continue") { _, _ ->
                 run("Starting HNMod compiler") {
-                    dev.horizon.launcher.data.EmbeddedToolchain.start(this, uris)
+                    dev.horizon.launcher.data.EmbeddedToolchain.start(this, uris) { message ->\n                        runOnUiThread { show(message) }\n                    }
                 }
             }
             .show()
@@ -195,8 +195,9 @@ class MainActivity : ComponentActivity() {
             val message = try { action() } catch (e: Exception) { e.message ?: "$label failed" }
             busy = false
             buttons.forEach { it.isEnabled = true }
-            refreshStatus()
-            status.append("\n$message")
+            // Keep the final result visible. refreshStatus() launched asynchronously here could
+            // overwrite a compiler/download error immediately after the dialog closes.
+            status.text = "$label\n$message"
         }
     }
 }

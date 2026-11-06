@@ -64,7 +64,7 @@ jobs:
         run: |
           ! grep -q 'com.termux.permission.RUN_COMMAND' app/src/main/AndroidManifest.xml
           ! grep -q 'com.termux' app/src/main/AndroidManifest.xml
-          grep -q 'horizon-toolchain' app/src/main/java/dev/horizon/launcher/data/EmbeddedToolchain.kt
+          grep -q 'EmbeddedTermuxPaths' app/src/main/java/dev/horizon/launcher/data/EmbeddedToolchain.kt
           grep -q 'supportedAbi' app/src/main/java/dev/horizon/launcher/data/EmbeddedToolchain.kt
           test -f app/src/main/java/dev/horizon/launcher/data/EmbeddedBootstrapInstaller.kt
           test -f app/src/main/java/dev/horizon/launcher/data/EmbeddedProcessRunner.kt

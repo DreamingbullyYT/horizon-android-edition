@@ -1,57 +1,36 @@
-# Horizon embedded Android toolchain
+# Horizon embedded HNMod runtime
 
-## Target architecture
+Horizon uses the official Termux ARM64 bootstrap inside its own private app storage. It does not
+install the separate Termux application, request RUN_COMMAND permission, or require a second
+package repository.
 
-Horizon owns the build environment in its private app sandbox. The target is:
+## First HNMod compilation
 
-- App ID: `dev.horizon.launcher`
-- ARM64 ABI: `arm64-v8a`
-- Runtime prefix: `/data/data/dev.horizon.launcher/files/usr`
-- Android 10+ bootstrap format
-- No separate Termux app, RUN_COMMAND permission, external terminal, or shared-storage setup
+1. The app downloads the pinned official Termux ARM64 bootstrap and verifies its SHA-256 digest.
+2. It extracts the bootstrap into a private fake `/data/data/com.termux` tree.
+3. PRoot mounts that tree at the paths expected by Termux packages.
+4. The launcher configures the official Termux main repository and installs Rust/Cargo, Clang,
+   Git, rsync, binutils, Python, CMake, Make, pkg-config and coreutils.
+5. Shell, Rust and native compiler smoke tests must pass before the runtime is marked ready.
+6. The existing Horizon HNMod validation/build/import pipeline runs inside this environment.
 
-## Bootstrap build
+The APK build fetches PRoot and its small runtime libraries from the official Termux package
+repository using `scripts/fetch-hnmod-runtime-assets.sh`. The larger bootstrap is downloaded only
+when the user first compiles an HNMod, rather than inflating every APK.
 
-The manual GitHub Actions workflow `.github/workflows/embedded-toolchain.yml` checks out a pinned
-Termux package-build-system commit and builds packages from source with Horizon's application ID.
-It does **not** install stock `com.termux` binary packages into Horizon's prefix.
+## Pinned bootstrap
 
-The initial package set is Rust/Cargo, Clang/LLVM, Git, rsync, binutils, Python, CMake, Make,
-pkg-config and coreutils. The workflow validates the archive contents, emits a SHA-256 checksum and
-a manifest, and uploads an artifact. Publishing is opt-in and creates an immutable, versioned
-GitHub Release.
+- Release: `bootstrap-2026.11.01-r1+apt.android-7`
+- ABI: `aarch64`
+- SHA-256: `5a1429b6c68ee3bdc17b5fd6e47ba42933ec924cd7283fe74992574e1d5badae`
+- Package source: `https://packages-cf.termux.dev/apt/termux-main`
 
-Pinned package-builder revision: `2cce9f2663c75223f8418b9682a61bc690052097`.
+The package index is refreshed on first setup and packages are installed from the official Termux
+repository. No additional Horizon package repository is created.
 
-## Runtime status
+## Security
 
-The launcher currently has the Horizon-owned compiler boundary and intentionally fails closed.
-The generated bootstrap is **not yet installed or executed by the app**. The following work remains
-before local compilation can be enabled:
-
-1. The app now has a streaming, checksum-verified, atomic bootstrap extractor for `files/usr`.
-   It rejects traversal, duplicate entries, unsafe symlink destinations and oversized archives.
-2. Add the first-run downloader and pin the release manifest/checksum after the bootstrap workflow
-   produces its first verified artifact.
-3. Verify the archive's symlink map against the custom Horizon prefix and execute the bootstrap
-   second stage with Horizon's app UID.
-4. Integrate an Android 10+ executable bridge compatible with app-private writable storage and
-   verify it on API 29+ devices. Merely extracting binaries and setting executable bits is not enough.
-5. Run shell, Cargo, Clang and `readelf` smoke tests before marking the runtime ready.
-6. Connect the existing HNMod validator, compatibility resolver, mixins application and game build
-   script to this runtime. Retain Cargo cache and logs across runs.
-7. Add artifact signature verification and rollback/repair support.
-
-The toolchain is multi-gigabyte and should be downloaded on first compilation, not embedded in the
-base APK. The app should display the download size, free-space requirement, progress and cancellation.
-
-## Remote fallback
-
-The remote build must be a separate Horizon-specific workflow. Never embed a personal GitHub token
-in the APK, and never expose repository secrets to mod build scripts or procedural macros.
-
-## Security and licensing
-
-HNMod build scripts and Rust procedural macros execute code. A local build is not a sandbox; ask
-for explicit trust confirmation before compilation. The build bootstrap is based on the Termux
-package build system; preserve its GPL-3.0 and per-package license notices when redistributing it.
+HNMod Rust build scripts and procedural macros execute code with Horizon's app permissions.
+Compilation is not a sandbox. The existing explicit trust confirmation remains required.
+The bootstrap and each package retain their upstream licenses; preserve the upstream Termux GPL-3.0
+and package-specific notices when redistributing binaries.

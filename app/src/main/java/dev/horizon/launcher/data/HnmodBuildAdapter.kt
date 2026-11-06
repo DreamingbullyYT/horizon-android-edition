@@ -7,10 +7,7 @@ import android.os.PowerManager
 import java.io.File
 import java.io.FileOutputStream
 
-/**
- * Materializes pinned HNMod build inputs from APK assets, copies selected archives into private
- * storage, runs the Horizon build pipeline in the embedded prefix, and imports the AArch64 result.
- */
+/** Copies selected HNMods into private storage, runs the pinned build pipeline in PRoot and imports its ARM64 result. */
 object HnmodBuildAdapter {
     private const val MAX_MOD_ARCHIVE_BYTES = 64L * 1024L * 1024L
     private const val MAX_TOTAL_ARCHIVE_BYTES = 256L * 1024L * 1024L
@@ -30,7 +27,7 @@ object HnmodBuildAdapter {
         require(selected.isNotEmpty()) { "Select at least one .hnmod archive." }
         materializeProject(context)
 
-        val state = File(context.filesDir, "horizon-toolchain")
+        val state = EmbeddedTermuxPaths.state(context)
         val inputDir = File(state, "input-mods")
         inputDir.deleteRecursively()
         require(inputDir.isDirectory || inputDir.mkdirs()) { "Cannot create private HNMod input directory." }
@@ -57,7 +54,6 @@ object HnmodBuildAdapter {
                 val destination = File(inputDir, "${index.toString().padStart(3, '0')}_$safeName")
                 val source = context.contentResolver.openInputStream(uri)
                     ?: error("Could not open selected HNMod archive: $displayName")
-
                 source.use { input ->
                     FileOutputStream(destination).use { output ->
                         val buffer = ByteArray(64 * 1024)
@@ -85,13 +81,12 @@ object HnmodBuildAdapter {
             val projectRoot = File(context.filesDir, "horizon-project")
             val script = File(projectRoot, "android/termux/build-with-mods.sh")
             val args = listOf("--name", buildName, "--jobs", "3") + archives.map { it.absolutePath }
-            val build = EmbeddedProcessRunner.runScript(context, prefix, script, args)
+            val build = EmbeddedProcessRunner.runScript(context, script, args)
             check(build.exitCode == 0) {
                 "HNMod compilation failed (exit ${build.exitCode}). Full log: ${build.logFile.absolutePath}\n${build.output.takeLast(8000)}"
             }
 
-            val home = File(state, "home")
-            val library = File(home, "Horizon-builds/$buildName/libhorizon_android_game.so")
+            val library = File(EmbeddedTermuxPaths.home(context), "Horizon-builds/$buildName/libhorizon_android_game.so")
             require(library.isFile && library.length() > 1_000_000L) {
                 "The build finished without producing a valid game library. Log: ${build.logFile.absolutePath}"
             }
