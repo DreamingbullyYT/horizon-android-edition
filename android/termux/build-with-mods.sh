@@ -109,7 +109,7 @@ if [ "$PLAIN" = 0 ]; then
     toml="$MODS/$id/horizon-mixin.toml"
     # Stable-hook mods may build on a later engine, but the mixin tool still needs the target commit.
     if [ -n "$hooks" ]; then
-      sed -i "s/^\\([[:space:]]*horizon_revision[[:space:]]*=[[:space:]]*\\)\\"[^\\"]*\\"/\\1\\"$PIN\\"/" "$toml"
+      sed -i -E "s/^([[:space:]]*horizon_revision[[:space:]]*=[[:space:]]*)\\"[^\\"]*\\"/\\1\\"$PIN\\"/" "$toml"
     fi
     IDS+=("$id")
     echo "validated mod: $id"
