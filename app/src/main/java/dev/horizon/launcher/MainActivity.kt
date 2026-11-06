@@ -1,6 +1,7 @@
 package dev.horizon.launcher
 
 import android.net.Uri
+import android.app.AlertDialog
 import android.os.Bundle
 import android.view.Gravity
 import android.view.ViewGroup
@@ -38,6 +39,14 @@ class MainActivity : ComponentActivity() {
     private val backupPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) run("Restoring backup") { GameSetup.restoreBackup(this, uri, this::show).let { "Restored $it Minecraft resource set(s)." } }
     }
+    private val hnmodPicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) run("Starting HNMod compiler") {
+            dev.horizon.launcher.data.TermuxCompiler.start(this, uris)
+        }
+    }
+    private val compiledBuildPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) confirmAndImportBuild(uri)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,6 +78,12 @@ class MainActivity : ComponentActivity() {
         button("Install Minecraft (download)") { run("Installing Minecraft") { GameSetup.install(this, this::show); "Minecraft is ready." } }
         button("Import Minecraft folder") { folderPicker.launch(null) }
         button("Restore backup (.zip)") { backupPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }
+        button("Compile HNMod (.hnmod) in Termux") {
+            hnmodPicker.launch(arrayOf("application/octet-stream", "application/zip", "*/*"))
+        }
+        button("Import compiled game library (.so)") {
+            compiledBuildPicker.launch(arrayOf("application/octet-stream", "*/*"))
+        }
         button("Export backup to Downloads") {
             run("Exporting backup") { "Saved to ${GameSetup.exportBackup(this, this::show)}" }
         }
@@ -83,6 +98,31 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun show(text: String) { status.text = text }
+
+    private fun confirmAndImportBuild(uri: Uri) {
+        AlertDialog.Builder(this)
+            .setTitle("Trust this native build?")
+            .setMessage(
+                "A native mod is compiled into the game library and runs with the game's full access. " +
+                    "Only import builds made from mods you trust. The library becomes active on the next game launch."
+            )
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Import and activate") { _, _ ->
+                run("Importing native build") {
+                    val result = withContext(Dispatchers.IO) {
+                        contentResolver.openInputStream(uri)?.use {
+                            dev.horizon.launcher.data.Updater.importLocal(this@MainActivity, it)
+                        } ?: error("Could not open the selected library.")
+                    }
+                    when (result) {
+                        is dev.horizon.launcher.data.Updater.Imported.Ok ->
+                            "Build ${result.name} imported and activated. Restart the game to use it."
+                        is dev.horizon.launcher.data.Updater.Imported.Bad -> error(result.message)
+                    }
+                }
+            }
+            .show()
+    }
 
     private fun refreshStatus() {
         scope.launch {
