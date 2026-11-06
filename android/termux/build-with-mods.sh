@@ -19,7 +19,7 @@ set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 WORK=${HORIZON_BUILD_DIR:-$HOME/.horizon-build}
-NAME=""; JOBS=""; PROFILE=fast; PLAIN=0; INPUTS=()
+NAME=""; JOBS=""; PROFILE=fast; PLAIN=0; ALLOW_MISMATCH=0; INPUTS=()
 while [ $# -gt 0 ]; do
   case $1 in
     --name) NAME=$2; shift 2;;
@@ -27,6 +27,7 @@ while [ $# -gt 0 ]; do
     --profile) PROFILE=$2; shift 2;;
     --force) echo "--force was removed: incompatible mods must not bypass the compatibility resolver" >&2; exit 2;;
     --no-mods) PLAIN=1; shift;;
+    --allow-version-mismatch) ALLOW_MISMATCH=1; shift;;
     -h|--help) sed -n 2,16p "$0"; exit 0;;
     *) INPUTS+=("$1"); shift;;
   esac
@@ -126,7 +127,7 @@ if [ "$PLAIN" = 0 ]; then
   for mod_pin in "${MOD_PINS[@]}"; do
     [ "$mod_pin" = "$BEST_PIN" ] || HAS_MOD_MISMATCH=1
   done
-  if [ "$HAS_MOD_MISMATCH" = 1 ] && [ "${HORIZON_ALLOW_VERSION_MISMATCH:-0}" != "1" ]; then
+  if [ "$HAS_MOD_MISMATCH" = 1 ] && [ "$ALLOW_MISMATCH" != "1" ]; then
     die "PC-compatible resolver selected Horizon $BEST_PIN, but some mods target other revisions. The PC launcher asks before attempting this combination; Android must explicitly confirm it."
   fi
   if [ "$BEST_PIN" != "$PIN" ]; then
