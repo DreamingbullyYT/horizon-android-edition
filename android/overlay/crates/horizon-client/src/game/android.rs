@@ -178,7 +178,17 @@ impl AndroidTouchState {
 
     fn from_environment() -> Self {
         let Some(raw) = std::env::var_os("HORIZON_ANDROID_TOUCH_CONTROLS") else {
-            return Self::default();
+            // A usable default layout must exist even before the player opens touch settings.
+            return Self {
+                enabled: true,
+                haptics: true,
+                opacity: 0.72,
+                button_size: 1.0,
+                look_sensitivity: 1.0,
+                layout: "classic".to_owned(),
+                hud_visible: true,
+                ..Self::default()
+            };
         };
         let value: serde_json::Value =
             serde_json::from_str(&raw.to_string_lossy()).unwrap_or_default();
