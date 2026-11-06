@@ -4,7 +4,6 @@ import android.content.Context
 import android.os.Build
 import android.os.Process
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 /**
  * Starts Horizon-prefix binaries through the system shell with Termux's linker-exec preload.
