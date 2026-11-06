@@ -62,8 +62,8 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 pub fn valid_id(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 100 &&
-        id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    (1..=64).contains(&id.len()) &&
+        id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
 }
 pub fn is_revision(s: &str) -> bool {
     s.len() == 40 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
@@ -80,19 +80,18 @@ fn allowed_payload(name: &str, id: &str) -> bool {
     let Some(rest) = name.strip_prefix(&format!("mixins/{id}/")) else { return false; };
     let parts: Vec<_> = rest.split('/').collect();
     let leaf = parts.last().copied().unwrap_or("");
-    rest.ends_with(".rs") || rest.ends_with(".toml") ||
-        parts.first() == Some(&"data") ||
-        (parts.len() >= 3 && parts.get(1) == Some(&"data")) ||
-        (parts.len() <= 2 && (
-            ["README", "LICENSE", "LICENCE", "COPYING", "NOTICE"].iter().any(|p| leaf.starts_with(p)) ||
-            leaf == ".gitignore"
-        ))
+    let in_data = parts.len() >= 2 &&
+        (parts.first() == Some(&"data") || (parts.len() >= 3 && parts.get(1) == Some(&"data")));
+    let text = parts.len() <= 2 && (
+        ["README", "LICENSE", "LICENCE", "COPYING", "NOTICE"].iter().any(|p| leaf.starts_with(p)) ||
+        leaf == ".gitignore"
+    );
+    rest.ends_with(".rs") || rest.ends_with(".toml") || in_data || text
 }
 
 /// Validates an HNMod ZIP without extracting files or executing native code.
 pub fn read_bundle<R: Read + Seek>(reader: R) -> Result<Bundle, Error> {
     let mut zip = zip::ZipArchive::new(reader).map_err(|e| Error::Archive(e.to_string()))?;
-    if zip.len() > MAX_ENTRIES { return Err(Error::Limit("too many archive entries".into())); }
     let mut files = BTreeMap::new();
     let mut total = 0u64;
     for i in 0..zip.len() {
@@ -104,6 +103,9 @@ pub fn read_bundle<R: Read + Seek>(reader: R) -> Result<Bundle, Error> {
             return Err(Error::UnsafePath(format!("non-regular archive entry: {name}")));
         }
         if entry.is_dir() { continue; }
+        if files.len() >= MAX_ENTRIES {
+            return Err(Error::Limit("too many archive files".into()));
+        }
         safe_path(&name)?;
         if name == "mod.wasm" {
             return Err(Error::Manifest("legacy WebAssembly payloads are unsupported".into()));
