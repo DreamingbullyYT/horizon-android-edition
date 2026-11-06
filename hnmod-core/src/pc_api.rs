@@ -239,12 +239,12 @@ mod tests {
             put(&dir.join("engine/src/lib.rs"), "pub fn hooks() {}");
         }
 
-        put(&stage.join("Cargo.toml"), "[workspace]\nmembers = [\"crates/horizon-android-game\", \"crates/horizon-client\"]\n");
-        put(&stage.join("crates/horizon-client/Cargo.toml"), "[package]\nname = \"horizon-client\"\nversion = \"0.1.0\"\n");
-        put(&stage.join("crates/horizon-client/src/mod_api.rs"), "pub fn name_mods() {}\n");
-        put(&stage.join("crates/horizon-android-game/Cargo.toml"),
+        put(&stage_dir.join("Cargo.toml"), "[workspace]\nmembers = [\"crates/horizon-android-game\", \"crates/horizon-client\"]\n");
+        put(&stage_dir.join("crates/horizon-client/Cargo.toml"), "[package]\nname = \"horizon-client\"\nversion = \"0.1.0\"\n");
+        put(&stage_dir.join("crates/horizon-client/src/mod_api.rs"), "pub fn name_mods() {}\n");
+        put(&stage_dir.join("crates/horizon-android-game/Cargo.toml"),
             "[package]\nname = \"horizon-android-game\"\nversion = \"0.1.0\"\n[dependencies]\nhorizon-client = { path = \"../horizon-client\" }\n");
-        put(&stage.join("crates/horizon-android-game/src/lib.rs"),
+        put(&stage_dir.join("crates/horizon-android-game/src/lib.rs"),
             "fn start() { horizon_client::entry::main_with(Default::default()); }\n");
 
         assert!(prepare(&mods, &plan).unwrap());
@@ -253,18 +253,18 @@ mod tests {
         assert!(!addon_manifest.contains_key("dependencies"));
         assert!(stage(&mods, &stage_dir, &plan).unwrap());
 
-        let game_manifest = table(&stage.join("crates/horizon-android-game/Cargo.toml")).unwrap();
+        let game_manifest = table(&stage_dir.join("crates/horizon-android-game/Cargo.toml")).unwrap();
         assert_eq!(game_manifest["dependencies"]["mod_0"]["package"].as_str(), Some("base-api"));
         assert_eq!(game_manifest["dependencies"]["mod_0"]["path"].as_str(), Some("../../native-api/base"));
-        let addon_api = table(&stage.join("native-api/addon/Cargo.toml")).unwrap();
+        let addon_api = table(&stage_dir.join("native-api/addon/Cargo.toml")).unwrap();
         assert_eq!(addon_api["dependencies"]["base"]["path"].as_str(), Some("../base"));
         assert_eq!(addon_api["dependencies"]["base"]["package"].as_str(), Some("base-api"));
-        let main = fs::read_to_string(stage.join("crates/horizon-android-game/src/lib.rs")).unwrap();
+        let main = fs::read_to_string(stage_dir.join("crates/horizon-android-game/src/lib.rs")).unwrap();
         assert!(main.contains("mod_0::hooks()"));
         assert!(main.contains("mod_1::hooks()"));
         assert!(main.contains("name_mods"));
         assert!(main.contains("entry::main_with(mods)"));
-        let workspace = table(&stage.join("Cargo.toml")).unwrap();
+        let workspace = table(&stage_dir.join("Cargo.toml")).unwrap();
         assert!(workspace["workspace"]["members"].as_array().unwrap().iter()
             .any(|m| m.as_str() == Some("native-api/base")));
 
