@@ -27,6 +27,21 @@ jobs:
         run: cargo test --locked --manifest-path hnmod-core/Cargo.toml --all-targets
       - name: Check Termux compiler shell syntax
         run: bash -n android/termux/build-with-mods.sh
+      - name: Verify Git fetch self-repair for pinned revisions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          script = Path("android/termux/build-with-mods.sh").read_text()
+          assert "git_fetch_revision()" in script
+          assert 'git -C "$repo" config core.commitGraph false' in script
+          assert 'rm -f "$repo/.git/objects/info/commit-graph"' in script
+          assert 'rm -rf "$repo/.git/objects/info/commit-graphs"' in script
+          assert "fetch -q --refetch --filter=blob:none origin" in script
+          assert 'git_fetch_revision "$SRC" "$candidate"' in script
+          assert 'git_fetch_revision "$MIXIN_REPO" "$candidate"' in script
+          asset = Path("app/src/main/assets/hnmod/android/termux/build-with-mods.sh").read_text()
+          assert asset == script, "embedded compiler script must match its source"
+          PY
       - name: Verify HNMod data is imported before post-build
         run: |
           python3 - <<'PY'
