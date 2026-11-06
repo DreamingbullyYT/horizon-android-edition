@@ -20,26 +20,24 @@ A mod declaring hooks: N can use a candidate engine only when candidate.hooks_ap
 
 Git commit IDs are opaque identifiers. The resolver does not guess commit chronology by sorting hashes. An ancestry-aware resolver and complete dependency graph are planned next.
 
-## Android Termux compiler
+## Android compiler integration
 
-The compiler script uses this crate as its only archive-validation and extraction path:
+The former launcher integration invoked a separately installed Termux app through RUN_COMMAND.
+That path has been removed. Horizon is moving to an app-owned ARM64 bootstrap under its private
+`files/usr` prefix, with a Horizon-specific package build and an Android linker-exec bridge.
 
-```sh
-bash android/termux/build-with-mods.sh mod1.hnmod mod2.hnmod
-```
+The old `android/termux/build-with-mods.sh` script is retained as a **developer reference** for the
+HNMod validation, engine sync, mixins application and native game build sequence. It is not the
+supported launcher path and must not be presented to users as requiring Termux.
 
-It rejects mismatched Horizon/mixins revisions and insufficient hook API levels before calling
-`horizon-mixins`. The build is local to Termux; native Rust build scripts and procedural macros
-execute with the Termux user's permissions. This is **not sandboxed**, so compile only mods whose
-source you trust. It does not yet provide Starling's remote isolated build service or launcher UI.
+The current embedded integration has:
+- a pinned custom-prefix bootstrap build workflow;
+- an atomic, checksum-verified archive extractor with symlink/path validation;
+- a process runner using the Termux linker-exec preload;
+- bootstrap second-stage and compiler smoke-test gates before the runtime-ready marker.
 
-The CLI can also be used directly:
-
-```sh
-cargo run --manifest-path hnmod-core/Cargo.toml --bin hnmod -- inspect example.hnmod
-cargo run --manifest-path hnmod-core/Cargo.toml --bin hnmod -- resolve <horizon-revision> <hooks-api> <mixins-revision> example.hnmod
-cargo run --manifest-path hnmod-core/Cargo.toml --bin hnmod -- extract example.hnmod /tmp/example-mod
-```
+The bootstrap build and Android process bridge still require successful CI and real-device validation.
+The launcher does not yet claim that local HNMod compilation is available.
 
 ## Test
 
