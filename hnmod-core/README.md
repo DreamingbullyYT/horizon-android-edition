@@ -22,22 +22,17 @@ Git commit IDs are opaque identifiers. The resolver does not guess commit chrono
 
 ## Android compiler integration
 
-The former launcher integration invoked a separately installed Termux app through RUN_COMMAND.
-That path has been removed. Horizon is moving to an app-owned ARM64 bootstrap under its private
-`files/usr` prefix, with a Horizon-specific package build and an Android linker-exec bridge.
+Horizon now packages this crate and the Android build script as app assets. The launcher materializes
+them in private storage, validates selected archives, runs the build script inside Horizon's own
+Termux-derived ARM64 runtime, then imports the resulting AArch64 game library automatically.
 
-The old `android/termux/build-with-mods.sh` script is retained as a **developer reference** for the
-HNMod validation, engine sync, mixins application and native game build sequence. It is not the
-supported launcher path and must not be presented to users as requiring Termux.
+The former external Termux RUN_COMMAND integration is removed. Users do not install a separate
+Termux app, grant its permissions, or configure shared storage. The script path
+`android/termux/build-with-mods.sh` is invoked by Horizon's embedded process runner.
 
-The current embedded integration has:
-- a pinned custom-prefix bootstrap build workflow;
-- an atomic, checksum-verified archive extractor with symlink/path validation;
-- a process runner using the Termux linker-exec preload;
-- bootstrap second-stage and compiler smoke-test gates before the runtime-ready marker.
-
-The bootstrap build and Android process bridge still require successful CI and real-device validation.
-The launcher does not yet claim that local HNMod compilation is available.
+The runtime installer and Android linker-exec bridge are gated by checksum, bootstrap second-stage
+and compiler smoke tests. Real-device validation is still required before claiming the full local
+compiler flow is production-ready.
 
 ## Test
 
