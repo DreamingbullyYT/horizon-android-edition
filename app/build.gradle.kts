@@ -20,7 +20,8 @@ android {
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
-    buildFeatures { compose = true }\n    androidResources { noCompress += listOf("zip") }
+    buildFeatures { compose = true }
+    androidResources { noCompress += listOf("zip") }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
