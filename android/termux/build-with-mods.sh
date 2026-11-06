@@ -49,7 +49,8 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 # Materialize an exact source snapshot without Git checkout/lazy blob fetching.
 # Git metadata is retained for revision/date resolution; source files come from codeload.
 restore_github_snapshot() {
-  local repo_dir="$1" revision="$2" slug="$3" archive="$WORK/source-$revision.tar.gz"
+  local repo_dir="$1" revision="$2" slug="$3"
+  local archive="$WORK/source-${revision}.tar.gz"
   command -v curl >/dev/null || die "curl is required to download pinned source snapshots"
   command -v tar >/dev/null || die "tar is required to unpack pinned source snapshots"
   say "Downloading exact source snapshot $slug@$revision"
