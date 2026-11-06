@@ -103,7 +103,7 @@ object HnmodBuildAdapter {
             require(library.isFile && library.length() > 1_000_000L) {
                 "The build finished without producing a valid game library. Log: ${build.logFile.absolutePath}"
             }
-            return Updater.importLocal(context, library.inputStream())
+            return Updater.importLocal(context, library.inputStream(), File(library.parentFile, "native-data"))
         } finally {
             if (wakeLock.isHeld) wakeLock.release()
             inputDir.deleteRecursively()
