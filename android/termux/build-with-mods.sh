@@ -185,6 +185,92 @@ if [ "$PLAIN" = 0 ]; then
     mod_pin=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"].get("horizon") or "")' <<< "$info")
     "${HNMOD_CLI[@]}" extract "$f" "$MODS/$id" || die "could not extract validated bundle: $f"
     toml="$MODS/$id/horizon-mixin.toml"
+    # The PC launcher stages trait API crates and resolves their Cargo dependency
+    # graph before invoking horizon-mixins. Do not silently compile a partial build.
+    if grep -Eq '^\\[(api|dependencies)\\][[:space:]]*
+    if [ -n "$hooks" ] || { [ -n "$mod_pin" ] && [ "$mod_pin" != "$PIN" ]; }; then
+      python3 - "$toml" "$PIN" <<'PY'
+import pathlib, re, sys
+path, revision = pathlib.Path(sys.argv[1]), sys.argv[2]
+source = path.read_text()
+updated, count = re.subn(r'(?m)^(\s*horizon_revision\s*=\s*)"[^"]*"',
+                         lambda match: match.group(1) + '"' + revision + '"',
+                         source, count=1)
+if count != 1:
+    raise SystemExit(f"{path}: expected exactly one horizon_revision")
+path.write_text(updated)
+PY
+    fi
+    IDS+=("$id")
+    echo "validated mod: $id"
+  done
+fi
+
+# ---- 3. horizon-mixins (the same tool and commit the PC launcher uses) --------------------------
+STAGE="$WORK/stage"
+if [ ${#IDS[@]} -gt 0 ]; then
+  # REV was read and checked by the compatibility resolver above.
+  TOOL="$WORK/tools/$REV"
+  if [ ! -x "$TOOL/bin/horizon-mixins" ]; then
+    say "Building horizon-mixins $REV (once)"
+    cargo install --locked --git https://github.com/horizon-rust/horizon-mixins --rev "$REV" \
+      horizon-mixins-cli --root "$TOOL" || die "horizon-mixins failed to build"
+  fi
+  say "Applying the mixins"
+  rm -rf "$WORK/applied"
+  "$TOOL/bin/horizon-mixins" apply --workspace "$SRC" --mods "$MODS" --out "$WORK/applied" \
+    || die "horizon-mixins refused the mods (see the message above)"
+  mkdir -p "$STAGE"
+  # Only changed files are written, so cargo (which goes by file times) redoes only what the mods touch.
+  rsync -rc --delete --exclude target "$WORK/applied/" "$STAGE/"
+else
+  mkdir -p "$STAGE"; rsync -rc --delete --exclude target "$SRC/" "$STAGE/"
+fi
+
+# ---- 4. compile ----------------------------------------------------------------------------------
+say "Compiling (profile $PROFILE). The first time this takes long; keep the phone charging."
+export CARGO_TARGET_DIR="$WORK/target"
+export CARGO_BUILD_JOBS="$JOBS"
+export CARGO_TERM_PROGRESS_WHEN=always CARGO_TERM_PROGRESS_WIDTH=100
+nice -n 10 cargo build --locked --manifest-path "$STAGE/Cargo.toml" \
+  -p horizon-android-game --profile "$PROFILE" 2>&1 | tee "$WORK/build.log" \
+  || die "the build failed; the end of $WORK/build.log says why"
+LIB="$CARGO_TARGET_DIR/$PROFILE/libhorizon_android_game.so"
+[ -f "$LIB" ] || die "no library produced at $LIB"
+
+# ---- 5. make sure the app can load it ------------------------------------------------------------
+say "Checking the library"
+command -v patchelf >/dev/null && patchelf --remove-rpath "$LIB" || true
+SYSTEM='libc.so|libm.so|libdl.so|liblog.so|libandroid.so|libvulkan.so|libEGL.so|libGLESv2.so|libGLESv3.so|libz.so|libOpenSLES.so|libaaudio.so|libjnigraphics.so|libnativewindow.so|libstdc\+\+.so|libc\+\+_shared.so'
+BAD=$(readelf -d "$LIB" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p' | grep -Ev "^($SYSTEM)$" || true)
+if [ -n "$BAD" ]; then
+  echo "The library needs libraries the app does not have:"; echo "$BAD"
+  die "libraries from Termux (not Android) are linked in. Send this list to the developer."
+fi
+if readelf -d "$LIB" | grep -q 'libc++_shared.so'; then
+  echo "note: needs libc++_shared.so; the app must ship it (it does when built with the NDK's)." >&2
+fi
+
+if [ "${HORIZON_EMBEDDED:-0}" = "1" ]; then
+  OUTROOT="$HOME"
+else
+  OUTROOT="$HOME/storage/downloads"; [ -d "$OUTROOT" ] || OUTROOT="$HOME"
+fi
+OUT="$OUTROOT/Horizon-builds/$NAME"; mkdir -p "$OUT"
+cp "$LIB" "$OUT/libhorizon_android_game.so"
+SUM=$(sha256sum "$OUT/libhorizon_android_game.so" | cut -d' ' -f1)
+{
+  printf '{\n  "name": "%s",\n  "upstream": "%s",\n  "android_patch": "%s",\n  "profile": "%s",\n' "$NAME" "$PIN" "$PATCH_SUM" "$PROFILE"
+  printf '  "mods": [%s],\n  "sha256": "%s",\n  "built": "%s"\n}\n' \
+    "$(printf '"%s",' "${IDS[@]:-}" | sed 's/,$//; s/^"",*$//')" "$SUM" "$(date -u +%FT%TZ)"
+} > "$OUT/build.json"
+say "Done: $OUT"
+echo "sha256 ${SUM:0:16}…   mods: ${IDS[*]:-none}"
+echo "Horizon will validate and import this local build automatically."
+[ "$OUTROOT" = "$HOME" ] && echo "Build remains in Horizon's private app storage; the launcher imports it automatically."
+ "$toml"; then
+      die "$id declares [api] or [dependencies]. PC trait-API crate staging is not yet ported to Android; refusing an incomplete build."
+    fi
     # Stable-hook mods may build on a later engine, but the mixin tool still needs the target commit.
     if [ -n "$hooks" ] || { [ -n "$mod_pin" ] && [ "$mod_pin" != "$PIN" ]; }; then
       python3 - "$toml" "$PIN" <<'PY'
