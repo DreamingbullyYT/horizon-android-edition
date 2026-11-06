@@ -179,7 +179,7 @@ diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.
 index dd91773a0..16b8abe82 100644
 --- a/crates/horizon-client/src/game.rs
 +++ b/crates/horizon-client/src/game.rs
-@@ -436,6 +436,9 @@ use std::{
+@@ -436,6 +436,16 @@ use std::{
      thread::JoinHandle,
      time::{Duration, Instant},
  };
@@ -283,7 +283,7 @@ index dd91773a0..16b8abe82 100644
      }
      fn resumed(&mut self, event_loop: &ActiveEventLoop) {
          if self.window.is_some() {
-+            android_surface_resumed(&mut self.renderer, &self.window);
++            android::android_surface_resumed(&mut self.renderer, &self.window);
              return;
          }
          // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
