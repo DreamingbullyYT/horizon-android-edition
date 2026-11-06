@@ -12,7 +12,7 @@ pub mod pc_api;
 pub const MANIFEST_FILE: &str = "horizon-native.json";
 pub const MIXIN_MANIFEST: &str = "horizon-mixin.toml";
 pub const MAX_ENTRIES: usize = 512;
-pub const MAX_FILE_BYTES: u64 = 16 * 1024 * 1024;
+pub const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
 pub const MAX_TOTAL_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
