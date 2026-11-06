@@ -189,11 +189,6 @@ if [ "$PLAIN" = 0 ]; then
     mod_pin=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"].get("horizon") or "")' <<< "$info")
     "${HNMOD_CLI[@]}" extract "$f" "$MODS/$id" || die "could not extract validated bundle: $f"
     toml="$MODS/$id/horizon-mixin.toml"
-    # The PC launcher stages trait API crates and resolves their Cargo dependency
-    # graph before invoking horizon-mixins. Do not silently compile a partial build.
-    if grep -q '^\[api\]' "$toml" || grep -q '^\[dependencies\]' "$toml"; then
-      die "$id declares [api] or [dependencies]. PC trait-API crate staging is not yet ported to Android; refusing an incomplete build."
-    fi
     if [ -n "$hooks" ] || { [ -n "$mod_pin" ] && [ "$mod_pin" != "$PIN" ]; }; then
       python3 - "$toml" "$PIN" <<'PY'
 import pathlib, re, sys
@@ -210,6 +205,8 @@ PY
     IDS+=("$id")
     echo "validated mod: $id"
   done
+  API_PLAN="$WORK/api-plan.json"
+  "${HNMOD_CLI[@]}" prepare "$MODS" "$API_PLAN" || die "PC trait API/dependency preparation failed"
 fi
 
 # ---- 3. horizon-mixins (the same tool and commit the PC launcher uses) --------------------------
@@ -229,6 +226,13 @@ if [ ${#IDS[@]} -gt 0 ]; then
   mkdir -p "$STAGE"
   # Only changed files are written, so cargo (which goes by file times) redoes only what the mods touch.
   rsync -rc --delete --exclude target "$WORK/applied/" "$STAGE/"
+  API_RESULT=$("${HNMOD_CLI[@]}" stage-api "$MODS" "$STAGE" "$API_PLAN") || die "could not stage PC trait API crates into the Android game"
+  HAS_API=$(python3 -c 'import json,sys; print("1" if json.load(sys.stdin).get("has_api") else "0")' <<< "$API_RESULT")
+  if [ "$HAS_API" = "1" ]; then
+    say "Resolving Android trait API crates offline"
+    cargo metadata --offline --format-version 1 --manifest-path "$STAGE/Cargo.toml" >/dev/null \
+      || die "trait API dependency resolution failed (see Cargo's diagnostic above)"
+  fi
 else
   mkdir -p "$STAGE"; rsync -rc --delete --exclude target "$SRC/" "$STAGE/"
 fi
