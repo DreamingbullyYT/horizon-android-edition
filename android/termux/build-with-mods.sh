@@ -8,23 +8,22 @@
 #   --name NAME      folder name of the result (default: mods-<date>)
 #   --jobs N         cargo jobs (default: by free RAM, about 1 per 2 GB)
 #   --profile P      fast (default) | release (slower, a bit faster game; much more RAM)
-#   --force          build even when a mod pins another Horizon commit than ours
 #   --no-mods        build the plain game (checks that the toolchain works)
 #
-# First run: needs `pkg install rust clang git unzip rsync binutils` and 10+ GB free. The first build
-# compiles every crate once (long, keep the phone charging, the script holds a wake lock);
-# later builds with other mods only redo what the mods touch.
+# First run: needs `pkg install rust clang git rsync binutils python` and 10+ GB free.
+# WARNING: native mod build scripts and procedural macros execute as your Termux user. This local
+# compiler is not sandboxed; only compile mods from sources you trust. The first build is large.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 WORK=${HORIZON_BUILD_DIR:-$HOME/.horizon-build}
-NAME=""; JOBS=""; PROFILE=fast; FORCE=0; PLAIN=0; INPUTS=()
+NAME=""; JOBS=""; PROFILE=fast; PLAIN=0; INPUTS=()
 while [ $# -gt 0 ]; do
   case $1 in
     --name) NAME=$2; shift 2;;
     --jobs) JOBS=$2; shift 2;;
     --profile) PROFILE=$2; shift 2;;
-    --force) FORCE=1; shift;;
+    --force) die "--force was removed: incompatible mods must not bypass the compatibility resolver";;
     --no-mods) PLAIN=1; shift;;
     -h|--help) sed -n 2,16p "$0"; exit 0;;
     *) INPUTS+=("$1"); shift;;
@@ -38,7 +37,7 @@ say() { printf '\n== %s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 # ---- 0. tools ---------------------------------------------------------------------------------
-for t in cargo rustc clang git unzip rsync sha256sum readelf; do
+for t in cargo rustc clang git rsync sha256sum readelf python3; do
   command -v "$t" >/dev/null || die "missing '$t'. Run: pkg install rust clang git unzip rsync binutils"
 done
 case $(uname -m) in aarch64|arm64) ;; *) die "this script is for a 64-bit ARM phone (aarch64), not $(uname -m)";; esac
@@ -71,48 +70,50 @@ if [ ! -f "$SRC/.horizon-revision" ]; then
   mv "$SRC.partial" "$SRC"
 fi
 
-# ---- 2. the mods: unpack .hnmod bundles into a folder of bundles ---------------------------------
-MODS="$WORK/mods"; IDS=()
+# ---- 2. validate and extract .hnmod bundles through the shared Rust core ------------------------
+MODS="$WORK/mods"; IDS=(); FILES=()
 rm -rf "$MODS" "$WORK/unpack"; mkdir -p "$MODS" "$WORK/unpack"
 if [ "$PLAIN" = 0 ]; then
-  say "Mods"
-  FILES=()
+  say "Collecting .hnmod archives"
   for i in "${INPUTS[@]}"; do
-    if [ -d "$i" ]; then while IFS= read -r f; do FILES+=("$f"); done < <(find "$i" -maxdepth 1 -name '*.hnmod' | sort)
-    else FILES+=("$i"); fi
+    if [ -d "$i" ]; then
+      while IFS= read -r f; do FILES+=("$f"); done < <(find "$i" -maxdepth 1 -type f -name '*.hnmod' | sort)
+    else
+      FILES+=("$i")
+    fi
   done
   [ ${#FILES[@]} -gt 0 ] || die "no .hnmod found in the given paths"
-  n=0
   for f in "${FILES[@]}"; do
     [ -f "$f" ] || die "not a file: $f"
-    n=$((n+1)); d="$WORK/unpack/$n"; mkdir -p "$d"
-    unzip -q -o "$f" -d "$d" || die "$f is not a .hnmod (zip)"
-    json="$d/horizon-native.json"
-    [ -f "$json" ] || die "$f has no horizon-native.json"
-    id=$(sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$json" | head -1)
-    [ -n "$id" ] || die "$f: no mod id"
-    if [ ! -d "$d/mixins/$id" ]; then
-      echo "skipped $id: it has no mixin source (it only uses trait injections, which this script does not build yet)"
-      continue
-    fi
-    cp -r "$d/mixins/$id" "$MODS/$id"
-    toml="$MODS/$id/horizon-mixin.toml"
-    pinned=$(sed -n 's/^horizon_revision[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$toml" | head -1)
-    hooks=$(sed -n 's/.*"hooks"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "$json" | head -1)
-    if [ -n "$pinned" ] && [ "$pinned" != "$PIN" ]; then
-      if [ -n "$hooks" ]; then
-        # A mod on the hook points names a version, not a commit: any later Horizon builds it.
-        sed -i "s/^\(horizon_revision[[:space:]]*=[[:space:]]*\)\"[^\"]*\"/\1\"$PIN\"/" "$toml"
-      elif [ "$FORCE" = 1 ]; then
-        echo "warning: $id was made for ${pinned:0:9}, building on ${PIN:0:9} (--force)"
-        sed -i "s/^\(horizon_revision[[:space:]]*=[[:space:]]*\)\"[^\"]*\"/\1\"$PIN\"/" "$toml"
-      else
-        die "$id was made for Horizon ${pinned:0:9}, this app is on ${PIN:0:9}. Use --force to try anyway."
-      fi
-    fi
-    IDS+=("$id"); echo "mod: $id"
+    case "$f" in *.hnmod) ;; *) die "expected a .hnmod archive: $f";; esac
   done
-  [ ${#IDS[@]} -gt 0 ] || die "none of the given mods can be built by this script"
+
+  HOOKS_API=$(sed -n 's/^pub(crate) const NATIVE_HOOKS_API: u32 = \\([0-9]*\\);.*/\\1/p' \
+    "$SRC/crates/horizon-client/src/game/native_hooks.rs" | head -1)
+  REV=$(sed -n 's/^pub const MIXINS_REV: &str = "\\([0-9a-f]*\\)";.*/\\1/p' \
+    "$SRC/launcher/src/native_mods.rs" | head -1)
+  [ -n "$HOOKS_API" ] || die "could not read NATIVE_HOOKS_API from the engine"
+  [ -n "$REV" ] || die "could not read MIXINS_REV from the engine"
+
+  HNMOD_CLI=(cargo run --quiet --manifest-path "$REPO/hnmod-core/Cargo.toml" --bin hnmod --)
+  say "Checking all mods against Horizon $PIN (hooks API $HOOKS_API; mixins $REV)"
+  "${HNMOD_CLI[@]}" resolve "$PIN" "$HOOKS_API" "$REV" "${FILES[@]}" \
+    || die "the selected mods are not compatible with this engine/mixins toolchain"
+
+  say "Extracting validated source bundles"
+  for f in "${FILES[@]}"; do
+    info=$("${HNMOD_CLI[@]}" inspect "$f") || die "validation failed: $f"
+    id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"]["id"])' <<< "$info")
+    hooks=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"].get("hooks") or "")' <<< "$info")
+    "${HNMOD_CLI[@]}" extract "$f" "$MODS/$id" || die "could not extract validated bundle: $f"
+    toml="$MODS/$id/horizon-mixin.toml"
+    # Stable-hook mods may build on a later engine, but the mixin tool still needs the target commit.
+    if [ -n "$hooks" ]; then
+      sed -i "s/^\\([[:space:]]*horizon_revision[[:space:]]*=[[:space:]]*\\)\\"[^\\"]*\\"/\\1\\"$PIN\\"/" "$toml"
+    fi
+    IDS+=("$id")
+    echo "validated mod: $id"
+  done
 fi
 
 # ---- 3. horizon-mixins (the same tool and commit the PC launcher uses) --------------------------
