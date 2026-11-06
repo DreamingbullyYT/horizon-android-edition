@@ -274,12 +274,13 @@ fi
 export CARGO_TARGET_DIR="$WORK/target"
 export CARGO_BUILD_JOBS="$JOBS"
 export CARGO_TERM_PROGRESS_WHEN=always CARGO_TERM_PROGRESS_WIDTH=100
+ACTUAL_PIN=$(tr -d '[:space:]' < "$SRC/.horizon-revision")
 CORE_SUM=$(find "$REPO/hnmod-core" -type f -not -path '*/target/*' -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-12)
 TOOLCHAIN_SUM=$({ rustc --version; cargo --version; clang --version | head -1; } | sha256sum | cut -c1-12)
 BUILD_KEY=$(
   {
     printf 'horizon=%s\nmixins=%s\nprofile=%s\ntarget=aarch64-linux-android\npatch=%s\noverlay=%s\ncore=%s\ntoolchain=%s\nscript=%s\n' \
-      "$PIN" "${REV:-none}" "$PROFILE" "$PATCH_SUM" "$OVERLAY_SUM" "$CORE_SUM" "$TOOLCHAIN_SUM" \
+      "$ACTUAL_PIN" "${REV:-none}" "$PROFILE" "$PATCH_SUM" "$OVERLAY_SUM" "$CORE_SUM" "$TOOLCHAIN_SUM" \
       "$(sha256sum "$0" | cut -c1-12)"
     for f in "${FILES[@]}"; do sha256sum "$f"; done
   } | sha256sum | cut -c1-32
@@ -387,7 +388,7 @@ fi
 
 SUM=$(sha256sum "$LIB" | cut -d' ' -f1)
 {
-  printf '{\n  "name": "%s",\n  "build_key": "%s",\n  "upstream": "%s",\n  "android_patch": "%s",\n  "android_overlay": "%s",\n  "profile": "%s",\n' "$NAME" "$BUILD_KEY" "$PIN" "$PATCH_SUM" "$OVERLAY_SUM" "$PROFILE"
+  printf '{\n  "name": "%s",\n  "build_key": "%s",\n  "upstream": "%s",\n  "android_patch": "%s",\n  "android_overlay": "%s",\n  "profile": "%s",\n' "$NAME" "$BUILD_KEY" "$ACTUAL_PIN" "$PATCH_SUM" "$OVERLAY_SUM" "$PROFILE"
   printf '  "mods": [%s],\n  "sha256": "%s",\n  "built": "%s"\n}\n' \
     "$(printf '"%s",' "${IDS[@]:-}" | sed 's/,$//; s/^"",*$//')" "$SUM" "$(date -u +%FT%TZ)"
 } > "$OUT/build.json"
