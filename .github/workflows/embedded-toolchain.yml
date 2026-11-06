@@ -1,0 +1,113 @@
+name: Build Horizon embedded Android toolchain
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the verified bootstrap as a versioned GitHub Release asset
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: horizon-embedded-toolchain
+  cancel-in-progress: false
+
+jobs:
+  build-bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      TERMUX_PACKAGES_COMMIT: 2cce9f2663c75223f8418b9682a61bc690052097
+      HORIZON_PACKAGE_ID: dev.horizon.launcher
+      HORIZON_PREFIX: /data/data/dev.horizon.launcher/files/usr
+    steps:
+      - name: Check out Horizon
+        uses: actions/checkout@v4
+
+      - name: Check out pinned Termux package build system
+        uses: actions/checkout@v4
+        with:
+          repository: termux/termux-packages
+          ref: \${{ env.TERMUX_PACKAGES_COMMIT }}
+          path: termux-packages
+
+      - name: Configure Horizon package identity
+        working-directory: termux-packages
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("scripts/properties.sh")
+          s = p.read_text()
+          old = 'TERMUX_APP__PACKAGE_NAME="com.termux"'
+          new = 'TERMUX_APP__PACKAGE_NAME="dev.horizon.launcher"'
+          if s.count(old) != 1:
+              raise SystemExit("Pinned Termux properties changed; refusing an unreviewed prefix build")
+          p.write_text(s.replace(old, new))
+          PY
+          grep -F 'TERMUX_APP__PACKAGE_NAME="dev.horizon.launcher"' scripts/properties.sh
+          test "$(grep -F 'TERMUX_APP__PACKAGE_NAME="dev.horizon.launcher"' scripts/properties.sh | wc -l)" -eq 1
+
+      - name: Build Android 10+ ARM64 bootstrap with Horizon-prefix packages
+        working-directory: termux-packages
+        run: |
+          # Build packages from source. Do not download official com.termux-prefix debs.
+          ./scripts/run-docker.sh ./scripts/build-bootstraps.sh \
+            --android10 \
+            --architectures aarch64 \
+            --add rust,clang,git,rsync,binutils,python,cmake,make,pkg-config,coreutils
+
+      - name: Verify archive and produce integrity manifest
+        run: |
+          set -euo pipefail
+          archive="termux-packages/bootstrap-aarch64.zip"
+          test -s "$archive"
+          unzip -t "$archive"
+          unzip -Z1 "$archive" > /tmp/bootstrap-files.txt
+          grep -q 'bin/bash' /tmp/bootstrap-files.txt
+          grep -q 'bin/cargo' /tmp/bootstrap-files.txt
+          grep -q 'bin/rustc' /tmp/bootstrap-files.txt
+          grep -q 'bin/clang' /tmp/bootstrap-files.txt
+          grep -q 'bin/git' /tmp/bootstrap-files.txt
+          mkdir -p dist
+          cp "$archive" dist/horizon-toolchain-aarch64.zip
+          sha256sum dist/horizon-toolchain-aarch64.zip > dist/SHA256SUMS
+          cat > dist/toolchain-manifest.json <<JSON
+          {
+            "schema": 1,
+            "app_id": "$HORIZON_PACKAGE_ID",
+            "prefix": "$HORIZON_PREFIX",
+            "abi": "arm64-v8a",
+            "android_min": 29,
+            "termux_packages_commit": "$TERMUX_PACKAGES_COMMIT",
+            "packages": ["rust", "clang", "git", "rsync", "binutils", "python", "cmake", "make", "pkg-config", "coreutils"],
+            "archive": "horizon-toolchain-aarch64.zip"
+          }
+          JSON
+          cat dist/SHA256SUMS
+          du -h dist/*
+
+      - name: Upload bootstrap artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: horizon-embedded-toolchain-aarch64
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish versioned bootstrap release
+        if: \${{ inputs.publish }}
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          tag="horizon-toolchain-\${TERMUX_PACKAGES_COMMIT:0:12}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; refusing to replace an immutable toolchain."
+            exit 1
+          fi
+          gh release create "$tag" dist/* \
+            --title "Horizon embedded toolchain · \${TERMUX_PACKAGES_COMMIT:0:12}" \
+            --notes "ARM64 Android 10+ Horizon-prefix bootstrap built from termux/termux-packages at \${TERMUX_PACKAGES_COMMIT}. Verify SHA256SUMS and toolchain-manifest.json before installation."
