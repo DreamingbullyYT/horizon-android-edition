@@ -77,7 +77,7 @@ object EmbeddedToolchain {
             File(prefix, "bin/clang").exists()
         val detail = when {
             !supported -> "The embedded compiler currently targets ARM64 (arm64-v8a) only."
-            installed -> "Embedded compiler runtime detected."
+            installed -> "Embedded toolchain runtime ready; HNMod build adapter is still pending."
             else -> "The embedded compiler runtime is not bundled in this build yet. No external Termux app is required or used."
         }
         return RuntimeStatus(supported, installed, detail)
