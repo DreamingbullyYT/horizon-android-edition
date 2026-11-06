@@ -59,7 +59,7 @@ fi
 # ---- 1. the engine: upstream at our pin + our Android patch -------------------------------------
 PIN=$(tr -d '[:space:]' < "$REPO/android/UPSTREAM_PIN")
 PATCH_SUM=$(sha256sum "$REPO/android/android.patch" | cut -c1-12)
-SRC="$WORK/src/$PIN-$PATCH_SUM"
+SRC="$WORK/src/$PIN-$PATCH_SUM-pc"
 if [ ! -f "$SRC/.horizon-revision" ]; then
   say "Engine $PIN + Android patch (once)"
   rm -rf "$SRC.partial"; mkdir -p "$WORK/src"
@@ -69,7 +69,6 @@ if [ ! -f "$SRC/.horizon-revision" ]; then
   git -C "$SRC.partial" apply --whitespace=nowarn "$REPO/android/android.patch" \
     || die "the Android patch does not apply to $PIN"
   printf '%s' "$PIN" > "$SRC.partial/.horizon-revision"
-  rm -rf "$SRC.partial/.git"
   # horizon-mixins refuses symlinks (the PC launcher's source archive leaves them out too).
   find "$SRC.partial" -type l -delete
   mv "$SRC.partial" "$SRC"
@@ -92,6 +91,44 @@ if [ "$PLAIN" = 0 ]; then
     [ -f "$f" ] || die "not a file: $f"
     case "$f" in *.hnmod) ;; *) die "expected a .hnmod archive: $f";; esac
   done
+
+  # Match the PC launcher's revision selection: pinned mods build on the newest
+  # pinned Horizon revision or the installed base, determined by Git commit dates.
+  # A commit hash is never treated as a timestamp.
+  PINS=()
+  for f in "${FILES[@]}"; do
+    info=$("${HNMOD_CLI[@]}" inspect "$f") || die "validation failed: $f"
+    pin=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"].get("horizon") or "")' <<< "$info")
+    if [ -n "$pin" ]; then
+      [[ "$pin" =~ ^[0-9a-f]{40}$ ]] || die "invalid Horizon revision in $f: $pin"
+      PINS+=("$pin")
+    fi
+  done
+  PINS+=("$PIN")
+  mapfile -t PINS < <(printf '%s\\n' "${PINS[@]}" | sort -u)
+  BEST_PIN="$PIN"; BEST_DATE=""
+  for candidate in "${PINS[@]}"; do
+    git -C "$SRC" fetch -q --filter=blob:none origin "$candidate" \
+      || die "cannot fetch mod-pinned Horizon revision $candidate"
+    committed=$(git -C "$SRC" show -s --format=%cI "$candidate") \
+      || die "cannot read commit date for Horizon $candidate"
+    if [ -z "$BEST_DATE" ] || [[ "$committed" > "$BEST_DATE" ]]; then
+      BEST_DATE="$committed"; BEST_PIN="$candidate"
+    fi
+  done
+  if [ "$BEST_PIN" != "$PIN" ]; then
+    UNIQUE_PINS=$(printf '%s\\n' "${PINS[@]}" | grep -v "^$BEST_PIN$" | wc -l)
+    if [ "$UNIQUE_PINS" -gt 0 ] && [ "${HORIZON_ALLOW_VERSION_MISMATCH:-0}" != "1" ]; then
+      die "PC-compatible resolver selected Horizon $BEST_PIN, but some mods pin older revisions. The PC launcher asks for confirmation before trying mixed revisions; confirmation support is not yet wired into the Android UI."
+    fi
+    say "Selecting newest mod-compatible Horizon revision $BEST_PIN (by Git commit date)"
+    git -C "$SRC" reset --hard -q "$BEST_PIN"
+    git -C "$SRC" clean -fdq
+    git -C "$SRC" apply --whitespace=nowarn "$REPO/android/android.patch" \
+      || die "the Android patch does not apply to selected mod revision $BEST_PIN"
+    PIN="$BEST_PIN"
+    printf '%s' "$PIN" > "$SRC/.horizon-revision"
+  fi
 
   HOOKS_API=$(sed -n 's/^pub(crate) const NATIVE_HOOKS_API: u32 = \([0-9]*\);.*/\1/p' \
     "$SRC/crates/horizon-client/src/game/native_hooks.rs" | head -1)
