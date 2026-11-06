@@ -89,8 +89,9 @@ object EmbeddedBootstrapInstaller {
             }
 
             require(sawSymlinkTable && symlinks.isNotEmpty()) { "Official bootstrap has no usable SYMLINKS.txt." }
-            require(listOf("bin/bash", "bin/env", "bin/apt", "lib/libtermux-exec-linker-ld-preload.so")
-                .all { it in paths }) { "Bootstrap is missing required Termux runtime files." }
+            require(listOf("bin/bash", "bin/env", "bin/apt").all { it in paths }) {
+                "Bootstrap is missing required Termux runtime files."
+            }
 
             symlinks.forEach { (target, relativeLink) ->
                 val link = File(stagingPrefix, relativeLink)
