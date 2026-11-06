@@ -68,8 +68,8 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 pub fn valid_id(id: &str) -> bool {
-    (1..=64).contains(&id.len()) &&
-        id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+    (1..=100).contains(&id.len()) &&
+        id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 pub fn is_revision(s: &str) -> bool {
     s.len() == 40 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
@@ -245,9 +245,10 @@ mod tests {
         assert!(valid_id("mod_123"));
         assert!(valid_id(&"a".repeat(64)));
         assert!(!valid_id(""));
-        assert!(!valid_id("Uppercase"));
-        assert!(!valid_id("hyphen-name"));
-        assert!(!valid_id(&"a".repeat(65)));
+        assert!(valid_id("Uppercase"));
+        assert!(valid_id("hyphen-name"));
+        assert!(valid_id(&"a".repeat(100)));
+        assert!(!valid_id(&"a".repeat(101)));
     }
 
     #[test]
