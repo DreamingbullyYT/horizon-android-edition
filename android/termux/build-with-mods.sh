@@ -95,13 +95,13 @@ if [ "$PLAIN" = 0 ]; then
   # Match the PC launcher's revision selection: pinned mods build on the newest
   # pinned Horizon revision or the installed base, determined by Git commit dates.
   # A commit hash is never treated as a timestamp.
-  PINS=()
+  PINS=(); MOD_PINS=()
   for f in "${FILES[@]}"; do
     info=$("${HNMOD_CLI[@]}" inspect "$f") || die "validation failed: $f"
     pin=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"].get("horizon") or "")' <<< "$info")
     if [ -n "$pin" ]; then
       [[ "$pin" =~ ^[0-9a-f]{40}$ ]] || die "invalid Horizon revision in $f: $pin"
-      PINS+=("$pin")
+      PINS+=("$pin"); MOD_PINS+=("$pin")
     fi
   done
   PINS+=("$PIN")
@@ -117,8 +117,11 @@ if [ "$PLAIN" = 0 ]; then
     fi
   done
   if [ "$BEST_PIN" != "$PIN" ]; then
-    UNIQUE_PINS=$(printf '%s\\n' "${PINS[@]}" | grep -v "^$BEST_PIN$" | wc -l)
-    if [ "$UNIQUE_PINS" -gt 0 ] && [ "${HORIZON_ALLOW_VERSION_MISMATCH:-0}" != "1" ]; then
+    HAS_MOD_MISMATCH=0
+    for mod_pin in "${MOD_PINS[@]}"; do
+      [ "$mod_pin" = "$BEST_PIN" ] || HAS_MOD_MISMATCH=1
+    done
+    if [ "$HAS_MOD_MISMATCH" = 1 ] && [ "${HORIZON_ALLOW_VERSION_MISMATCH:-0}" != "1" ]; then
       die "PC-compatible resolver selected Horizon $BEST_PIN, but some mods pin older revisions. The PC launcher asks for confirmation before trying mixed revisions; confirmation support is not yet wired into the Android UI."
     fi
     say "Selecting newest mod-compatible Horizon revision $BEST_PIN (by Git commit date)"
@@ -147,10 +150,11 @@ if [ "$PLAIN" = 0 ]; then
     info=$("${HNMOD_CLI[@]}" inspect "$f") || die "validation failed: $f"
     id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"]["id"])' <<< "$info")
     hooks=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"].get("hooks") or "")' <<< "$info")
+    mod_pin=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"].get("horizon") or "")' <<< "$info")
     "${HNMOD_CLI[@]}" extract "$f" "$MODS/$id" || die "could not extract validated bundle: $f"
     toml="$MODS/$id/horizon-mixin.toml"
     # Stable-hook mods may build on a later engine, but the mixin tool still needs the target commit.
-    if [ -n "$hooks" ]; then
+    if [ -n "$hooks" ] || { [ -n "$mod_pin" ] && [ "$mod_pin" != "$PIN" ]; }; then
       python3 - "$toml" "$PIN" <<'PY'
 import pathlib, re, sys
 path, revision = pathlib.Path(sys.argv[1]), sys.argv[2]
