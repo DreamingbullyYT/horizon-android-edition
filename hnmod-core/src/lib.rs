@@ -274,11 +274,14 @@ mod tests {
     }
 
     #[test]
-    fn pinned_mod_rejects_different_engine_commit() {
+    fn pinned_mod_can_be_reconciled_to_newest_selected_engine() {
         let a = "a".repeat(40); let b = "b".repeat(40);
         let bundle = read_bundle(std::io::Cursor::new(archive(None, &a, &b))).unwrap();
         let candidate = EngineCandidate { revision: "c".repeat(40), hooks_api: 99, mixins_revision: b };
-        assert!(resolve_compatibility(&[bundle], &[candidate]).is_err());
+        let plan = resolve_compatibility(&[bundle], &[candidate]).unwrap();
+        assert_eq!(plan.selected.revision, "c".repeat(40));
+        assert_eq!(plan.warnings.len(), 1);
+        assert!(plan.warnings[0].contains("trying it on newer selected revision"));
     }
 
     #[test]
