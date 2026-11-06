@@ -122,19 +122,20 @@ if [ "$PLAIN" = 0 ]; then
       BEST_DATE="$committed"; BEST_PIN="$candidate"
     fi
   done
+  HAS_MOD_MISMATCH=0
+  for mod_pin in "${MOD_PINS[@]}"; do
+    [ "$mod_pin" = "$BEST_PIN" ] || HAS_MOD_MISMATCH=1
+  done
+  if [ "$HAS_MOD_MISMATCH" = 1 ] && [ "${HORIZON_ALLOW_VERSION_MISMATCH:-0}" != "1" ]; then
+    die "PC-compatible resolver selected Horizon $BEST_PIN, but some mods target other revisions. The PC launcher asks before attempting this combination; Android must explicitly confirm it."
+  fi
   if [ "$BEST_PIN" != "$PIN" ]; then
-    HAS_MOD_MISMATCH=0
-    for mod_pin in "${MOD_PINS[@]}"; do
-      [ "$mod_pin" = "$BEST_PIN" ] || HAS_MOD_MISMATCH=1
-    done
-    if [ "$HAS_MOD_MISMATCH" = 1 ] && [ "${HORIZON_ALLOW_VERSION_MISMATCH:-0}" != "1" ]; then
-      die "PC-compatible resolver selected Horizon $BEST_PIN, but some mods pin older revisions. The PC launcher asks for confirmation before trying mixed revisions; confirmation support is not yet wired into the Android UI."
-    fi
     say "Selecting newest mod-compatible Horizon revision $BEST_PIN (by Git commit date)"
     git -C "$SRC" reset --hard -q "$BEST_PIN"
     git -C "$SRC" clean -fdq
     git -C "$SRC" apply --whitespace=nowarn "$REPO/android/android.patch" \
       || die "the Android patch does not apply to selected mod revision $BEST_PIN"
+    find "$SRC" -type l -delete
     PIN="$BEST_PIN"
     printf '%s' "$PIN" > "$SRC/.horizon-revision"
   fi
