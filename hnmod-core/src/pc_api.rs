@@ -131,11 +131,11 @@ pub fn stage(mods_dir: &Path, stage: &Path, plan_path: &Path) -> Result<bool, St
         let row = by_id[id];
         packages.insert(*id, row["package"].as_str().ok_or("missing API package name")?.to_owned());
     }
-    let mut game_deps = table(&stage.join("crates/horizon-android-game/Cargo.toml"))?;
+    let mut game_deps = table(&stage_dir.join("crates/horizon-android-game/Cargo.toml"))?;
     let game_dependencies = game_deps.entry("dependencies")
         .or_insert_with(|| toml::Value::Table(toml::Table::new()))
         .as_table_mut().ok_or("horizon-android-game dependencies is not a table")?;
-    let mut workspace = table(&stage.join("Cargo.toml"))?;
+    let mut workspace = table(&stage_dir.join("Cargo.toml"))?;
     let members = workspace.get_mut("workspace").and_then(|w| w.get_mut("members"))
         .and_then(toml::Value::as_array_mut).ok_or("workspace has no members array")?;
 
@@ -221,7 +221,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("hnmod-pc-api-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let mods = root.join("mods");
-        let stage = root.join("stage");
+        let stage_dir = root.join("stage");
         let plan = root.join("plan.json");
 
         for (id, version, dep) in [
@@ -251,7 +251,7 @@ mod tests {
         let addon_manifest = table(&mods.join("addon/horizon-mixin.toml")).unwrap();
         assert!(!addon_manifest.contains_key("api"));
         assert!(!addon_manifest.contains_key("dependencies"));
-        assert!(stage(&mods, &stage, &plan).unwrap());
+        assert!(stage(&mods, &stage_dir, &plan).unwrap());
 
         let game_manifest = table(&stage.join("crates/horizon-android-game/Cargo.toml")).unwrap();
         assert_eq!(game_manifest["dependencies"]["mod_0"]["package"].as_str(), Some("base-api"));
