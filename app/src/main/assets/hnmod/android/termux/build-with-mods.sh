@@ -181,7 +181,7 @@ if [ "$PLAIN" = 0 ]; then
   # Match the PC launcher's revision selection: pinned mods build on the newest
   # pinned Horizon revision or the installed base, determined by Git commit dates.
   # A commit hash is never treated as a timestamp.
-  HNMOD_CLI=(cargo_retry run --quiet --locked --manifest-path "$REPO/hnmod-core/Cargo.toml" --bin hnmod --)
+  HNMOD_CLI=(env CARGO_INCREMENTAL=0 cargo_retry run --quiet --locked --manifest-path "$REPO/hnmod-core/Cargo.toml" --bin hnmod --)
   PINS=(); MOD_PINS=(); MIXIN_PINS=()
   for f in "${FILES[@]}"; do
     info=$("${HNMOD_CLI[@]}" inspect "$f") || die "validation failed: $f"
@@ -325,11 +325,16 @@ if [ ${#IDS[@]} -gt 0 ]; then
   API_RESULT=$("${HNMOD_CLI[@]}" stage-api "$MODS" "$STAGE" "$API_PLAN") || die "could not stage PC trait API crates into the Android game"
   HAS_API=$(python3 -c 'import json,sys; print("1" if json.load(sys.stdin).get("has_api") else "0")' <<< "$API_RESULT")
   say "Resolving staged native crates and trait APIs"
-  cargo_retry fetch --locked --manifest-path "$SRC/Cargo.toml" >/dev/null \
-    || die "could not fetch the packages already pinned by Horizon"
+  # Preserve the exact upstream lock before Cargo reconciles workspace metadata.
+  # Some engine snapshots need a lockfile metadata refresh after the Android overlay;
+  # the staged dependency allow-list below must still be checked against this original.
+  cp "$SRC/Cargo.lock" "$WORK/horizon-pinned-Cargo.lock" \
+    || die "Horizon Cargo.lock is missing; refusing an unpinned native build"
+  cargo_retry fetch --manifest-path "$SRC/Cargo.toml" >/dev/null \
+    || die "could not fetch Horizon's pinned Cargo packages"
   cargo metadata --offline --format-version 1 --manifest-path "$STAGE/Cargo.toml" >/dev/null \
     || die "native mod dependency resolution failed (only packages available to Horizon can be used)"
-  python3 - "$SRC/Cargo.lock" "$STAGE/Cargo.lock" <<'PYLOCK'
+  python3 - "$WORK/horizon-pinned-Cargo.lock" "$STAGE/Cargo.lock" <<'PYLOCK'
 import sys, tomllib
 from pathlib import Path
 base, staged = (tomllib.loads(Path(p).read_text()) for p in sys.argv[1:])
@@ -340,7 +345,7 @@ allowed = packages(base)
 extra = packages(staged) - allowed
 if extra:
     name, version, source, _ = sorted(extra)[0]
-    raise SystemExit(f"Native mod dependency {name} {version} ({source}) is not in Horizon's Cargo.lock")
+    raise SystemExit(f"Native mod dependency {name} {version} ({source}) is not in Horizon's original Cargo.lock")
 PYLOCK
   [ "$HAS_API" = "0" ] || say "PC trait API crates attached to horizon-android-game"
 else
