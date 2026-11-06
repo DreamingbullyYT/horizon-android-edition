@@ -112,7 +112,7 @@ if [ "$PLAIN" = 0 ]; then
     fi
   done
   PINS+=("$PIN")
-  mapfile -t PINS < <(printf '%s\\n' "${PINS[@]}" | sort -u)
+  mapfile -t PINS < <(printf '%s\n' "${PINS[@]}" | sort -u)
   BEST_PIN="$PIN"; BEST_DATE=""
   for candidate in "${PINS[@]}"; do
     git -C "$SRC" fetch -q --filter=blob:none origin "$candidate" \
@@ -159,7 +159,7 @@ if [ "$PLAIN" = 0 ]; then
       mkdir -p "$WORK"
       git clone -q --filter=blob:none https://github.com/horizon-rust/horizon-mixins.git "$MIXIN_REPO"
     fi
-    mapfile -t MIXIN_PINS < <(printf '%s\\n' "${MIXIN_PINS[@]}" | sort -u)
+    mapfile -t MIXIN_PINS < <(printf '%s\n' "${MIXIN_PINS[@]}" | sort -u)
     BEST_MIXIN="$REV"; BEST_MIXIN_DATE=""
     for candidate in "${MIXIN_PINS[@]}"; do
       git -C "$MIXIN_REPO" fetch -q --filter=blob:none origin "$candidate" \
