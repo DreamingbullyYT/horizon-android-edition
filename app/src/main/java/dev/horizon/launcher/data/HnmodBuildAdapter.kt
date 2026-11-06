@@ -9,8 +9,8 @@ import java.io.FileOutputStream
 
 /** Copies selected HNMods into private storage, runs the pinned build pipeline in PRoot and imports its ARM64 result. */
 object HnmodBuildAdapter {
-    private const val MAX_MOD_ARCHIVE_BYTES = 64L * 1024L * 1024L
-    private const val MAX_TOTAL_ARCHIVE_BYTES = 256L * 1024L * 1024L
+    private const val MAX_MOD_ARCHIVE_BYTES = 72L * 1024L * 1024L
+    private const val MAX_TOTAL_ARCHIVE_BYTES = 288L * 1024L * 1024L
 
     private val projectAssets = listOf(
         "android/UPSTREAM_PIN",
@@ -79,10 +79,10 @@ object HnmodBuildAdapter {
                             fileBytes += count
                             totalBytes += count
                             require(fileBytes <= MAX_MOD_ARCHIVE_BYTES) {
-                                "$displayName exceeds the 64 MiB compressed archive limit."
+                                "$displayName exceeds the 72 MiB compressed archive limit."
                             }
                             require(totalBytes <= MAX_TOTAL_ARCHIVE_BYTES) {
-                                "Selected HNMod archives exceed the 256 MiB total limit."
+                                "Selected HNMod archives exceed the 288 MiB total limit."
                             }
                             output.write(buffer, 0, count)
                         }
