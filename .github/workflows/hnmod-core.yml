@@ -30,7 +30,7 @@ jobs:
       - name: Test engine compatibility metadata extraction
         shell: bash
         run: |
-          hooks=$(printf '%s\\n' 'pub(crate) const NATIVE_HOOKS_API: u32 = 2;' | sed -n 's/^pub(crate) const NATIVE_HOOKS_API: u32 = \\([0-9]*\\);.*/\\1/p')
-          mixins=$(printf '%s\\n' 'pub const MIXINS_REV: &str = "abcdef012345"' | sed -n 's/^pub const MIXINS_REV: &str = "\\([0-9a-f]*\\)";.*/\\1/p')
+          hooks=$(printf '%s\n' 'pub(crate) const NATIVE_HOOKS_API: u32 = 2;' | sed -n 's/^pub(crate) const NATIVE_HOOKS_API: u32 = \([0-9]*\);.*/\1/p')
+          mixins=$(printf '%s\n' 'pub const MIXINS_REV: &str = "abcdef012345"' | sed -n 's/^pub const MIXINS_REV: &str = "\([0-9a-f]*\)";.*/\1/p')
           test "$hooks" = "2"
           test "$mixins" = "abcdef012345"
