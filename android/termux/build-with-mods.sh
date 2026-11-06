@@ -39,8 +39,8 @@ say() { printf '\n== %s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 # ---- 0. tools ---------------------------------------------------------------------------------
-for t in cargo rustc clang git rsync sha256sum readelf python3; do
-  command -v "$t" >/dev/null || die "missing '$t'. Run: pkg install rust clang git rsync binutils python cmake make pkg-config coreutils"
+for t in cargo rustc clang git rsync sha256sum readelf python3 cmake make pkg-config; do
+  command -v "$t" >/dev/null || die "missing '$t'. The Horizon embedded toolchain is incomplete; repair or reinstall it from Horizon."
 done
 case $(uname -m) in aarch64|arm64) ;; *) die "this script is for a 64-bit ARM phone (aarch64), not $(uname -m)";; esac
 FREE_GB=$(df -k "$HOME" | awk 'NR==2{printf "%d", $4/1048576}')
@@ -173,7 +173,11 @@ if readelf -d "$LIB" | grep -q 'libc++_shared.so'; then
   echo "note: needs libc++_shared.so; the app must ship it (it does when built with the NDK's)." >&2
 fi
 
-OUTROOT="$HOME/storage/downloads"; [ -d "$OUTROOT" ] || OUTROOT="$HOME"
+if [ "${HORIZON_EMBEDDED:-0}" = "1" ]; then
+  OUTROOT="$HOME"
+else
+  OUTROOT="$HOME/storage/downloads"; [ -d "$OUTROOT" ] || OUTROOT="$HOME"
+fi
 OUT="$OUTROOT/Horizon-builds/$NAME"; mkdir -p "$OUT"
 cp "$LIB" "$OUT/libhorizon_android_game.so"
 SUM=$(sha256sum "$OUT/libhorizon_android_game.so" | cut -d' ' -f1)
@@ -184,5 +188,5 @@ SUM=$(sha256sum "$OUT/libhorizon_android_game.so" | cut -d' ' -f1)
 } > "$OUT/build.json"
 say "Done: $OUT"
 echo "sha256 ${SUM:0:16}…   mods: ${IDS[*]:-none}"
-echo "In the app: Settings > Installed builds > Import local build > pick libhorizon_android_game.so"
+echo "Horizon will validate and import this local build automatically."
 [ "$OUTROOT" = "$HOME" ] && echo "Build remains in Horizon's private app storage; the launcher imports it automatically."
