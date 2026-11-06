@@ -26,6 +26,10 @@ object EmbeddedToolchain {
         val detail: String
     )
 
+    fun installBootstrap(context: android.content.Context, archive: File, expectedSha256: String): EmbeddedBootstrapInstaller.Result {
+        return EmbeddedBootstrapInstaller.install(context, archive, expectedSha256)
+    }
+
     fun status(activity: Activity): RuntimeStatus {
         val supported = Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
         val prefix = File(activity.filesDir, PREFIX_DIR)
