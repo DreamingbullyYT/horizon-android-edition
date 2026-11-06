@@ -13,27 +13,33 @@ pub const MAX_FILE_BYTES: u64 = 16 * 1024 * 1024;
 pub const MAX_TOTAL_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Manifest {
+    #[serde(default = "default_schema")]
     pub schema: u32,
     pub id: String,
+    #[serde(default)]
     pub version: String,
+    #[serde(default)]
     pub game: String,
+    #[serde(default)]
     pub horizon: String,
+    #[serde(default)]
     pub mixins: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hooks: Option<u32>,
 }
 
+fn default_schema() -> u32 { 1 }
+
 impl Manifest {
     pub fn validate(&self) -> Result<(), Error> {
         if self.schema != 1 { return Err(Error::Manifest("unsupported manifest schema".into())); }
         if !valid_id(&self.id) { return Err(Error::Manifest("invalid mod id".into())); }
-        if self.version.trim().is_empty() || self.game.trim().is_empty() {
-            return Err(Error::Manifest("version and game must not be empty".into()));
+        if !self.horizon.is_empty() && !is_revision(&self.horizon) {
+            return Err(Error::Manifest("horizon must be a full lowercase 40-character commit ID".into()));
         }
-        if !is_revision(&self.horizon) || !is_revision(&self.mixins) {
-            return Err(Error::Manifest("horizon and mixins must be full lowercase 40-character commit IDs".into()));
+        if !self.mixins.is_empty() && !is_revision(&self.mixins) {
+            return Err(Error::Manifest("mixins must be a full lowercase 40-character commit ID".into()));
         }
         if self.hooks == Some(0) { return Err(Error::Manifest("hooks API must be greater than zero".into())); }
         Ok(())
@@ -123,8 +129,8 @@ pub fn read_bundle<R: Read + Seek>(reader: R) -> Result<Bundle, Error> {
         }
     }
     let raw = files.get(MANIFEST_FILE).ok_or_else(|| Error::Manifest("missing horizon-native.json".into()))?;
-    let manifest: Manifest = serde_json::from_slice(raw).map_err(|e| Error::Manifest(e.to_string()))?;
-    manifest.validate()?;
+    let mut manifest: Manifest = serde_json::from_slice(raw).map_err(|e| Error::Manifest(e.to_string()))?;
+    if !valid_id(&manifest.id) { return Err(Error::Manifest("invalid mod id".into())); }
     for name in files.keys() {
         if !allowed_payload(name, &manifest.id) {
             return Err(Error::UnsafePath(format!("unexpected payload path: {name}")));
@@ -135,11 +141,18 @@ pub fn read_bundle<R: Read + Seek>(reader: R) -> Result<Bundle, Error> {
     let text = std::str::from_utf8(raw).map_err(|e| Error::Manifest(e.to_string()))?;
     let mixin: toml::Value = toml::from_str(text).map_err(|e| Error::Manifest(e.to_string()))?;
     let field = |section: &str, key: &str| mixin.get(section).and_then(|v| v.get(key)).and_then(toml::Value::as_str);
-    if field("mod", "id") != Some(manifest.id.as_str()) ||
-       field("mod", "version") != Some(manifest.version.as_str()) ||
-       field("compatibility", "horizon_revision") != Some(manifest.horizon.as_str()) {
-        return Err(Error::Manifest("native and mixin manifests disagree on mod identity or Horizon revision".into()));
+    let mixin_id = field("mod", "id").ok_or_else(|| Error::Manifest("mixin manifest is missing [mod].id".into()))?;
+    let mixin_version = field("mod", "version").ok_or_else(|| Error::Manifest("mixin manifest is missing [mod].version".into()))?;
+    if mixin_id != manifest.id {
+        return Err(Error::Manifest("native and mixin manifests disagree on mod identity".into()));
     }
+    let mixin_horizon = field("compatibility", "horizon_revision").unwrap_or("");
+    if !manifest.horizon.is_empty() && !mixin_horizon.is_empty() && manifest.horizon != mixin_horizon {
+        return Err(Error::Manifest("native and mixin manifests disagree on Horizon revision".into()));
+    }
+    if manifest.horizon.is_empty() { manifest.horizon = mixin_horizon.to_owned(); }
+    manifest.version = mixin_version.to_owned();
+    manifest.validate()?;
     let mut h = Sha256::new();
     for (name, bytes) in &files {
         h.update((name.len() as u64).to_le_bytes()); h.update(name.as_bytes());
@@ -176,13 +189,14 @@ pub fn resolve_compatibility(bundles: &[Bundle], candidates: &[EngineCandidate])
         let m = &b.manifest;
         let engine_ok = match m.hooks {
             Some(required) => c.hooks_api >= required,
-            None => c.revision == m.horizon,
+            None => m.horizon.is_empty() || c.revision == m.horizon,
         };
-        engine_ok && c.mixins_revision == m.mixins
+        engine_ok && (m.mixins.is_empty() || c.mixins_revision == m.mixins)
     })).cloned().ok_or_else(|| {
         let requirements = bundles.iter().map(|b| match b.manifest.hooks {
             Some(n) => format!("{} needs hooks API >= {n}, tested on {}", b.manifest.id, b.manifest.horizon),
-            None => format!("{} is pinned to {}", b.manifest.id, b.manifest.horizon),
+            None if !b.manifest.horizon.is_empty() => format!("{} is pinned to {}", b.manifest.id, b.manifest.horizon),
+            None => format!("{} has no Horizon pin", b.manifest.id),
         }).collect::<Vec<_>>().join("; ");
         Error::Compatibility(format!("no candidate satisfies all selected mods and mixins pins: {requirements}"))
     })?;
