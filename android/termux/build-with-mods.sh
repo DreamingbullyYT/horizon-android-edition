@@ -41,6 +41,30 @@ mkdir -p "$WORK"
 say() { printf '\n== %s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
+# crates.io's static.crates.io download host may fail DNS on some mobile networks.
+# Keep crates.io as default, then retry failed Cargo operations via RsProxy.
+# The fallback is process-local and never edits the user's global Cargo config.
+CARGO_MIRROR_CONFIG=(
+  --config 'source.crates-io.replace-with="horizon-rsproxy-sparse"'
+  --config 'source.horizon-rsproxy-sparse.registry="sparse+https://rsproxy.cn/index/"'
+)
+CARGO_USE_MIRROR=0
+cargo_retry() {
+  local status
+  if [ "$CARGO_USE_MIRROR" = 1 ]; then
+    cargo "${CARGO_MIRROR_CONFIG[@]}" "$@"
+    return $?
+  fi
+  if cargo "$@"; then
+    return 0
+  else
+    status=$?
+  fi
+  say "Cargo registry request failed (exit $status); retrying through the RsProxy sparse mirror"
+  CARGO_USE_MIRROR=1
+  cargo "${CARGO_MIRROR_CONFIG[@]}" "$@"
+}
+
 # Android's long-lived partial clones can retain a stale commit-graph after an
 # interrupted fetch or object cleanup. Git may then refuse to fetch a pinned
 # revision because the graph references an object absent from the object DB.
@@ -157,7 +181,7 @@ if [ "$PLAIN" = 0 ]; then
   # Match the PC launcher's revision selection: pinned mods build on the newest
   # pinned Horizon revision or the installed base, determined by Git commit dates.
   # A commit hash is never treated as a timestamp.
-  HNMOD_CLI=(cargo run --quiet --locked --manifest-path "$REPO/hnmod-core/Cargo.toml" --bin hnmod --)
+  HNMOD_CLI=(cargo_retry run --quiet --locked --manifest-path "$REPO/hnmod-core/Cargo.toml" --bin hnmod --)
   PINS=(); MOD_PINS=(); MIXIN_PINS=()
   for f in "${FILES[@]}"; do
     info=$("${HNMOD_CLI[@]}" inspect "$f") || die "validation failed: $f"
@@ -288,7 +312,7 @@ if [ ${#IDS[@]} -gt 0 ]; then
       || die "horizon-mixins revision metadata $REV is missing"
     restore_github_snapshot "$MIXIN_SOURCE" "$REV" "horizon-rust/horizon-mixins"
     say "Building horizon-mixins $REV from the local checkout (once)"
-    cargo install --locked --path "$MIXIN_SOURCE/crates/horizon-mixins-cli" --root "$TOOL" \
+    cargo_retry install --locked --path "$MIXIN_SOURCE/crates/horizon-mixins-cli" --root "$TOOL" \
       || die "horizon-mixins failed to build from its local checkout"
   fi
   say "Applying the mixins"
@@ -301,7 +325,7 @@ if [ ${#IDS[@]} -gt 0 ]; then
   API_RESULT=$("${HNMOD_CLI[@]}" stage-api "$MODS" "$STAGE" "$API_PLAN") || die "could not stage PC trait API crates into the Android game"
   HAS_API=$(python3 -c 'import json,sys; print("1" if json.load(sys.stdin).get("has_api") else "0")' <<< "$API_RESULT")
   say "Resolving staged native crates and trait APIs"
-  cargo fetch --locked --manifest-path "$SRC/Cargo.toml" >/dev/null \
+  cargo_retry fetch --locked --manifest-path "$SRC/Cargo.toml" >/dev/null \
     || die "could not fetch the packages already pinned by Horizon"
   cargo metadata --offline --format-version 1 --manifest-path "$STAGE/Cargo.toml" >/dev/null \
     || die "native mod dependency resolution failed (only packages available to Horizon can be used)"
@@ -359,7 +383,7 @@ fi
 
 if [ "$CACHE_HIT" = "0" ]; then
   say "Compiling (profile $PROFILE). The first time this takes long; keep the phone charging."
-  nice -n 10 cargo build --locked --manifest-path "$STAGE/Cargo.toml" \
+  nice -n 10 cargo_retry build --locked --manifest-path "$STAGE/Cargo.toml" \
     -p horizon-android-game --profile "$PROFILE" 2>&1 | tee "$WORK/build.log" \
     || die "the build failed; the end of $WORK/build.log says why"
   LIB="$CARGO_TARGET_DIR/$PROFILE/libhorizon_android_game.so"
