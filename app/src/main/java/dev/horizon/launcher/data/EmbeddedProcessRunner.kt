@@ -81,6 +81,7 @@ object EmbeddedProcessRunner {
         env["LANG"] = "C.UTF-8"
         env["LC_ALL"] = "C.UTF-8"
         env["TERM"] = "xterm-256color"
+        env["HORIZON_EMBEDDED"] = "1"
 
         val logFile = File(logs, "${label.replace(Regex("[^A-Za-z0-9_.-]"), "_")}.log")
         val output = StringBuilder()
