@@ -228,11 +228,25 @@ if [ ${#IDS[@]} -gt 0 ]; then
   rsync -rc --delete --exclude target "$WORK/applied/" "$STAGE/"
   API_RESULT=$("${HNMOD_CLI[@]}" stage-api "$MODS" "$STAGE" "$API_PLAN") || die "could not stage PC trait API crates into the Android game"
   HAS_API=$(python3 -c 'import json,sys; print("1" if json.load(sys.stdin).get("has_api") else "0")' <<< "$API_RESULT")
-  if [ "$HAS_API" = "1" ]; then
-    say "Resolving Android trait API crates offline"
-    cargo metadata --offline --format-version 1 --manifest-path "$STAGE/Cargo.toml" >/dev/null \
-      || die "trait API dependency resolution failed (see Cargo's diagnostic above)"
-  fi
+  say "Resolving staged native crates and trait APIs"
+  cargo fetch --locked --manifest-path "$SRC/Cargo.toml" >/dev/null \
+    || die "could not fetch the packages already pinned by Horizon"
+  cargo metadata --offline --format-version 1 --manifest-path "$STAGE/Cargo.toml" >/dev/null \
+    || die "native mod dependency resolution failed (only packages available to Horizon can be used)"
+  python3 - "$SRC/Cargo.lock" "$STAGE/Cargo.lock" <<'PYLOCK'
+import sys, tomllib
+from pathlib import Path
+base, staged = (tomllib.loads(Path(p).read_text()) for p in sys.argv[1:])
+def packages(lock):
+    return {(p.get("name"), p.get("version"), p.get("source"), p.get("checksum"))
+            for p in lock.get("package", []) if p.get("source")}
+allowed = packages(base)
+extra = packages(staged) - allowed
+if extra:
+    name, version, source, _ = sorted(extra)[0]
+    raise SystemExit(f"Native mod dependency {name} {version} ({source}) is not in Horizon's Cargo.lock")
+PYLOCK
+  [ "$HAS_API" = "0" ] || say "PC trait API crates attached to horizon-android-game"
 else
   mkdir -p "$STAGE"; rsync -rc --delete --exclude target "$SRC/" "$STAGE/"
 fi
@@ -268,6 +282,63 @@ else
 fi
 OUT="$OUTROOT/Horizon-builds/$NAME"; mkdir -p "$OUT"
 cp "$LIB" "$OUT/libhorizon_android_game.so"
+
+# ---- 6. PC-compatible post-build programs -------------------------------------------------------
+POST="$STAGE/native-post-build.json"
+if [ -f "$POST" ]; then
+  say "Building and running native mod post-build steps"
+  if ! python3 - "$POST" "$STAGE" "$OUT" "$WORK/post-build-cache" "$CARGO_TARGET_DIR" "$PROFILE" "$WORK/build.log" <<'PYPOST'
+import json, os, pathlib, re, subprocess, sys
+post, stage, version, cache, target, profile, log = map(pathlib.Path, sys.argv[1:8])
+steps = json.loads(post.read_text())
+if not isinstance(steps, list):
+    raise SystemExit("native-post-build.json must contain an array")
+valid = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
+with log.open("ab") as output:
+    for index, step in enumerate(steps):
+        if not isinstance(step, dict):
+            raise SystemExit(f"post-build step #{index} is not an object")
+        mod, package, binary = step.get("mod"), step.get("package"), step.get("bin")
+        args = step.get("args", [])
+        if not all(isinstance(x, str) and valid.fullmatch(x) for x in (mod, package, binary)):
+            raise SystemExit(f"post-build step #{index} has an invalid mod, package or bin name")
+        if not isinstance(args, list) or not all(isinstance(x, str) for x in args):
+            raise SystemExit(f"{mod}: post-build args must be an array of strings")
+        command = ["cargo", "build", "--locked", "--manifest-path", str(stage / "Cargo.toml"),
+                   "-p", package, "--bin", binary, "--profile", profile]
+        env = os.environ.copy()
+        env["CARGO_TARGET_DIR"] = str(target)
+        output.write(f"\n== Building {mod}'s post-build program {binary}\n".encode())
+        built = subprocess.run(command, cwd=stage, env=env, stdout=output, stderr=subprocess.STDOUT,
+                               preexec_fn=lambda: os.nice(10))
+        if built.returncode:
+            raise SystemExit(f"{mod}: post-build program compilation failed (exit {built.returncode})")
+        program = target / profile / binary
+        if not program.is_file():
+            raise SystemExit(f"{mod}: Cargo did not produce post-build binary {program}")
+        data_dir = version / "native-data" / mod
+        cache_dir = cache / mod
+        bundle_data = stage / "native-data" / mod
+        for directory in (data_dir, cache_dir, bundle_data):
+            directory.mkdir(parents=True, exist_ok=True)
+        env.update({
+            "HORIZON_NATIVE_MOD": mod,
+            "HORIZON_NATIVE_VERSION_DIR": str(version),
+            "HORIZON_NATIVE_DATA_DIR": str(data_dir),
+            "HORIZON_NATIVE_CACHE_DIR": str(cache_dir),
+            "HORIZON_NATIVE_BUNDLE_DATA_DIR": str(bundle_data),
+        })
+        output.write(f"\n== Running {mod}'s post-build program\n".encode())
+        ran = subprocess.run([str(program), *args], cwd=version, env=env, stdout=output,
+                             stderr=subprocess.STDOUT, preexec_fn=lambda: os.nice(10))
+        if ran.returncode:
+            raise SystemExit(f"{mod}: post-build program failed (exit {ran.returncode})")
+PYPOST
+  then
+    rm -rf "$OUT"
+    die "a native mod post-build step failed; see $WORK/build.log"
+  fi
+fi
 SUM=$(sha256sum "$OUT/libhorizon_android_game.so" | cut -d' ' -f1)
 {
   printf '{\n  "name": "%s",\n  "upstream": "%s",\n  "android_patch": "%s",\n  "android_overlay": "%s",\n  "profile": "%s",\n' "$NAME" "$PIN" "$PATCH_SUM" "$OVERLAY_SUM" "$PROFILE"
