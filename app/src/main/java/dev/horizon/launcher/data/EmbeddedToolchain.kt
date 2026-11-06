@@ -47,7 +47,7 @@ object EmbeddedToolchain {
             val smoke = EmbeddedProcessRunner.runShellCommand(
                 context,
                 result.prefix,
-                "set -e; test \"\$(uname -m)\" = aarch64; cargo --version; clang --version; git --version; readelf --version",
+                "set -e; test \"\$(uname -m)\" = aarch64; cargo --version; rustc --version; clang --version; git --version; rsync --version; python3 --version; cmake --version; make --version; pkg-config --version; readelf --version",
                 "toolchain-smoke-test"
             )
             check(smoke.exitCode == 0) {
