@@ -181,7 +181,10 @@ if [ "$PLAIN" = 0 ]; then
   # Match the PC launcher's revision selection: pinned mods build on the newest
   # pinned Horizon revision or the installed base, determined by Git commit dates.
   # A commit hash is never treated as a timestamp.
-  HNMOD_CLI=(env CARGO_INCREMENTAL=0 cargo_retry run --quiet --locked --manifest-path "$REPO/hnmod-core/Cargo.toml" --bin hnmod --)
+  # cargo_retry is a Bash function, so invoke it in this shell rather than through env(1).
+  # Disable incremental compilation for the short-lived CLI to avoid concurrent cleanup races.
+  export CARGO_INCREMENTAL=0
+  HNMOD_CLI=(cargo_retry run --quiet --locked --manifest-path "$REPO/hnmod-core/Cargo.toml" --bin hnmod --)
   PINS=(); MOD_PINS=(); MIXIN_PINS=()
   for f in "${FILES[@]}"; do
     info=$("${HNMOD_CLI[@]}" inspect "$f") || die "validation failed: $f"
