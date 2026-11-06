@@ -5,8 +5,6 @@ import android.net.Uri
 import android.os.Build
 import java.io.File
 import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -17,7 +15,7 @@ object EmbeddedToolchain {
         "https://github.com/termux/termux-packages/releases/download/bootstrap-2026.11.01-r1%2Bapt.android-7/bootstrap-aarch64.zip"
     private const val BOOTSTRAP_SHA256 =
         "5a1429b6c68ee3bdc17b5fd6e47ba42933ec924cd7283fe74992574e1d5badae"
-    private const val STATE_SCHEMA = "2"
+    private const val STATE_SCHEMA = "3"
 
     data class RuntimeStatus(
         val supportedAbi: Boolean,
@@ -78,17 +76,17 @@ object EmbeddedToolchain {
         marker.delete()
         val archive = File(context.cacheDir, "termux-bootstrap-arm64.zip")
         try {
-            if (!archive.isFile || sha256(archive) != BOOTSTRAP_SHA256) {
-                onProgress("Downloading official Termux ARM64 bootstrap (about 32 MB)…")
-                downloadBootstrap(archive, onProgress)
+            onProgress("Loading bundled official Termux ARM64 bootstrap")
+            context.assets.open("bootstrap-aarch64.zip").use { input ->
+                FileOutputStream(archive).use { output -> input.copyTo(output) }
             }
-            onProgress("Verifying Termux bootstrap")
+            onProgress("Verifying bundled Termux bootstrap")
             require(sha256(archive) == BOOTSTRAP_SHA256) {
                 "Termux bootstrap checksum verification failed. Please retry the installation."
             }
 
             onProgress("Extracting private Termux environment")
-            val prefix = EmbeddedBootstrapInstaller.install(context, archive)
+            EmbeddedBootstrapInstaller.install(context, archive)
             installProotAssets(context)
             onProgress("Configuring official Termux package repository")
             val setup = EmbeddedProcessRunner.runShellCommand(
@@ -141,10 +139,16 @@ object EmbeddedToolchain {
         require(dir.isDirectory || dir.mkdirs()) { "Cannot create private PRoot directory." }
         copyAsset(context, "proot/proot", EmbeddedTermuxPaths.proot(context), executable = true)
         copyAsset(context, "proot/loader", EmbeddedTermuxPaths.loader(context), executable = true)
-        val libDir = EmbeddedTermuxPaths.prootLib(context)
-        require(libDir.isDirectory || libDir.mkdirs()) { "Cannot create PRoot library directory." }
+        // Gemini CLI installs PRoot's SONAME dependencies into the fake Termux prefix/lib.
+        val libDir = File(EmbeddedTermuxPaths.prefix(context), "lib")
+        require(libDir.isDirectory || libDir.mkdirs()) { "Cannot create Termux library directory." }
         val libraries = context.assets.list("proot/lib") ?: emptyArray()
-        require(libraries.isNotEmpty()) { "This Horizon APK is missing the embedded PRoot libraries." }
+        require(libraries.any { it == "libtalloc.so.2" }) {
+            "The bundled PRoot runtime is missing libtalloc.so.2."
+        }
+        require(libraries.any { it == "libandroid-shmem.so" }) {
+            "The bundled PRoot runtime is missing libandroid-shmem.so."
+        }
         libraries.forEach { name ->
             copyAsset(context, "proot/lib/$name", File(libDir, name), executable = false)
         }
@@ -158,50 +162,6 @@ object EmbeddedToolchain {
             FileOutputStream(destination).use { output -> input.copyTo(output) }
         }
         if (executable) destination.setExecutable(true, false)
-    }
-
-    private fun downloadBootstrap(destination: File, onProgress: (String) -> Unit) {
-        val connection = (URL(BOOTSTRAP_URL).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 20_000
-            readTimeout = 60_000
-            instanceFollowRedirects = true
-            requestMethod = "GET"
-        }
-        try {
-            connection.connect()
-            check(connection.responseCode in 200..299) {
-                "Termux bootstrap download failed with HTTP ${connection.responseCode}."
-            }
-            val total = connection.contentLengthLong
-            var downloaded = 0L
-            val lastPercent = intArrayOf(-1)
-            val partial = File(destination.parentFile, destination.name + ".part")
-            connection.inputStream.use { input ->
-                FileOutputStream(partial).use { output ->
-                    val buffer = ByteArray(128 * 1024)
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        output.write(buffer, 0, count)
-                        downloaded += count
-                        if (total > 0L) {
-                            val percent = (downloaded * 100 / total).toInt()
-                            if (percent != lastPercent[0] && percent % 5 == 0) {
-                                lastPercent[0] = percent
-                                onProgress("Downloading Termux bootstrap… $percent%")
-                            }
-                        }
-                    }
-                }
-            }
-            require(partial.length() > 0L) { "Termux bootstrap download was empty." }
-            if (!partial.renameTo(destination)) {
-                destination.delete()
-                require(partial.renameTo(destination)) { "Cannot save the downloaded Termux bootstrap." }
-            }
-        } finally {
-            connection.disconnect()
-        }
     }
 
     private fun sha256(file: File): String {
