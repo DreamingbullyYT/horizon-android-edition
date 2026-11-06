@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use std::{collections::{BTreeMap, BTreeSet}, io::{Read, Seek}};
 
 pub mod dependencies;
+pub mod pc_api;
 
 pub const MANIFEST_FILE: &str = "horizon-native.json";
 pub const MIXIN_MANIFEST: &str = "horizon-mixin.toml";
