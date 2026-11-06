@@ -251,9 +251,20 @@ if [ ${#IDS[@]} -gt 0 ]; then
   # REV was read and checked by the compatibility resolver above.
   TOOL="$WORK/tools/$REV"
   if [ ! -x "$TOOL/bin/horizon-mixins" ]; then
-    say "Building horizon-mixins $REV (once)"
-    cargo install --locked --git https://github.com/horizon-rust/horizon-mixins --rev "$REV" \
-      horizon-mixins-cli --root "$TOOL" || die "horizon-mixins failed to build"
+    say "Preparing local horizon-mixins source $REV"
+    MIXIN_SOURCE="$WORK/mixins-src"
+    if [ ! -d "$MIXIN_SOURCE/.git" ]; then
+      rm -rf "$MIXIN_SOURCE"
+      git clone -q --filter=blob:none https://github.com/horizon-rust/horizon-mixins.git "$MIXIN_SOURCE" \
+        || die "could not clone horizon-mixins source"
+    fi
+    git_fetch_revision "$MIXIN_SOURCE" "$REV" \
+      || die "could not fetch horizon-mixins source revision $REV"
+    git -C "$MIXIN_SOURCE" checkout -q --detach "$REV" \
+      || die "could not check out horizon-mixins source revision $REV"
+    say "Building horizon-mixins $REV from the local checkout (once)"
+    cargo install --locked --path "$MIXIN_SOURCE/crates/horizon-mixins-cli" --root "$TOOL" \
+      || die "horizon-mixins failed to build from its local checkout"
   fi
   say "Applying the mixins"
   rm -rf "$WORK/applied"
