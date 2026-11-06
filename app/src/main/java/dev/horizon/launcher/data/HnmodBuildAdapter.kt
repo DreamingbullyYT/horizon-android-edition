@@ -23,6 +23,7 @@ object HnmodBuildAdapter {
         "android/overlay/crates/horizon-android-installer/src/official_install.rs",
         "android/overlay/crates/horizon-android-installer/src/resource_install.rs",
         "android/overlay/crates/horizon-client/src/game/android.rs",
+        "android/overlay/crates/horizon-client/src/native_data.rs",
         "android/overlay/packaging/android/bedrock-controls.json",
         "android/overlay/tools/android_engine_data.py",
         "android/overlay/tools/android_prepare.py",
