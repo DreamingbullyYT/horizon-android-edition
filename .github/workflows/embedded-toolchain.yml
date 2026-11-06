@@ -88,6 +88,12 @@ jobs:
           grep -q 'bin/rustc' /tmp/bootstrap-all-paths.txt
           grep -q 'bin/clang' /tmp/bootstrap-all-paths.txt
           grep -q 'bin/git' /tmp/bootstrap-all-paths.txt
+          grep -q 'bin/rsync' /tmp/bootstrap-all-paths.txt
+          grep -q 'bin/python3' /tmp/bootstrap-all-paths.txt
+          grep -q 'bin/cmake' /tmp/bootstrap-all-paths.txt
+          grep -q 'bin/make' /tmp/bootstrap-all-paths.txt
+          grep -q 'bin/pkg-config' /tmp/bootstrap-all-paths.txt
+          grep -q 'bin/readelf' /tmp/bootstrap-all-paths.txt
           grep -q 'lib/libtermux-exec-linker-ld-preload.so' /tmp/bootstrap-all-paths.txt
           grep -q 'etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh' /tmp/bootstrap-all-paths.txt
           mkdir -p dist
