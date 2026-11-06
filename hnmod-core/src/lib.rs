@@ -251,19 +251,16 @@ mod tests {
     }
 
     #[test]
-    fn payload_allowlist_matches_horizon_native_bundle_layout() {
+    fn payload_paths_accept_full_pc_bundle_contents_only_under_mod_root() {
         assert!(allowed_payload("mixins/mod/hooks.rs", "mod"));
         assert!(allowed_payload("mixins/mod/engine/Cargo.toml", "mod"));
         assert!(allowed_payload("mixins/mod/data/nested/table.bin", "mod"));
-        assert!(allowed_payload("mixins/mod/engine/data/table.bin", "mod"));
-        assert!(allowed_payload("mixins/mod/engine/README.md", "mod"));
-        assert!(!allowed_payload("mixins/mod/data", "mod"));
-        assert!(!allowed_payload("mixins/mod/engine/src/data/table.bin", "mod"));
-        assert!(!allowed_payload("mixins/mod/engine/src/README.md", "mod"));
-        assert!(!allowed_payload("mixins/mod/assets/icon.png", "mod"));
-        assert!(!allowed_payload("mixins/mod/payload.dll", "mod"));
+        assert!(allowed_payload("mixins/mod/engine/src/data/table.bin", "mod"));
+        assert!(allowed_payload("mixins/mod/assets/icon.png", "mod"));
+        assert!(allowed_payload("mixins/mod/payload.dll", "mod"));
+        assert!(!allowed_payload("mixins/another-mod/payload.dll", "mod"));
+        assert!(!allowed_payload("payload.dll", "mod"));
     }
-
     #[test]
     fn stable_hook_mod_can_target_later_compatible_engine() {
         let a = "a".repeat(40); let b = "b".repeat(40);
