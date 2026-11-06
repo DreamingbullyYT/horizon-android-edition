@@ -229,6 +229,30 @@ mod tests {
     }
 
     #[test]
+    fn mod_ids_match_horizons_native_manifest_rules() {
+        assert!(valid_id("mod_123"));
+        assert!(valid_id(&"a".repeat(64)));
+        assert!(!valid_id(""));
+        assert!(!valid_id("Uppercase"));
+        assert!(!valid_id("hyphen-name"));
+        assert!(!valid_id(&"a".repeat(65)));
+    }
+
+    #[test]
+    fn payload_allowlist_matches_horizon_native_bundle_layout() {
+        assert!(allowed_payload("hooks.rs", "mod"));
+        assert!(allowed_payload("engine/Cargo.toml", "mod"));
+        assert!(allowed_payload("data/nested/table.bin", "mod"));
+        assert!(allowed_payload("engine/data/table.bin", "mod"));
+        assert!(allowed_payload("engine/README.md", "mod"));
+        assert!(!allowed_payload("data", "mod"));
+        assert!(!allowed_payload("engine/src/data/table.bin", "mod"));
+        assert!(!allowed_payload("engine/src/README.md", "mod"));
+        assert!(!allowed_payload("assets/icon.png", "mod"));
+        assert!(!allowed_payload("payload.dll", "mod"));
+    }
+
+    #[test]
     fn stable_hook_mod_can_target_later_compatible_engine() {
         let a = "a".repeat(40); let b = "b".repeat(40);
         let bundle = read_bundle(std::io::Cursor::new(archive(Some(3), &a, &b))).unwrap();
