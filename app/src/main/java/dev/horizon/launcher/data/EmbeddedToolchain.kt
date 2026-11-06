@@ -6,6 +6,8 @@ import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Horizon-owned toolchain entry point.
@@ -26,8 +28,42 @@ object EmbeddedToolchain {
         val detail: String
     )
 
-    fun installBootstrap(context: android.content.Context, archive: File, expectedSha256: String): EmbeddedBootstrapInstaller.Result {
-        return EmbeddedBootstrapInstaller.install(context, archive, expectedSha256)
+    suspend fun installBootstrap(
+        context: android.content.Context,
+        archive: File,
+        expectedSha256: String
+    ): EmbeddedBootstrapInstaller.Result = withContext(Dispatchers.IO) {
+        val state = File(context.filesDir, STATE_DIR)
+        val marker = File(state, MARKER)
+        marker.delete()
+        val result = EmbeddedBootstrapInstaller.install(context, archive, expectedSha256)
+        try {
+            val secondStage = File(
+                result.prefix,
+                "etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh"
+            )
+            val stageResult = EmbeddedProcessRunner.runScript(context, result.prefix, secondStage)
+            check(stageResult.exitCode == 0) {
+                "Toolchain bootstrap configuration failed (exit ${stageResult.exitCode}). Log: ${stageResult.logFile.absolutePath}"
+            }
+
+            val smoke = EmbeddedProcessRunner.runShellCommand(
+                context,
+                result.prefix,
+                "set -e; test \"\$(uname -m)\" = aarch64; cargo --version; clang --version; git --version; readelf --version",
+                "toolchain-smoke-test"
+            )
+            check(smoke.exitCode == 0) {
+                "Embedded compiler smoke test failed (exit ${smoke.exitCode}). Log: ${smoke.logFile.absolutePath}"
+            }
+
+            require(state.isDirectory || state.mkdirs()) { "Cannot create Horizon toolchain state directory." }
+            marker.writeText("schema=1\\nsha256=${result.sha256}\\nabi=arm64-v8a\\n")
+            result
+        } catch (error: Exception) {
+            marker.delete()
+            throw error
+        }
     }
 
     fun status(activity: Activity): RuntimeStatus {
