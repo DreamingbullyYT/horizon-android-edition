@@ -24,11 +24,23 @@ workspace, then builds the Android ARM64 game library. PC binary outputs are
 never copied to Android: the source bundle format is shared, while Cargo
 recompiles for Android.
 
-**Compatibility boundary:** the launcher-side API-crate/dependency staging and
-full PC build-record/cache workflow are not yet ported. Bundles declaring
-`[api]` or API-to-API `[dependencies]` still need that staging layer before
-they can be considered fully supported. A source mod that uses Windows-only
-APIs or unsupported Android dependencies can also fail the ARM64 build.
+**Android parity implemented:** the embedded pipeline now ports the PC launcher's
+trait-API staging and dependency graph: `[api]`, semver `[dependencies]`,
+optional dependency features, deterministic topological hook order, and the
+generated hook list attached to the existing `horizon-android-game` JNI
+entry point. It also validates mod-crate dependencies against Horizon's own
+`Cargo.lock`, stages the upstream `data/` payloads through
+`horizon-mixins`, and builds/runs `[[post_build]]` programs with the PC
+environment variables and per-mod data/cache directories.
+
+The remaining differences are the PC launcher's richer build records and
+content-addressed native-build cache, injection-conflict diagnostics and
+per-mod failure isolation. Cargo's persistent target cache is retained, but
+the Android script does not yet promise the same PC build identity/reuse
+semantics. A source mod that uses Windows-only APIs, unsupported Android
+dependencies, or desktop-only entry points can still fail the ARM64 build.
+Native mod and post-build code runs with the launcher's app UID; only install
+mods whose source you trust.
 ## Android compiler integration
 
 Horizon now packages this crate and the Android build script as app assets. The launcher materializes
