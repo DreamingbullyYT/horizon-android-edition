@@ -3,6 +3,7 @@ package dev.horizon.launcher.data
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.os.PowerManager
 import java.io.File
 import java.io.FileOutputStream
 
@@ -34,7 +35,11 @@ object HnmodBuildAdapter {
         inputDir.deleteRecursively()
         require(inputDir.isDirectory || inputDir.mkdirs()) { "Cannot create private HNMod input directory." }
 
+        val wakeLock = (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Horizon:HNModBuild")
+            .apply { setReferenceCounted(false) }
         try {
+            wakeLock.acquire(6L * 60L * 60L * 1000L)
             var totalBytes = 0L
             val archives = selected.mapIndexed { index, uri ->
                 val fallback = "mod-$index.hnmod"
@@ -92,6 +97,7 @@ object HnmodBuildAdapter {
             }
             return Updater.importLocal(context, library.inputStream())
         } finally {
+            if (wakeLock.isHeld) wakeLock.release()
             inputDir.deleteRecursively()
         }
     }
