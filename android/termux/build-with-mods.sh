@@ -69,6 +69,8 @@ if [ ! -f "$SRC/.horizon-revision" ]; then
   git -C "$SRC.partial" config core.fileMode false
   git -C "$SRC.partial" apply --whitespace=nowarn "$REPO/android/android.patch" \
     || die "the Android patch does not apply to $PIN"
+  [ -d "$REPO/android/overlay" ] || die "the Android overlay is missing from the embedded build assets"
+  cp -a "$REPO/android/overlay/." "$SRC.partial/"
   printf '%s' "$PIN" > "$SRC.partial/.horizon-revision"
   # horizon-mixins refuses symlinks (the PC launcher's source archive leaves them out too).
   find "$SRC.partial" -type l -delete
@@ -136,6 +138,7 @@ if [ "$PLAIN" = 0 ]; then
     git -C "$SRC" clean -fdq
     git -C "$SRC" apply --whitespace=nowarn "$REPO/android/android.patch" \
       || die "the Android patch does not apply to selected mod revision $BEST_PIN"
+    cp -a "$REPO/android/overlay/." "$SRC/"
     find "$SRC" -type l -delete
     PIN="$BEST_PIN"
     printf '%s' "$PIN" > "$SRC/.horizon-revision"
