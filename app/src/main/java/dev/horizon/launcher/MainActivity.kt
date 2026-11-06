@@ -142,8 +142,9 @@ class MainActivity : ComponentActivity() {
     private fun refreshStatus() {
         scope.launch {
             val ready = GameSetup.ready()
+            val toolchain = dev.horizon.launcher.data.EmbeddedToolchain.status(this@MainActivity)
             val problem = initError?.let { "\nCore problem: $it" } ?: ""
-            status.text = "Core ${Core.coreVersion()} · Minecraft ${if (ready) "installed" else "not installed"}$problem"
+            status.text = "Core ${Core.coreVersion()} · Minecraft ${if (ready) "installed" else "not installed"} · HNMod toolchain ${if (toolchain.installed) "ready" else "not installed"}$problem"
         }
     }
 
