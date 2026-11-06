@@ -195,13 +195,18 @@ object EmbeddedBootstrapInstaller {
     }
 
     private fun validateSymlinkTarget(context: Context, staging: File, link: String, target: String) {
-        require(target.isNotBlank() && !target.contains('\u0000')) { "Empty or malformed symlink target." }
+        require(target.isNotBlank() && !target.contains('\u0000') && !target.contains('\\')) {
+            "Empty or malformed symlink target."
+        }
         if (target.startsWith("/")) {
-            val expectedPrefix = File(context.filesDir, "usr").absolutePath
-            val legacyPrefix = "/data/data/${context.packageName}/files/usr"
-            require(target == expectedPrefix || target.startsWith(expectedPrefix + "/") ||
-                target == legacyPrefix || target.startsWith(legacyPrefix + "/") ||
-                target.startsWith("/system/") || target.startsWith("/apex/")) {
+            val allowedRoots = listOf(
+                File(context.filesDir, "usr"),
+                File("/data/data/${context.packageName}/files/usr"),
+                File("/system"),
+                File("/apex")
+            ).map { it.canonicalFile.toPath() }
+            val resolved = File(target).canonicalFile.toPath()
+            require(allowedRoots.any { resolved.startsWith(it) }) {
                 "Symlink points outside Horizon's runtime: $link"
             }
         } else {
