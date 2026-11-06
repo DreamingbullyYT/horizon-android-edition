@@ -117,7 +117,7 @@ object EmbeddedBootstrapInstaller {
             require(sawSymlinkTable && symlinks.isNotEmpty()) {
                 "Toolchain archive has no valid SYMLINKS.txt table."
             }
-            require(listOf("bin/bash", "bin/cargo", "bin/rustc", "bin/clang", "bin/git", "lib/libtermux-exec-linker-ld-preload.so", "etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh")
+            require(listOf("bin/bash", "bin/cargo", "bin/rustc", "bin/clang", "bin/git", "bin/rsync", "bin/python3", "bin/cmake", "bin/make", "bin/pkg-config", "bin/readelf", "lib/libtermux-exec-linker-ld-preload.so", "etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh")
                 .all { it in extracted }) {
                 "Toolchain archive is missing required compiler/runtime files."
             }
@@ -141,7 +141,7 @@ object EmbeddedBootstrapInstaller {
             }
             prefixActivated = true
 
-            val required = listOf("bin/bash", "bin/cargo", "bin/rustc", "bin/clang", "bin/git", "lib/libtermux-exec-linker-ld-preload.so", "etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh")
+            val required = listOf("bin/bash", "bin/cargo", "bin/rustc", "bin/clang", "bin/git", "bin/rsync", "bin/python3", "bin/cmake", "bin/make", "bin/pkg-config", "bin/readelf", "lib/libtermux-exec-linker-ld-preload.so", "etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh")
             require(required.all { File(prefix, it).exists() }) {
                 "Toolchain files were extracted, but required runtime links do not resolve."
             }
