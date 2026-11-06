@@ -191,7 +191,7 @@ pub fn resolve_compatibility(bundles: &[Bundle], candidates: &[EngineCandidate])
             Some(required) => c.hooks_api >= required,
             None => true,
         };
-        engine_ok && (m.mixins.is_empty() || c.mixins_revision == m.mixins)
+        engine_ok
     })).cloned().ok_or_else(|| {
         let requirements = bundles.iter().map(|b| match b.manifest.hooks {
             Some(n) => format!("{} needs hooks API >= {n}, tested on {}", b.manifest.id, b.manifest.horizon),
