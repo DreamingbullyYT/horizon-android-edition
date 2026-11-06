@@ -1,0 +1,82 @@
+name: Publish verified Horizon toolchain
+
+on:
+  push:
+    branches:
+      - feature/hnmod-core
+    paths:
+      - .github/workflows/publish-toolchain.yml
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: horizon-toolchain-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      EXPECTED_BUILD_SHA: ${{ github.event.before }}
+      TOOLCHAIN_TAG: horizon-toolchain-2cce9f2663c7
+    steps:
+      - name: Wait for the matching pinned bootstrap build
+        id: wait
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id=""
+          for attempt in $(seq 1 360); do
+            run_id="$(gh api "repos/$REPOSITORY/actions/runs?branch=feature%2Fhnmod-core&per_page=100" \
+              --jq ".workflow_runs[] | select(.name == \"Build Horizon embedded Android toolchain\" and .head_sha == \"$EXPECTED_BUILD_SHA\") | .id" | head -n 1 || true)"
+            if [ -n "$run_id" ]; then
+              status="$(gh api "repos/$REPOSITORY/actions/runs/$run_id" --jq '.status')"
+              if [ "$status" = "completed" ]; then
+                conclusion="$(gh api "repos/$REPOSITORY/actions/runs/$run_id" --jq '.conclusion')"
+                if [ "$conclusion" != "success" ]; then
+                  echo "Matching bootstrap build ended with $conclusion."
+                  exit 1
+                fi
+                echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+            echo "Waiting for embedded bootstrap build (attempt $attempt/360)..."
+            sleep 60
+          done
+          echo "Timed out waiting for the matching embedded bootstrap build."
+          exit 1
+
+      - name: Download bootstrap artifact from the verified run
+        env:
+          RUN_ID: ${{ steps.wait.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh run download "$RUN_ID" --repo "$REPOSITORY" \
+            --name horizon-embedded-toolchain-aarch64 --dir dist
+          test -s dist/horizon-toolchain-aarch64.zip
+          test -s dist/SHA256SUMS
+          test -s dist/toolchain-manifest.json
+
+      - name: Verify manifest and checksum
+        run: |
+          set -euo pipefail
+          sha256sum -c dist/SHA256SUMS
+          jq -e '.app_id == "dev.horizon.launcher" and .abi == "arm64-v8a" and .android_min == 29' \
+            dist/toolchain-manifest.json >/dev/null
+          if gh release view "$TOOLCHAIN_TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TOOLCHAIN_TAG already exists; refusing to replace an immutable toolchain."
+            exit 1
+          fi
+
+      - name: Publish immutable toolchain release
+        run: |
+          gh release create "$TOOLCHAIN_TAG" dist/* --repo "$REPOSITORY" \
+            --title "Horizon embedded ARM64 toolchain" \
+            --notes "Horizon-prefix ARM64 Android 10+ bootstrap. Built from the pinned Termux package source commit 2cce9f2663c75223f8418b9682a61bc690052097. Verify SHA256SUMS before installation."
