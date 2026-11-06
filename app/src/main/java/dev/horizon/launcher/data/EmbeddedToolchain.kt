@@ -64,7 +64,7 @@ object EmbeddedToolchain {
         val status = status(activity)
         check(status.supportedAbi) { status.detail }
         check(status.installed) {
-            status.detail + " The app-side runtime installer is being prepared; compilation is safely disabled until its signed toolchain payload and Android executable bridge are included."
+            status.detail + " The app-side runtime installer is being prepared; compilation is safely disabled until its checksum-verified bootstrap payload and Android executable bridge are included."
         }
         error("The embedded toolchain runtime is present, but the HNMod build adapter is not enabled in this build.")
     }
