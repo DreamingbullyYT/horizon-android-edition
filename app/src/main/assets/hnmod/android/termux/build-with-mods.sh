@@ -120,9 +120,12 @@ if [ "$PLAIN" = 0 ]; then
   for f in "${FILES[@]}"; do
     info=$("${HNMOD_CLI[@]}" inspect "$f") || die "validation failed: $f"
     pin=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"].get("horizon") or "")' <<< "$info")
+    hooks=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"].get("hooks") or "")' <<< "$info")
     if [ -n "$pin" ]; then
       [[ "$pin" =~ ^[0-9a-f]{40}$ ]] || die "invalid Horizon revision in $f: $pin"
-      PINS+=("$pin"); MOD_PINS+=("$pin")
+      # PC hook-API mods do not pin the engine revision; their hooks requirement is
+      # checked against the selected engine's NATIVE_HOOKS_API instead.
+      if [ -z "$hooks" ]; then PINS+=("$pin"); MOD_PINS+=("$pin"); fi
     fi
     mixpin=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"].get("mixins") or "")' <<< "$info")
     if [ -n "$mixpin" ]; then
