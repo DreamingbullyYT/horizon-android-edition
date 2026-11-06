@@ -5,7 +5,7 @@ use semver::VersionReq;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path};
 
 fn table(path: &Path) -> Result<toml::Table, String> {
     fs::read_to_string(path)
