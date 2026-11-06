@@ -115,7 +115,7 @@ if [ "$PLAIN" = 0 ]; then
   # Match the PC launcher's revision selection: pinned mods build on the newest
   # pinned Horizon revision or the installed base, determined by Git commit dates.
   # A commit hash is never treated as a timestamp.
-  HNMOD_CLI=(cargo run --quiet --manifest-path "$REPO/hnmod-core/Cargo.toml" --bin hnmod --)
+  HNMOD_CLI=(cargo run --quiet --locked --manifest-path "$REPO/hnmod-core/Cargo.toml" --bin hnmod --)
   PINS=(); MOD_PINS=(); MIXIN_PINS=()
   for f in "${FILES[@]}"; do
     info=$("${HNMOD_CLI[@]}" inspect "$f") || die "validation failed: $f"
