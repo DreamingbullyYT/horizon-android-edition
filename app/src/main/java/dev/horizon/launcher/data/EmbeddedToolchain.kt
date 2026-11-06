@@ -3,8 +3,6 @@ package dev.horizon.launcher.data
 import android.app.Activity
 import android.net.Uri
 import android.os.Build
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -58,7 +56,7 @@ object EmbeddedToolchain {
             }
 
             require(state.isDirectory || state.mkdirs()) { "Cannot create Horizon toolchain state directory." }
-            marker.writeText("schema=1\\nsha256=${result.sha256}\\nabi=arm64-v8a\\n")
+            marker.writeText("schema=1\nsha256=${result.sha256}\nabi=arm64-v8a\n")
             result
         } catch (error: Exception) {
             marker.delete()
