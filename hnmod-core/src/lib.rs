@@ -189,7 +189,7 @@ pub fn resolve_compatibility(bundles: &[Bundle], candidates: &[EngineCandidate])
         let m = &b.manifest;
         let engine_ok = match m.hooks {
             Some(required) => c.hooks_api >= required,
-            None => m.horizon.is_empty() || c.revision == m.horizon,
+            None => true,
         };
         engine_ok && (m.mixins.is_empty() || c.mixins_revision == m.mixins)
     })).cloned().ok_or_else(|| {
@@ -200,8 +200,12 @@ pub fn resolve_compatibility(bundles: &[Bundle], candidates: &[EngineCandidate])
         }).collect::<Vec<_>>().join("; ");
         Error::Compatibility(format!("no candidate satisfies all selected mods and mixins pins: {requirements}"))
     })?;
-    let warnings = bundles.iter().filter(|b| b.manifest.hooks.is_some() && b.manifest.horizon != selected.revision)
-        .map(|b| format!("{} was tested on {}, using stable hooks on {}", b.manifest.id, b.manifest.horizon, selected.revision))
+    let warnings = bundles.iter().filter(|b| !b.manifest.horizon.is_empty() && b.manifest.horizon != selected.revision)
+        .map(|b| if b.manifest.hooks.is_some() {
+            format!("{} was tested on {}, using stable hooks on {}", b.manifest.id, b.manifest.horizon, selected.revision)
+        } else {
+            format!("{} is pinned to {}, trying it on newer selected revision {}", b.manifest.id, b.manifest.horizon, selected.revision)
+        })
         .collect();
     Ok(Compatibility { selected, mods: bundles.iter().map(|b| b.manifest.id.clone()).collect(), warnings })
 }
