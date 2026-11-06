@@ -304,7 +304,7 @@ index dd91773a0..16b8abe82 100644
      match &mut app {
          // Ready: splitscreen around P1's game.
 diff --git a/crates/horizon-client/src/game/ime.rs b/crates/horizon-client/src/game/ime.rs
-index f3109ef93..dab98892b 100644
+index f3109ef93..83d426823 100644
 --- a/crates/horizon-client/src/game/ime.rs
 +++ b/crates/horizon-client/src/game/ime.rs
 @@ -45,6 +45,8 @@ impl Game<'_> {
@@ -316,6 +316,15 @@ index f3109ef93..dab98892b 100644
          if want != self.ime_allowed
              && let Some(window) = &self.window
          {
+@@ -74,6 +76,8 @@ impl Game<'_> {
+     /// (`TextInputManager.setTextInputArea`, in window pixels).
+     pub(super) fn flush_ime(&mut self, hud: &mut HudBatch) {
+         preedit::draw_overlay(hud, &self.gui.atlas);
++        #[cfg(target_os = "android")]
++        self.draw_android_touch_controls(hud);
+         let Some([x0, y0, x1, y1]) = preedit::take_text_input_area() else {
+             return;
+         };
 diff --git a/crates/horizon-client/src/game/no_resources.rs b/crates/horizon-client/src/game/no_resources.rs
 index 12e1cf5b0..c3ef8e593 100644
 --- a/crates/horizon-client/src/game/no_resources.rs
