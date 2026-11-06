@@ -89,7 +89,8 @@ object EmbeddedProcessRunner {
             child.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
                 lines.forEach { line ->
                     writer.appendLine(line)
-                    if (output.length < 256 * 1024) output.appendLine(line)
+                    output.appendLine(line)
+                    if (output.length > 256 * 1024) output.delete(0, output.length - 192 * 1024)
                 }
             }
         }
