@@ -39,7 +39,12 @@ jobs:
           assert "fetch -q --refetch --filter=blob:none origin" in script
           assert "pack.threads=1" in script
           assert "index.threads=1" in script
-          assert 'git -C "$SRC" cat-file -e "$PIN^{commit}"' in script
+          assert "restore_github_snapshot()" in script
+          assert 'restore_github_snapshot "$SRC" "$PIN" "horizon-rust/horizon"' in script
+          assert 'restore_github_snapshot "$SRC" "$BEST_PIN" "horizon-rust/horizon"' in script
+          assert 'git clone -q --filter=blob:none --no-checkout' in script
+          assert 'git -C "$SRC" reset --hard' not in script
+          assert 'git -C "$SRC" checkout' not in script
           assert 'git_fetch_revision "$SRC" "$PIN"' in script
           assert 'git_fetch_revision "$SRC" "$candidate"' in script
           assert 'git_fetch_revision "$MIXIN_REPO" "$candidate"' in script
@@ -53,7 +58,8 @@ jobs:
           script = Path("android/termux/build-with-mods.sh").read_text()
           assert 'MIXIN_SOURCE="$WORK/mixins-src"' in script
           assert 'git_fetch_revision "$MIXIN_SOURCE" "$REV"' in script
-          assert 'git -C "$MIXIN_SOURCE" checkout -q --detach "$REV"' in script
+          assert 'restore_github_snapshot "$MIXIN_SOURCE" "$REV" "horizon-rust/horizon-mixins"' in script
+          assert 'git -C "$MIXIN_SOURCE" checkout' not in script
           assert 'cargo install --locked --path "$MIXIN_SOURCE/crates/horizon-mixins-cli" --root "$TOOL"' in script
           assert 'cargo install --locked --git https://github.com/horizon-rust/horizon-mixins' not in script
           asset = Path("app/src/main/assets/hnmod/android/termux/build-with-mods.sh").read_text()
