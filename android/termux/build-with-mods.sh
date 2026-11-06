@@ -287,7 +287,7 @@ cp "$LIB" "$OUT/libhorizon_android_game.so"
 POST="$STAGE/native-post-build.json"
 if [ -f "$POST" ]; then
   say "Building and running native mod post-build steps"
-  python3 - "$POST" "$STAGE" "$OUT" "$WORK/post-build-cache" "$CARGO_TARGET_DIR" "$PROFILE" "$WORK/build.log" <<'PYPOST'
+  if ! python3 - "$POST" "$STAGE" "$OUT" "$WORK/post-build-cache" "$CARGO_TARGET_DIR" "$PROFILE" "$WORK/build.log" <<'PYPOST'
 import json, os, pathlib, re, subprocess, sys
 post, stage, version, cache, target, profile, log = map(pathlib.Path, sys.argv[1:8])
 steps = json.loads(post.read_text())
@@ -334,7 +334,7 @@ with log.open("ab") as output:
         if ran.returncode:
             raise SystemExit(f"{mod}: post-build program failed (exit {ran.returncode})")
 PYPOST
-  if [ "$?" -ne 0 ]; then
+  then
     rm -rf "$OUT"
     die "a native mod post-build step failed; see $WORK/build.log"
   fi
