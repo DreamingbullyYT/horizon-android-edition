@@ -72,6 +72,7 @@ jobs:
           diff -qr android/overlay app/src/main/assets/hnmod/android/overlay
           cmp -s android/termux/build-with-mods.sh app/src/main/assets/hnmod/android/termux/build-with-mods.sh
           cmp -s hnmod-core/Cargo.toml app/src/main/assets/hnmod/hnmod-core/Cargo.toml
+          cmp -s hnmod-core/Cargo.lock app/src/main/assets/hnmod/hnmod-core/Cargo.lock
           cmp -s hnmod-core/src/lib.rs app/src/main/assets/hnmod/hnmod-core/src/lib.rs
           cmp -s hnmod-core/src/bin/hnmod.rs app/src/main/assets/hnmod/hnmod-core/src/bin/hnmod.rs
           cmp -s hnmod-core/src/dependencies.rs app/src/main/assets/hnmod/hnmod-core/src/dependencies.rs
