@@ -64,8 +64,8 @@ jobs:
         run: |
           ! grep -q 'com.termux.permission.RUN_COMMAND' app/src/main/AndroidManifest.xml
           ! grep -q 'com.termux' app/src/main/AndroidManifest.xml
-          grep -q 'horizon-toolchain' app/src/main/java/dev/horizon/launcher/data/TermuxCompiler.kt
-          grep -q 'supportedAbi' app/src/main/java/dev/horizon/launcher/data/TermuxCompiler.kt
+          grep -q 'horizon-toolchain' app/src/main/java/dev/horizon/launcher/data/EmbeddedToolchain.kt
+          grep -q 'supportedAbi' app/src/main/java/dev/horizon/launcher/data/EmbeddedToolchain.kt
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
