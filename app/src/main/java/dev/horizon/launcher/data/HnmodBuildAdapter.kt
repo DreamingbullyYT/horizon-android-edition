@@ -30,6 +30,8 @@ object HnmodBuildAdapter {
         "hnmod-core/Cargo.toml",
         "hnmod-core/README.md",
         "hnmod-core/src/lib.rs",
+        "hnmod-core/src/dependencies.rs",
+        "hnmod-core/src/pc_api.rs",
         "hnmod-core/src/bin/hnmod.rs",
         "hnmod-core/THIRD_PARTY_LICENSES/starling-MIT.txt"
     )
