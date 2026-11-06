@@ -192,6 +192,17 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
         return;
     };
     let launcher = files.join("launcher");
+    // Android's process executable is app_process, not the installed game library.
+    // Resolve post-build data beside the active local HNMod build instead.
+    if let Ok(active) = std::fs::read_to_string(files.join("updates/current")) {
+        let name = active.trim();
+        if !name.is_empty() && !name.contains('/') && !name.contains('\\') && name != "." && name != ".." {
+            let native_data = files.join("updates").join(name).join("native-data");
+            if native_data.is_dir() {
+                unsafe { std::env::set_var("HORIZON_NATIVE_DATA_ROOT", native_data); }
+            }
+        }
+    }
     let game_home = launcher.join("game");
     if let Err(error) = std::fs::create_dir_all(&game_home) {
         log::error!("Horizon Android: cannot create game directory: {error}");
