@@ -108,7 +108,7 @@ class MainActivity : ComponentActivity() {
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Continue") { _, _ ->
                 run("Starting HNMod compiler") {
-                    dev.horizon.launcher.data.TermuxCompiler.start(this, uris)
+                    dev.horizon.launcher.data.EmbeddedToolchain.start(this, uris)
                 }
             }
             .show()
