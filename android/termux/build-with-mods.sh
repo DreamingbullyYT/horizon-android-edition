@@ -48,14 +48,18 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 # object store without deleting the engine checkout or its Cargo cache.
 git_fetch_revision() {
   local repo="$1" revision="$2"
-  if git -C "$repo" fetch -q --filter=blob:none origin "$revision"; then
+  # Keep pack/index generation single-threaded. Android's private app filesystem can
+  # otherwise lose temporary pack files during large partial-clone fetches.
+  if git -c pack.threads=1 -c index.threads=1 -C "$repo" fetch -q --filter=blob:none origin "$revision"; then
     return 0
   fi
-  say "Repairing Git object/commit-graph metadata before retrying $revision"
+  say "Repairing Git object/commit-graph metadata and retrying $revision"
   git -C "$repo" config core.commitGraph false
+  git -C "$repo" config pack.threads 1
+  git -C "$repo" config index.threads 1
   rm -f "$repo/.git/objects/info/commit-graph"
   rm -rf "$repo/.git/objects/info/commit-graphs"
-  git -C "$repo" fetch -q --refetch --filter=blob:none origin "$revision"
+  git -c pack.threads=1 -c index.threads=1 -C "$repo" fetch -q --refetch --filter=blob:none origin "$revision"
 }
 
 # ---- 0. tools ---------------------------------------------------------------------------------
@@ -101,7 +105,17 @@ else
   CURRENT_SRC=$(tr -d '[:space:]' < "$SRC/.horizon-revision")
   if [ "$CURRENT_SRC" != "$PIN" ]; then
     say "Restoring base engine revision $PIN before resolving selected mods"
-    git -C "$SRC" reset --hard -q "$PIN"
+    # A partial clone may know the pin in its commit graph but not have the
+    # commit object locally. Fetch it explicitly before reset so Git does not
+    # start an uncontrolled lazy fetch while rewriting the working tree.
+    if ! git -C "$SRC" cat-file -e "$PIN^{commit}" 2>/dev/null; then
+      git_fetch_revision "$SRC" "$PIN" \
+        || die "could not restore base engine revision $PIN (Git pack recovery failed)"
+    fi
+    git -C "$SRC" cat-file -e "$PIN^{commit}" 2>/dev/null \
+      || die "base engine revision $PIN is still missing after fetch"
+    git -C "$SRC" reset --hard -q "$PIN" \
+      || die "could not reset engine checkout to base revision $PIN"
     git -C "$SRC" clean -fdq
     git -C "$SRC" apply --whitespace=nowarn "$REPO/android/android.patch" \
       || die "the Android patch does not apply to base revision $PIN"
