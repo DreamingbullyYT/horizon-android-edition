@@ -1,52 +1,55 @@
 # Horizon embedded Android toolchain
 
-## Goal
+## Target architecture
 
-HNMod compilation is intended to run inside Horizon's own application sandbox. Users should install
-only Horizon: no separate Termux APK, no RUN_COMMAND permission, no Termux settings, and no shared
-Downloads staging directory.
+Horizon owns the build environment in its private app sandbox. The target is:
 
-## Current repository state
+- App ID: \`dev.horizon.launcher\`
+- ARM64 ABI: \`arm64-v8a\`
+- Runtime prefix: \`/data/data/dev.horizon.launcher/files/usr\`
+- Android 10+ bootstrap format
+- No separate Termux app, RUN_COMMAND permission, external terminal, or shared-storage setup
 
-- The external Termux RUN_COMMAND integration has been removed from the Android manifest and
-  compiler entry point.
-- The launcher now has a Horizon-owned runtime status/preflight entry point and fails closed when
-  the runtime payload is absent.
-- The Android app remains ARM64-only, matching the current native game runtime.
-- **Compilation is not yet enabled in this commit.** The embedded runtime marker is not a compiler;
-  a real signed toolchain payload and executable bridge must be built and tested before marking the
-  runtime ready.
+## Bootstrap build
 
-## Why this is staged
+The manual GitHub Actions workflow \`.github/workflows/embedded-toolchain.yml\` checks out a pinned
+Termux package-build-system commit and builds packages from source with Horizon's application ID.
+It does **not** install stock \`com.termux\` binary packages into Horizon's prefix.
 
-A stock Termux bootstrap cannot simply be unpacked under Horizon's private directory. Termux
-packages are built around Termux's own package prefix and app data path. Horizon needs a package
-feed built for its own prefix (or a deliberately relocatable toolchain). Android 10+ also restricts
-execution of writable app-private files; the native execution bridge must address the W^X policy
-rather than relying on chmod.
+The initial package set is Rust/Cargo, Clang/LLVM, Git, rsync, binutils, Python, CMake, Make,
+pkg-config and coreutils. The workflow validates the archive contents, emits a SHA-256 checksum and
+a manifest, and uploads an artifact. Publishing is opt-in and creates an immutable, versioned
+GitHub Release.
 
-The planned implementation is split into verifiable milestones:
+Pinned package-builder revision: \`2cce9f2663c75223f8418b9682a61bc690052097\`.
 
-1. **Bootstrap proof:** package an ARM64 minimal shell/runtime in the APK, extract atomically into
-   `files/horizon-toolchain/usr`, verify a pinned SHA-256 manifest, and run an in-app smoke test.
-2. **Executable bridge:** implement and test the Android-compatible linker/exec mechanism on API 29+
-   devices. Never mark the runtime ready unless the smoke test passes.
-3. **Toolchain feed:** publish Horizon-prefix-compatible Rust, LLVM/Clang, Git, Python and build
-   dependencies. Pin package versions and verify signatures/checksums.
-4. **HNMod adapter:** connect the existing validation/mixins/build script to the private runtime,
-   preserve build logs in app storage, and import only verified AArch64 ELF outputs.
-5. **Remote fallback:** provide a separate isolated GitHub Actions build path. Do not embed a personal
-   GitHub token or expose repository secrets to mod build scripts.
+## Runtime status
 
-## Security
+The launcher currently has the Horizon-owned compiler boundary and intentionally fails closed.
+The generated bootstrap is **not yet installed or executed by the app**. The following work remains
+before local compilation can be enabled:
 
-HNMod build scripts and Rust procedural macros execute code. Local builds are not sandboxed, so
-show a trust warning and require explicit confirmation. A remote build runner must be ephemeral,
-must not receive repository secrets, and must validate the resulting ELF and metadata before
-publishing it.
+1. Add the bootstrap ZIP to the app's first-run download/install flow, verify the signed manifest
+   and SHA-256 before extraction, and install atomically under Horizon's private files directory.
+2. Preserve symlinks safely using the archive's symlink metadata; reject absolute paths, traversal,
+   duplicate paths and unexpected file types.
+3. Integrate an Android 10+ executable bridge compatible with app-private writable storage and
+   verify it on API 29+ devices. Merely extracting binaries and setting executable bits is not enough.
+4. Run shell, Cargo, Clang and \`readelf\` smoke tests before marking the runtime ready.
+5. Connect the existing HNMod validator, compatibility resolver, mixins application and game build
+   script to this runtime. Retain Cargo cache and logs across runs.
+6. Add artifact signature verification and rollback/repair support.
 
-## Storage and lifecycle
+The toolchain is multi-gigabyte and should be downloaded on first compilation, not embedded in the
+base APK. The app should display the download size, free-space requirement, progress and cancellation.
 
-The full Rust/Clang environment is large. Install it on first use, keep Cargo caches between builds,
-show storage requirements, support repair/update, and allow users to remove the toolchain without
-removing Minecraft data. Do not install multi-gigabyte packages as part of the base APK.
+## Remote fallback
+
+The remote build must be a separate Horizon-specific workflow. Never embed a personal GitHub token
+in the APK, and never expose repository secrets to mod build scripts or procedural macros.
+
+## Security and licensing
+
+HNMod build scripts and Rust procedural macros execute code. A local build is not a sandbox; ask
+for explicit trust confirmation before compilation. The build bootstrap is based on the Termux
+package build system; preserve its GPL-3.0 and per-package license notices when redistributing it.
