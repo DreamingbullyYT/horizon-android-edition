@@ -79,13 +79,17 @@ jobs:
           test -s "$archive"
           unzip -t "$archive"
           unzip -Z1 "$archive" > /tmp/bootstrap-files.txt
-          grep -q 'bin/bash' /tmp/bootstrap-files.txt
-          grep -q 'bin/cargo' /tmp/bootstrap-files.txt
-          grep -q 'bin/rustc' /tmp/bootstrap-files.txt
-          grep -q 'bin/clang' /tmp/bootstrap-files.txt
-          grep -q 'bin/git' /tmp/bootstrap-files.txt
-          grep -q 'lib/libtermux-exec-linker-ld-preload.so' /tmp/bootstrap-files.txt
-          grep -q 'etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh' /tmp/bootstrap-files.txt
+          symlink_entry="$(grep 'SYMLINKS.txt' /tmp/bootstrap-files.txt | head -n 1)"
+          test -n "$symlink_entry"
+          unzip -p "$archive" "$symlink_entry" | awk -F '←' 'NF == 2 { print $2 }' > /tmp/bootstrap-symlink-paths.txt
+          cat /tmp/bootstrap-files.txt /tmp/bootstrap-symlink-paths.txt > /tmp/bootstrap-all-paths.txt
+          grep -q 'bin/bash' /tmp/bootstrap-all-paths.txt
+          grep -q 'bin/cargo' /tmp/bootstrap-all-paths.txt
+          grep -q 'bin/rustc' /tmp/bootstrap-all-paths.txt
+          grep -q 'bin/clang' /tmp/bootstrap-all-paths.txt
+          grep -q 'bin/git' /tmp/bootstrap-all-paths.txt
+          grep -q 'lib/libtermux-exec-linker-ld-preload.so' /tmp/bootstrap-all-paths.txt
+          grep -q 'etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh' /tmp/bootstrap-all-paths.txt
           mkdir -p dist
           cp "$archive" dist/horizon-toolchain-aarch64.zip
           sha256sum dist/horizon-toolchain-aarch64.zip > dist/SHA256SUMS
