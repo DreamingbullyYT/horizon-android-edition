@@ -72,6 +72,7 @@ jobs:
           grep -q 'HnmodBuildAdapter.compile' app/src/main/java/dev/horizon/launcher/data/EmbeddedToolchain.kt
           grep -q 'SYMLINKS.txt' app/src/main/java/dev/horizon/launcher/data/EmbeddedBootstrapInstaller.kt
           grep -q 'TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE' app/src/main/java/dev/horizon/launcher/data/EmbeddedProcessRunner.kt
+          grep -q 'HORIZON_EMBEDDED' app/src/main/java/dev/horizon/launcher/data/EmbeddedProcessRunner.kt
           grep -q 'TERMUX_APP__PACKAGE_NAME="dev.horizon.launcher"' .github/workflows/embedded-toolchain.yml
           grep -q -- '--android10' .github/workflows/embedded-toolchain.yml
 
