@@ -1,9 +1,13 @@
 package dev.horizon.launcher.data
 
+import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
-import android.provider.OpenableColumns
+import android.os.Build
+import android.os.Environment
 import android.os.PowerManager
+import android.provider.MediaStore
+import android.provider.OpenableColumns
 import java.io.File
 import java.io.FileOutputStream
 
@@ -110,6 +114,49 @@ object HnmodBuildAdapter {
             if (wakeLock.isHeld) wakeLock.release()
             inputDir.deleteRecursively()
         }
+    }
+
+    /**
+     * Publishes the complete compiler output in the user's Downloads folder.
+     * MediaStore is permission-free on Android 10+; older Android versions keep
+     * a copy in the app-specific Downloads directory rather than failing the build.
+     */
+    private fun publishBuildLog(context: Context, source: File, buildName: String): String? {
+        if (!source.isFile) return null
+        val fileName = "Horizon-HNMod-$buildName.log"
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                    put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Horizon")
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: error("Android could not create the log in Downloads.")
+                try {
+                    context.contentResolver.openOutputStream(uri, "w")!!.use { output ->
+                        source.inputStream().use { input -> input.copyTo(output) }
+                    }
+                    ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }.also {
+                        context.contentResolver.update(uri, it, null, null)
+                    }
+                    "Downloads/Horizon/$fileName"
+                } catch (error: Throwable) {
+                    context.contentResolver.delete(uri, null, null)
+                    throw error
+                }
+            } else {
+                val directory = File(
+                    context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir,
+                    "Horizon"
+                )
+                check(directory.isDirectory || directory.mkdirs()) { "Cannot create log directory." }
+                val destination = File(directory, fileName)
+                source.copyTo(destination, overwrite = true)
+                destination.absolutePath
+            }
+        }.getOrNull()
     }
 
     private fun materializeProject(context: Context) {
