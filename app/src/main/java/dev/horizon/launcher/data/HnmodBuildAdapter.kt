@@ -47,7 +47,8 @@ object HnmodBuildAdapter {
                 require(displayName.endsWith(".hnmod", ignoreCase = true)) {
                     "Only .hnmod archives can be compiled: $displayName"
                 }
-                val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                val stem = displayName.substringBeforeLast('.', displayName)
+                val safeName = stem.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".hnmod"
                 val destination = File(inputDir, "${index.toString().padStart(3, '0')}_$safeName")
                 val source = context.contentResolver.openInputStream(uri)
                     ?: error("Could not open selected HNMod archive: $displayName")
