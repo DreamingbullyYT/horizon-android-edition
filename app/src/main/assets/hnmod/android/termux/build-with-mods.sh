@@ -41,6 +41,23 @@ mkdir -p "$WORK"
 say() { printf '\n== %s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
+# Android's long-lived partial clones can retain a stale commit-graph after an
+# interrupted fetch or object cleanup. Git may then refuse to fetch a pinned
+# revision because the graph references an object absent from the object DB.
+# Disable that optional index and retry once with --refetch, which repairs the
+# object store without deleting the engine checkout or its Cargo cache.
+git_fetch_revision() {
+  local repo="$1" revision="$2"
+  if git -C "$repo" fetch -q --filter=blob:none origin "$revision"; then
+    return 0
+  fi
+  say "Repairing Git object/commit-graph metadata before retrying $revision"
+  git -C "$repo" config core.commitGraph false
+  rm -f "$repo/.git/objects/info/commit-graph"
+  rm -rf "$repo/.git/objects/info/commit-graphs"
+  git -C "$repo" fetch -q --refetch --filter=blob:none origin "$revision"
+}
+
 # ---- 0. tools ---------------------------------------------------------------------------------
 for t in cargo rustc clang git rsync sha256sum readelf python3 cmake make pkg-config; do
   command -v "$t" >/dev/null || die "missing '$t'. The Horizon embedded toolchain is incomplete; repair or reinstall it from Horizon."
@@ -137,8 +154,8 @@ if [ "$PLAIN" = 0 ]; then
   mapfile -t PINS < <(printf '%s\n' "${PINS[@]}" | sort -u)
   BEST_PIN="$PIN"; BEST_DATE=""
   for candidate in "${PINS[@]}"; do
-    git -C "$SRC" fetch -q --filter=blob:none origin "$candidate" \
-      || die "cannot fetch mod-pinned Horizon revision $candidate"
+    git_fetch_revision "$SRC" "$candidate" \
+      || die "cannot fetch mod-pinned Horizon revision $candidate (Git object database repair failed)"
     committed=$(git -C "$SRC" show -s --format=%cI "$candidate") \
       || die "cannot read commit date for Horizon $candidate"
     if [ -z "$BEST_DATE" ] || [[ "$committed" > "$BEST_DATE" ]]; then
@@ -185,8 +202,8 @@ if [ "$PLAIN" = 0 ]; then
     mapfile -t MIXIN_PINS < <(printf '%s\n' "${MIXIN_PINS[@]}" | sort -u)
     BEST_MIXIN="$REV"; BEST_MIXIN_DATE=""
     for candidate in "${MIXIN_PINS[@]}"; do
-      git -C "$MIXIN_REPO" fetch -q --filter=blob:none origin "$candidate" \
-        || die "cannot fetch horizon-mixins revision $candidate"
+      git_fetch_revision "$MIXIN_REPO" "$candidate" \
+        || die "cannot fetch horizon-mixins revision $candidate (Git object database repair failed)"
       committed=$(git -C "$MIXIN_REPO" show -s --format=%cI "$candidate") \
         || die "cannot read commit date for horizon-mixins $candidate"
       if [ -z "$BEST_MIXIN_DATE" ] || [[ "$committed" > "$BEST_MIXIN_DATE" ]]; then
