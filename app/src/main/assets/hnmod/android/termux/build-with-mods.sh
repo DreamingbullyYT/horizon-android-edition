@@ -251,37 +251,63 @@ else
   mkdir -p "$STAGE"; rsync -rc --delete --exclude target "$SRC/" "$STAGE/"
 fi
 
-# ---- 4. compile ----------------------------------------------------------------------------------
-say "Compiling (profile $PROFILE). The first time this takes long; keep the phone charging."
+# ---- 4. build identity and content-addressed library cache -------------------------------------
 export CARGO_TARGET_DIR="$WORK/target"
 export CARGO_BUILD_JOBS="$JOBS"
 export CARGO_TERM_PROGRESS_WHEN=always CARGO_TERM_PROGRESS_WIDTH=100
-nice -n 10 cargo build --locked --manifest-path "$STAGE/Cargo.toml" \
-  -p horizon-android-game --profile "$PROFILE" 2>&1 | tee "$WORK/build.log" \
-  || die "the build failed; the end of $WORK/build.log says why"
-LIB="$CARGO_TARGET_DIR/$PROFILE/libhorizon_android_game.so"
-[ -f "$LIB" ] || die "no library produced at $LIB"
+CORE_SUM=$(find "$REPO/hnmod-core" -type f -not -path '*/target/*' -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-12)
+TOOLCHAIN_SUM=$({ rustc --version; cargo --version; clang --version | head -1; } | sha256sum | cut -c1-12)
+BUILD_KEY=$(
+  {
+    printf 'horizon=%s\nmixins=%s\nprofile=%s\ntarget=aarch64-linux-android\npatch=%s\noverlay=%s\ncore=%s\ntoolchain=%s\nscript=%s\n' \
+      "$PIN" "${REV:-none}" "$PROFILE" "$PATCH_SUM" "$OVERLAY_SUM" "$CORE_SUM" "$TOOLCHAIN_SUM" \
+      "$(sha256sum "$0" | cut -c1-12)"
+    for f in "${FILES[@]}"; do sha256sum "$f"; done
+  } | sha256sum | cut -c1-32
+)
+if [ "${HORIZON_EMBEDDED:-0}" = "1" ]; then
+  OUTROOT="$HOME"
+else
+  OUTROOT="$HOME/storage/downloads"; [ -d "$OUTROOT" ] || OUTROOT="$HOME"
+fi
+OUT="$OUTROOT/Horizon-builds/$NAME"
+CACHE_BUILD="$WORK/build-cache/$BUILD_KEY"
+rm -rf "$OUT"; mkdir -p "$OUT"
+CACHE_HIT=0
+if [ -s "$CACHE_BUILD/libhorizon_android_game.so" ] && [ -s "$CACHE_BUILD/build.json" ]; then
+  CACHED_SUM=$(sha256sum "$CACHE_BUILD/libhorizon_android_game.so" | cut -d' ' -f1)
+  RECORDED_SUM=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("sha256",""))' "$CACHE_BUILD/build.json" 2>/dev/null || true)
+  if [ "$CACHED_SUM" = "$RECORDED_SUM" ]; then
+    cp "$CACHE_BUILD/libhorizon_android_game.so" "$OUT/libhorizon_android_game.so"
+    CACHE_HIT=1
+    say "Reusing verified Android game library from build cache $BUILD_KEY"
+  fi
+fi
 
-# ---- 5. make sure the app can load it ------------------------------------------------------------
+if [ "$CACHE_HIT" = "0" ]; then
+  say "Compiling (profile $PROFILE). The first time this takes long; keep the phone charging."
+  nice -n 10 cargo build --locked --manifest-path "$STAGE/Cargo.toml" \
+    -p horizon-android-game --profile "$PROFILE" 2>&1 | tee "$WORK/build.log" \
+    || die "the build failed; the end of $WORK/build.log says why"
+  LIB="$CARGO_TARGET_DIR/$PROFILE/libhorizon_android_game.so"
+  [ -f "$LIB" ] || die "no library produced at $LIB"
+  cp "$LIB" "$OUT/libhorizon_android_game.so"
+fi
+
+# ---- 5. make sure the library can load in the Android app ----------------------------------------
+LIB="$OUT/libhorizon_android_game.so"
 say "Checking the library"
 command -v patchelf >/dev/null && patchelf --remove-rpath "$LIB" || true
 SYSTEM='libc.so|libm.so|libdl.so|liblog.so|libandroid.so|libvulkan.so|libEGL.so|libGLESv2.so|libGLESv3.so|libz.so|libOpenSLES.so|libaaudio.so|libjnigraphics.so|libnativewindow.so|libstdc\+\+.so|libc\+\+_shared.so'
 BAD=$(readelf -d "$LIB" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p' | grep -Ev "^($SYSTEM)$" || true)
 if [ -n "$BAD" ]; then
   echo "The library needs libraries the app does not have:"; echo "$BAD"
+  rm -rf "$OUT"
   die "libraries from Termux (not Android) are linked in. Send this list to the developer."
 fi
 if readelf -d "$LIB" | grep -q 'libc++_shared.so'; then
   echo "note: needs libc++_shared.so; the app must ship it (it does when built with the NDK's)." >&2
 fi
-
-if [ "${HORIZON_EMBEDDED:-0}" = "1" ]; then
-  OUTROOT="$HOME"
-else
-  OUTROOT="$HOME/storage/downloads"; [ -d "$OUTROOT" ] || OUTROOT="$HOME"
-fi
-OUT="$OUTROOT/Horizon-builds/$NAME"; mkdir -p "$OUT"
-cp "$LIB" "$OUT/libhorizon_android_game.so"
 
 # ---- 6. PC-compatible post-build programs -------------------------------------------------------
 POST="$STAGE/native-post-build.json"
@@ -339,12 +365,23 @@ PYPOST
     die "a native mod post-build step failed; see $WORK/build.log"
   fi
 fi
-SUM=$(sha256sum "$OUT/libhorizon_android_game.so" | cut -d' ' -f1)
+
+SUM=$(sha256sum "$LIB" | cut -d' ' -f1)
 {
-  printf '{\n  "name": "%s",\n  "upstream": "%s",\n  "android_patch": "%s",\n  "android_overlay": "%s",\n  "profile": "%s",\n' "$NAME" "$PIN" "$PATCH_SUM" "$OVERLAY_SUM" "$PROFILE"
+  printf '{\n  "name": "%s",\n  "build_key": "%s",\n  "upstream": "%s",\n  "android_patch": "%s",\n  "android_overlay": "%s",\n  "profile": "%s",\n' "$NAME" "$BUILD_KEY" "$PIN" "$PATCH_SUM" "$OVERLAY_SUM" "$PROFILE"
   printf '  "mods": [%s],\n  "sha256": "%s",\n  "built": "%s"\n}\n' \
     "$(printf '"%s",' "${IDS[@]:-}" | sed 's/,$//; s/^"",*$//')" "$SUM" "$(date -u +%FT%TZ)"
 } > "$OUT/build.json"
+
+# Cache only the verified library; post-build programs run again into this build's own version
+# directory so HORIZON_NATIVE_VERSION_DIR and generated data never point at a previous build.
+CACHE_PART="$CACHE_BUILD.partial"
+rm -rf "$CACHE_PART"; mkdir -p "$CACHE_PART"
+cp "$LIB" "$CACHE_PART/libhorizon_android_game.so"
+cp "$OUT/build.json" "$CACHE_PART/build.json"
+mkdir -p "$WORK/build-cache"
+rm -rf "$CACHE_BUILD"
+mv "$CACHE_PART" "$CACHE_BUILD"
 say "Done: $OUT"
 echo "sha256 ${SUM:0:16}…   mods: ${IDS[*]:-none}"
 echo "Horizon will validate and import this local build automatically."
