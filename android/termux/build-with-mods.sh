@@ -109,7 +109,17 @@ if [ "$PLAIN" = 0 ]; then
     toml="$MODS/$id/horizon-mixin.toml"
     # Stable-hook mods may build on a later engine, but the mixin tool still needs the target commit.
     if [ -n "$hooks" ]; then
-      sed -i -E "s/^([[:space:]]*horizon_revision[[:space:]]*=[[:space:]]*)\\"[^\\"]*\\"/\\1\\"$PIN\\"/" "$toml"
+      python3 - "$toml" "$PIN" <<'PY'
+import pathlib, re, sys
+path, revision = pathlib.Path(sys.argv[1]), sys.argv[2]
+source = path.read_text()
+updated, count = re.subn(r'(?m)^(\\s*horizon_revision\\s*=\\s*)"[^"]*"',
+                         lambda match: match.group(1) + '"' + revision + '"',
+                         source, count=1)
+if count != 1:
+    raise SystemExit(f"{path}: expected exactly one horizon_revision")
+path.write_text(updated)
+PY
     fi
     IDS+=("$id")
     echo "validated mod: $id"
