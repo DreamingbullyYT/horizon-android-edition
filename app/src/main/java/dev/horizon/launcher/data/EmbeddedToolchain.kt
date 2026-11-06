@@ -16,7 +16,8 @@ import java.io.File
  * instead of silently falling back to an external Termux installation.
  */
 object EmbeddedToolchain {
-    private const val RUNTIME_DIR = "horizon-toolchain"
+    private const val PREFIX_DIR = "usr"
+    private const val STATE_DIR = "horizon-toolchain"
     private const val MARKER = ".horizon-runtime-ready"
 
     data class RuntimeStatus(
@@ -27,9 +28,15 @@ object EmbeddedToolchain {
 
     fun status(activity: Activity): RuntimeStatus {
         val supported = Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
-        val root = File(activity.filesDir, RUNTIME_DIR)
-        val marker = File(root, MARKER)
-        val installed = supported && marker.isFile && marker.length() > 0L
+        val prefix = File(activity.filesDir, PREFIX_DIR)
+        val state = File(activity.filesDir, STATE_DIR)
+        val marker = File(state, MARKER)
+        val installed = supported &&
+            marker.isFile && marker.length() > 0L &&
+            File(prefix, "bin/bash").isFile &&
+            File(prefix, "bin/cargo").isFile &&
+            File(prefix, "bin/rustc").isFile &&
+            File(prefix, "bin/clang").exists()
         val detail = when {
             !supported -> "The embedded compiler currently targets ARM64 (arm64-v8a) only."
             installed -> "Embedded compiler runtime detected."
