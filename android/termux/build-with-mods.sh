@@ -260,12 +260,12 @@ TOOLCHAIN_SUM=$({ rustc --version; cargo --version; clang --version | head -1; }
 BUILD_KEY=$(
   {
     printf 'horizon=%s\nmixins=%s\nprofile=%s\ntarget=aarch64-linux-android\npatch=%s\noverlay=%s\ncore=%s\ntoolchain=%s\nscript=%s\n' \
-      "$PIN" "\${REV:-none}" "$PROFILE" "$PATCH_SUM" "$OVERLAY_SUM" "$CORE_SUM" "$TOOLCHAIN_SUM" \
+      "$PIN" "${REV:-none}" "$PROFILE" "$PATCH_SUM" "$OVERLAY_SUM" "$CORE_SUM" "$TOOLCHAIN_SUM" \
       "$(sha256sum "$0" | cut -c1-12)"
-    for f in "\${FILES[@]}"; do sha256sum "$f"; done
+    for f in "${FILES[@]}"; do sha256sum "$f"; done
   } | sha256sum | cut -c1-32
 )
-if [ "\${HORIZON_EMBEDDED:-0}" = "1" ]; then
+if [ "${HORIZON_EMBEDDED:-0}" = "1" ]; then
   OUTROOT="$HOME"
 else
   OUTROOT="$HOME/storage/downloads"; [ -d "$OUTROOT" ] || OUTROOT="$HOME"
@@ -370,7 +370,7 @@ SUM=$(sha256sum "$LIB" | cut -d' ' -f1)
 {
   printf '{\n  "name": "%s",\n  "build_key": "%s",\n  "upstream": "%s",\n  "android_patch": "%s",\n  "android_overlay": "%s",\n  "profile": "%s",\n' "$NAME" "$BUILD_KEY" "$PIN" "$PATCH_SUM" "$OVERLAY_SUM" "$PROFILE"
   printf '  "mods": [%s],\n  "sha256": "%s",\n  "built": "%s"\n}\n' \
-    "$(printf '"%s",' "\${IDS[@]:-}" | sed 's/,$//; s/^"",*$//')" "$SUM" "$(date -u +%FT%TZ)"
+    "$(printf '"%s",' "${IDS[@]:-}" | sed 's/,$//; s/^"",*$//')" "$SUM" "$(date -u +%FT%TZ)"
 } > "$OUT/build.json"
 
 # Cache only the verified library; post-build programs run again into this build's own version
