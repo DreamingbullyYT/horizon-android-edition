@@ -6,10 +6,16 @@ on:
     paths:
       - "hnmod-core/**"
       - "android/termux/**"
+      - "android/android.patch"
+      - "android/overlay/**"
+      - "app/src/main/assets/hnmod/android/**"
       - ".github/workflows/hnmod-core.yml"
   pull_request:
     paths:
       - "hnmod-core/**"
+      - "android/android.patch"
+      - "android/overlay/**"
+      - "app/src/main/assets/hnmod/android/**"
       - ".github/workflows/hnmod-core.yml"
   workflow_dispatch:
 
@@ -75,6 +81,35 @@ jobs:
           assert copy < post, "bundle data must be copied into the game version before post-build"
           assert 'HORIZON_NATIVE_DATA_DIR' in script
           assert 'HORIZON_NATIVE_BUNDLE_DATA_DIR' in script
+          PY
+      - name: Verify Android game bridge is a separate Rust module
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          patch = Path("android/android.patch").read_text()
+          embedded_patch = Path("app/src/main/assets/hnmod/android/android.patch").read_text()
+          assert patch == embedded_patch, "embedded Android patch must match its source"
+          assert '+mod android;' in patch
+          assert 'include!("game/android.rs")' not in patch, "do not put include! in game.rs: it makes every game target unsupported to horizon-mixins"
+          assert 'use android::new_event_loop as android_new_event_loop;' in patch
+          assert '+    android_touch: android::AndroidTouchState,' in patch
+          source = Path("android/overlay/crates/horizon-client/src/game/android.rs").read_text()
+          embedded = Path("app/src/main/assets/hnmod/android/overlay/crates/horizon-client/src/game/android.rs").read_text()
+          assert source == embedded, "embedded Android game bridge must match its source"
+          assert 'use super::*;' in source
+          assert 'pub(super) struct AndroidTouchState' in source
+          assert 'pub(super) auto_jump: bool' in source
+          for symbol in (
+              'pub(super) fn draw_android_touch_controls',
+              'pub(super) fn android_poll_input',
+              'pub(super) fn android_touch_look',
+              'pub(super) fn android_intercept',
+              'pub(super) fn android_publish_stats',
+              'pub(super) fn new_event_loop',
+              'pub(super) fn android_surface_suspended',
+              'pub(super) fn android_surface_resumed',
+          ):
+              assert symbol in source, f"parent game module needs access to {symbol}"
           PY
       - name: Test engine compatibility metadata extraction
         shell: bash
