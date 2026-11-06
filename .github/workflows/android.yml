@@ -83,6 +83,14 @@ jobs:
       - name: Fetch official Termux PRoot runtime assets
         run: bash scripts/fetch-hnmod-runtime-assets.sh
 
+      - name: Verify bundled Gemini-style Termux runtime assets
+        run: |
+          test -s app/src/main/assets/bootstrap-aarch64.zip
+          test -s app/src/main/assets/proot/proot
+          test -s app/src/main/assets/proot/loader
+          test -s app/src/main/assets/proot/lib/libtalloc.so.2
+          test -s app/src/main/assets/proot/lib/libandroid-shmem.so
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
