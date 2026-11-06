@@ -76,7 +76,7 @@ class MainActivity : ComponentActivity() {
         button("Install Minecraft (download)") { run("Installing Minecraft") { GameSetup.install(this, this::show); "Minecraft is ready." } }
         button("Import Minecraft folder") { folderPicker.launch(null) }
         button("Restore backup (.zip)") { backupPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }
-        button("Compile HNMod (.hnmod) in Termux") {
+        button("Compile HNMod (.hnmod) — embedded toolchain") {
             hnmodPicker.launch(arrayOf("application/octet-stream", "application/zip", "*/*"))
         }
         button("Import compiled game library (.so)") {
