@@ -102,8 +102,8 @@ class MainActivity : ComponentActivity() {
             .setTitle("Compile native mod source?")
             .setMessage(
                 "HNMod files contain Rust source. Their build scripts and procedural macros can execute code " +
-                    "with Termux's app permissions during compilation. The local compiler is not sandboxed. " +
-                    "Only continue if you trust every selected mod. Before the first build, Termux must allow external apps (allow-external-apps=true in ~/.termux/termux.properties); Horizon also needs RUN_COMMAND permission. The first run prompts for shared-storage access and installs the Rust/Clang toolchain."
+                    "with Horizon's app permissions during compilation. The local compiler is not sandboxed. " +
+                    "Only continue if you trust every selected mod. Horizon will manage its own compiler runtime; no separate Termux app, external command permission, or shared-storage setup is used."
             )
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Continue") { _, _ ->
