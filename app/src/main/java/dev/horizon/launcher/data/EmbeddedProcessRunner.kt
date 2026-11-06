@@ -5,7 +5,7 @@ import android.os.Build
 import android.os.Process
 import java.io.File
 
-/** Executes Termux commands in a private PRoot root using Termux's Android linker-exec bridge. */
+/** Runs commands in the Gemini-style private Termux/PRoot environment. */
 object EmbeddedProcessRunner {
     data class Result(val exitCode: Int, val output: String, val logFile: File)
 
@@ -30,18 +30,23 @@ object EmbeddedProcessRunner {
         val prefix = EmbeddedTermuxPaths.prefix(context)
         val proot = EmbeddedTermuxPaths.proot(context)
         val loader = EmbeddedTermuxPaths.loader(context)
-        val prootLib = EmbeddedTermuxPaths.prootLib(context)
         val state = EmbeddedTermuxPaths.state(context)
         val home = EmbeddedTermuxPaths.home(context)
         val tmp = EmbeddedTermuxPaths.tmp(context)
         val logs = File(state, "logs")
-        listOf(root, rootfs, termuxData, home, tmp, logs, prootLib).forEach {
+        val prefixLib = File(prefix, "lib")
+        listOf(root, rootfs, termuxData, prefixLib, home, tmp, logs).forEach {
             require(it.isDirectory || it.mkdirs()) { "Cannot create embedded Termux runtime directories." }
         }
-        require(proot.isFile && loader.isFile) { "Embedded PRoot runtime is missing. Reinstall the Horizon app build." }
-        val linkerPreload = File(prefix, "lib/libtermux-exec-linker-ld-preload.so")
-        require(linkerPreload.isFile) { "Termux Android linker compatibility library is missing." }
+        require(proot.isFile && loader.isFile) {
+            "Embedded PRoot runtime is missing. Reinstall the Horizon app build."
+        }
+        require(File(prefixLib, "libtalloc.so.2").isFile) {
+            "Embedded PRoot dependency libtalloc.so.2 is missing. Reinstall Horizon."
+        }
 
+        // Match Gemini-cli-for-Android: root=/, bind only the fake Termux data tree,
+        // and keep Android's system paths visible to the guest.
         val guestCommand = mutableListOf(
             proot.absolutePath, "-r", "/", "--link2symlink", "--kill-on-exit",
             "-b", "${termuxData.absolutePath}:/data/data/com.termux",
@@ -51,20 +56,22 @@ object EmbeddedProcessRunner {
             "${EmbeddedTermuxPaths.GUEST_PREFIX}/bin/bash", "-lc", shellCommand
         )
         val hostCommand = mutableListOf(
-            "/system/bin/sh", "-c", "exec \"\$@\"", "horizon"
+            "/system/bin/sh", "-c", "exec \"\$@\"",
+            "horizon"
         )
         hostCommand.addAll(guestCommand)
 
-        val process = ProcessBuilder(hostCommand).directory(state).redirectErrorStream(true)
+        val process = ProcessBuilder(hostCommand)
+            .directory(state)
+            .redirectErrorStream(true)
         val env = process.environment()
         env["PROOT"] = proot.absolutePath
         env["PROOT_LOADER"] = loader.absolutePath
         env["PROOT_TMP_DIR"] = tmp.absolutePath
         env["PROOT_NO_SECCOMP"] = "1"
-        env["LD_LIBRARY_PATH"] = prootLib.absolutePath
-        env["LD_PRELOAD"] = linkerPreload.absolutePath
-        env["TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE"] = "force"
-        env["TERMUX_EXEC__SYSTEM_LINKER_EXEC__LOG_LEVEL"] = "1"
+        // PRoot is an Android executable: its dependencies must be visible to the host linker.
+        // The same prefix/lib directory is used by Gemini CLI's working Termux setup.
+        env["LD_LIBRARY_PATH"] = prefixLib.absolutePath
         env["PREFIX"] = EmbeddedTermuxPaths.GUEST_PREFIX
         env["TERMUX__PREFIX"] = EmbeddedTermuxPaths.GUEST_PREFIX
         env["TERMUX__USER_ID"] = Process.myUid().toString()
@@ -72,12 +79,19 @@ object EmbeddedProcessRunner {
         env["TERMUX_APP__DATA_DIR"] = "/data/data/com.termux"
         env["TERMUX__ROOTFS"] = "/data/data/com.termux/files"
         env["TERMUX__NAME"] = "Horizon"
+        env["TERMUX_VERSION"] = "0.118.0"
+        env["TERMUX_APP_PID"] = Process.myPid().toString()
+        env["TERMUX_MAIN_PACKAGE_FORMAT"] = "debian"
+        env["TERMUX_APK_RELEASE"] = "F_DROID"
+        env["TERMUX_IS_TERMUX"] = "1"
         env["ANDROID__BUILD_VERSION_SDK"] = Build.VERSION.SDK_INT.toString()
         env["HOME"] = EmbeddedTermuxPaths.GUEST_HOME
         env["TMPDIR"] = "${EmbeddedTermuxPaths.GUEST_PREFIX}/tmp"
-        env["PATH"] = "/system/bin:/system/xbin"
+        env["PATH"] = "${EmbeddedTermuxPaths.GUEST_PREFIX}/bin:/system/bin:/system/xbin"
+        env["SHELL"] = "${EmbeddedTermuxPaths.GUEST_PREFIX}/bin/bash"
         env["LANG"] = "en_US.UTF-8"
         env["TERM"] = "xterm-256color"
+        env["COLORTERM"] = "truecolor"
         env["HORIZON_EMBEDDED"] = "1"
 
         val logFile = File(logs, "${label.replace(Regex("[^A-Za-z0-9_.-]"), "_")}.log")
