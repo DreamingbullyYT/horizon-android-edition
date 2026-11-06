@@ -64,9 +64,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             let paths: Vec<_> = args.collect();
             if paths.is_empty() { return Err("give at least one .hnmod archive".into()); }
-            let bundles = paths.iter()
-                .map(|path| read_bundle(std::fs::File::open(path)?))
-                .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
+            let mut bundles = Vec::with_capacity(paths.len());
+            for path in &paths {
+                let file = std::fs::File::open(path)?;
+                bundles.push(read_bundle(file)?);
+            }
             let candidate = EngineCandidate { revision, hooks_api, mixins_revision };
             let plan = resolve_compatibility(&bundles, &[candidate])?;
             println!("{}", serde_json::to_string(&json!({
