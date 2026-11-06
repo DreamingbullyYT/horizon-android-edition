@@ -103,7 +103,8 @@ class MainActivity : ComponentActivity() {
             .setMessage(
                 "HNMod files contain Rust source. Their build scripts and procedural macros can execute code " +
                     "with Horizon's app permissions during compilation. The local compiler is not sandboxed. " +
-                    "Only continue if you trust every selected mod. Horizon will manage its own compiler runtime; no separate Termux app, external command permission, or shared-storage setup is used."
+                    "Only continue if you trust every selected mod. Like the PC launcher, Horizon will select the newest pinned engine revision; if selected mods target different revisions, this confirmation also authorizes trying that mixed set (which may fail to apply or compile). " +
+                    "Horizon manages its own private compiler runtime; no separate Termux app, external command permission, or shared-storage setup is needed."
             )
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Continue") { _, _ ->
