@@ -60,7 +60,8 @@ fi
 # ---- 1. the engine: upstream at our pin + our Android patch -------------------------------------
 PIN=$(tr -d '[:space:]' < "$REPO/android/UPSTREAM_PIN")
 PATCH_SUM=$(sha256sum "$REPO/android/android.patch" | cut -c1-12)
-SRC="$WORK/src/$PIN-$PATCH_SUM-pc"
+OVERLAY_SUM=$(find "$REPO/android/overlay" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-12)
+SRC="$WORK/src/$PIN-$PATCH_SUM-$OVERLAY_SUM-pc"
 if [ ! -f "$SRC/.horizon-revision" ]; then
   say "Engine $PIN + Android patch (once)"
   rm -rf "$SRC.partial"; mkdir -p "$WORK/src"
@@ -265,7 +266,7 @@ OUT="$OUTROOT/Horizon-builds/$NAME"; mkdir -p "$OUT"
 cp "$LIB" "$OUT/libhorizon_android_game.so"
 SUM=$(sha256sum "$OUT/libhorizon_android_game.so" | cut -d' ' -f1)
 {
-  printf '{\n  "name": "%s",\n  "upstream": "%s",\n  "android_patch": "%s",\n  "profile": "%s",\n' "$NAME" "$PIN" "$PATCH_SUM" "$PROFILE"
+  printf '{\n  "name": "%s",\n  "upstream": "%s",\n  "android_patch": "%s",\n  "android_overlay": "%s",\n  "profile": "%s",\n' "$NAME" "$PIN" "$PATCH_SUM" "$OVERLAY_SUM" "$PROFILE"
   printf '  "mods": [%s],\n  "sha256": "%s",\n  "built": "%s"\n}\n' \
     "$(printf '"%s",' "${IDS[@]:-}" | sed 's/,$//; s/^"",*$//')" "$SUM" "$(date -u +%FT%TZ)"
 } > "$OUT/build.json"
