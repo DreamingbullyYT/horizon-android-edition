@@ -89,7 +89,11 @@ object EmbeddedToolchain {
             onProgress("Configuring official Termux package repository")
             val setup = EmbeddedProcessRunner.runShellCommand(
                 context,
-                "mkdir -p \$PREFIX/etc/apt \$PREFIX/var/cache/apt/archives/partial; " +
+                // Termux apt stores downloads under app data, outside the prefix.
+                "mkdir -p /data/data/com.termux/cache/apt/archives/partial " +
+                    "/data/data/com.termux/cache/apt/lists/partial " +
+                    "\$PREFIX/etc/apt \$PREFIX/var/cache/apt/archives/partial " +
+                    "\$PREFIX/var/lib/apt/lists/partial; " +
                     "printf '%s\\n' 'deb https://packages-cf.termux.dev/apt/termux-main stable main' > \$PREFIX/etc/apt/sources.list; " +
                     "apt update -o Acquire::Retries=5 -o Acquire::Queue-Mode=access || " +
                     "apt update -o Acquire::Retries=5 -o Acquire::Queue-Mode=access",
