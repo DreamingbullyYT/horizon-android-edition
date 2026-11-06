@@ -274,7 +274,7 @@ mod tests {
             "publisher": "example"
         });
         let manifest = format!(
-            "[mod]\\nid = \"pc-mod\"\\nversion = \"0.2.0\"\\n[compatibility]\\nhorizon_revision = \"{}\"\\n",
+            "[mod]\nid = \"pc-mod\"\nversion = \"0.2.0\"\n[compatibility]\nhorizon_revision = \"{}\"\n",
             "a".repeat(40)
         );
         let mut out = std::io::Cursor::new(Vec::new());
@@ -286,7 +286,7 @@ mod tests {
             z.start_file("mixins/pc-mod/horizon-mixin.toml", o).unwrap();
             z.write_all(manifest.as_bytes()).unwrap();
             z.start_file("mixins/pc-mod/engine/Cargo.toml", o).unwrap();
-            z.write_all(b"[package]\\nname = \"pc-mod-api\"\\nversion = \"0.1.0\"\\n").unwrap();
+            z.write_all(b"[package]\nname = \"pc-mod-api\"\nversion = \"0.1.0\"\n").unwrap();
             z.start_file("mixins/pc-mod/engine/src/lib.rs", o).unwrap();
             z.write_all(b"pub fn helper() {}").unwrap();
             z.start_file("mixins/pc-mod/data/assets/table.bin", o).unwrap();
