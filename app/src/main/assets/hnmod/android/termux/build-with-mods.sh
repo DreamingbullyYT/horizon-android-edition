@@ -78,6 +78,20 @@ if [ ! -f "$SRC/.horizon-revision" ]; then
   # horizon-mixins refuses symlinks (the PC launcher's source archive leaves them out too).
   find "$SRC.partial" -type l -delete
   mv "$SRC.partial" "$SRC"
+else
+  # A previous build may have selected a newer mod-pinned revision in this shared
+  # source directory. Always restore the app's base pin before resolving this build.
+  CURRENT_SRC=$(tr -d '[:space:]' < "$SRC/.horizon-revision")
+  if [ "$CURRENT_SRC" != "$PIN" ]; then
+    say "Restoring base engine revision $PIN before resolving selected mods"
+    git -C "$SRC" reset --hard -q "$PIN"
+    git -C "$SRC" clean -fdq
+    git -C "$SRC" apply --whitespace=nowarn "$REPO/android/android.patch" \
+      || die "the Android patch does not apply to base revision $PIN"
+    cp -a "$REPO/android/overlay/." "$SRC/"
+    find "$SRC" -type l -delete
+    printf '%s' "$PIN" > "$SRC/.horizon-revision"
+  fi
 fi
 
 # ---- 2. validate and extract .hnmod bundles through the shared Rust core ------------------------
