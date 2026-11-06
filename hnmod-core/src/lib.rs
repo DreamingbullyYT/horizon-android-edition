@@ -263,6 +263,45 @@ mod tests {
         assert!(!allowed_payload("payload.dll", "mod"));
     }
     #[test]
+    fn reads_official_pc_bundle_without_android_specific_fields() {
+        let horizon = "a".repeat(40);
+        let mixins = "b".repeat(40);
+        let native = serde_json::json!({
+            "id": "pc-mod",
+            "horizon": horizon,
+            "mixins": mixins,
+            "hooks": 3,
+            "publisher": "example"
+        });
+        let manifest = format!(
+            "[mod]\\nid = \"pc-mod\"\\nversion = \"0.2.0\"\\n[compatibility]\\nhorizon_revision = \"{}\"\\n",
+            "a".repeat(40)
+        );
+        let mut out = std::io::Cursor::new(Vec::new());
+        {
+            let mut z = zip::ZipWriter::new(&mut out);
+            let o = zip::write::SimpleFileOptions::default();
+            z.start_file(MANIFEST_FILE, o).unwrap();
+            z.write_all(&serde_json::to_vec(&native).unwrap()).unwrap();
+            z.start_file("mixins/pc-mod/horizon-mixin.toml", o).unwrap();
+            z.write_all(manifest.as_bytes()).unwrap();
+            z.start_file("mixins/pc-mod/engine/Cargo.toml", o).unwrap();
+            z.write_all(b"[package]\\nname = \"pc-mod-api\"\\nversion = \"0.1.0\"\\n").unwrap();
+            z.start_file("mixins/pc-mod/engine/src/lib.rs", o).unwrap();
+            z.write_all(b"pub fn helper() {}").unwrap();
+            z.start_file("mixins/pc-mod/data/assets/table.bin", o).unwrap();
+            z.write_all(b"data").unwrap();
+            z.finish().unwrap();
+        }
+        let bundle = read_bundle(std::io::Cursor::new(out.into_inner())).unwrap();
+        assert_eq!(bundle.manifest.id, "pc-mod");
+        assert_eq!(bundle.manifest.version, "0.2.0");
+        assert_eq!(bundle.manifest.game, "");
+        assert_eq!(bundle.manifest.horizon, horizon);
+        assert_eq!(bundle.manifest.mixins, mixins);
+    }
+
+    #[test]
     fn stable_hook_mod_can_target_later_compatible_engine() {
         let a = "a".repeat(40); let b = "b".repeat(40);
         let bundle = read_bundle(std::io::Cursor::new(archive(Some(3), &a, &b))).unwrap();
