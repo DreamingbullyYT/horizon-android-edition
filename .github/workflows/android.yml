@@ -68,6 +68,8 @@ jobs:
           grep -q 'supportedAbi' app/src/main/java/dev/horizon/launcher/data/EmbeddedToolchain.kt
           test -f app/src/main/java/dev/horizon/launcher/data/EmbeddedBootstrapInstaller.kt
           test -f app/src/main/java/dev/horizon/launcher/data/EmbeddedProcessRunner.kt
+          test -f app/src/main/java/dev/horizon/launcher/data/HnmodBuildAdapter.kt
+          grep -q 'HnmodBuildAdapter.compile' app/src/main/java/dev/horizon/launcher/data/EmbeddedToolchain.kt
           grep -q 'SYMLINKS.txt' app/src/main/java/dev/horizon/launcher/data/EmbeddedBootstrapInstaller.kt
           grep -q 'TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE' app/src/main/java/dev/horizon/launcher/data/EmbeddedProcessRunner.kt
           grep -q 'TERMUX_APP__PACKAGE_NAME="dev.horizon.launcher"' .github/workflows/embedded-toolchain.yml
