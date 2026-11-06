@@ -62,15 +62,26 @@ jobs:
           PY
           grep -F 'TERMUX_APP__PACKAGE_NAME="dev.horizon.launcher"' scripts/properties.sh
           test "$(grep -F 'TERMUX_APP__PACKAGE_NAME="dev.horizon.launcher"' scripts/properties.sh | wc -l)" -eq 1
+          # The pinned bootstrap list predates these source-package/subpackage renames.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("scripts/build-bootstraps.sh")
+          s = p.read_text()
+          old = 'PACKAGES+=("bzip2")'
+          if s.count(old) != 1:
+              raise SystemExit("Pinned bootstrap package list changed; review bzip2/libbz2 mapping")
+          p.write_text(s.replace(old, 'PACKAGES+=("libbz2")'))
+          PY
 
       - name: Build Android 10+ ARM64 bootstrap with Horizon-prefix packages
         working-directory: termux-packages
         run: |
           # Build packages from source. Do not download official com.termux-prefix debs.
+          # clang is emitted by libllvm as a subpackage in this pinned package tree.
           ./scripts/run-docker.sh ./scripts/build-bootstraps.sh \
             --android10 \
             --architectures aarch64 \
-            --add rust,clang,git,rsync,binutils,python,cmake,make,pkg-config,coreutils
+            --add rust,libllvm,git,rsync,binutils,python,cmake,make,pkg-config,coreutils
 
       - name: Verify archive and produce integrity manifest
         run: |
