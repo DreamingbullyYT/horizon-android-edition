@@ -40,9 +40,7 @@ class MainActivity : ComponentActivity() {
         if (uri != null) run("Restoring backup") { GameSetup.restoreBackup(this, uri, this::show).let { "Restored $it Minecraft resource set(s)." } }
     }
     private val hnmodPicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isNotEmpty()) run("Starting HNMod compiler") {
-            dev.horizon.launcher.data.TermuxCompiler.start(this, uris)
-        }
+        if (uris.isNotEmpty()) confirmAndCompileHnmods(uris)
     }
     private val compiledBuildPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) confirmAndImportBuild(uri)
@@ -98,6 +96,23 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun show(text: String) { status.text = text }
+
+    private fun confirmAndCompileHnmods(uris: List<Uri>) {
+        AlertDialog.Builder(this)
+            .setTitle("Compile native mod source?")
+            .setMessage(
+                "HNMod files contain Rust source. Their build scripts and procedural macros can execute code " +
+                    "with Termux's app permissions during compilation. The local compiler is not sandboxed. " +
+                    "Only continue if you trust every selected mod. First-time setup also installs the Rust/Clang toolchain in Termux."
+            )
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Continue") { _, _ ->
+                run("Starting HNMod compiler") {
+                    dev.horizon.launcher.data.TermuxCompiler.start(this, uris)
+                }
+            }
+            .show()
+    }
 
     private fun confirmAndImportBuild(uri: Uri) {
         AlertDialog.Builder(this)
