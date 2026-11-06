@@ -83,7 +83,7 @@ jobs:
           assert 'git_fetch_revision "$MIXIN_SOURCE" "$REV"' in script
           assert 'restore_github_snapshot "$MIXIN_SOURCE" "$REV" "horizon-rust/horizon-mixins"' in script
           assert 'git -C "$MIXIN_SOURCE" checkout' not in script
-          assert 'cargo install --locked --path "$MIXIN_SOURCE/crates/horizon-mixins-cli" --root "$TOOL"' in script
+          assert 'cargo_retry install --locked --path "$MIXIN_SOURCE/crates/horizon-mixins-cli" --root "$TOOL"' in script
           assert 'cargo install --locked --git https://github.com/horizon-rust/horizon-mixins' not in script
           asset = Path("app/src/main/assets/hnmod/android/termux/build-with-mods.sh").read_text()
           assert asset == script, "embedded compiler script must match its source"
