@@ -95,6 +95,7 @@ if [ "$PLAIN" = 0 ]; then
   # Match the PC launcher's revision selection: pinned mods build on the newest
   # pinned Horizon revision or the installed base, determined by Git commit dates.
   # A commit hash is never treated as a timestamp.
+  HNMOD_CLI=(cargo run --quiet --manifest-path "$REPO/hnmod-core/Cargo.toml" --bin hnmod --)
   PINS=(); MOD_PINS=(); MIXIN_PINS=()
   for f in "${FILES[@]}"; do
     info=$("${HNMOD_CLI[@]}" inspect "$f") || die "validation failed: $f"
@@ -170,7 +171,6 @@ if [ "$PLAIN" = 0 ]; then
     REV="$BEST_MIXIN"
   fi
 
-  HNMOD_CLI=(cargo run --quiet --manifest-path "$REPO/hnmod-core/Cargo.toml" --bin hnmod --)
   say "Checking all mods against Horizon $PIN (hooks API $HOOKS_API; mixins $REV)"
   "${HNMOD_CLI[@]}" resolve "$PIN" "$HOOKS_API" "$REV" "${FILES[@]}" \
     || die "the selected mods are not compatible with this engine/mixins toolchain"
