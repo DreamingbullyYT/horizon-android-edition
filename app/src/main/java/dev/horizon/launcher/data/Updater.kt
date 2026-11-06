@@ -307,6 +307,8 @@ object Updater {
 
     private fun copyNativeData(source: File, destination: File) {
         val root = source.canonicalFile.toPath()
+        var files = 0
+        var totalBytes = 0L
         source.walkTopDown().forEach { entry ->
             require(!Files.isSymbolicLink(entry.toPath())) {
                 "Native mod post-build data contains a symbolic link: ${entry.name}"
@@ -318,6 +320,11 @@ object Updater {
             if (entry.isDirectory) {
                 require(target.isDirectory || target.mkdirs()) { "Could not create native mod data directory." }
             } else if (entry.isFile) {
+                files++
+                totalBytes += entry.length()
+                require(files <= 512 && totalBytes <= 64L * 1024L * 1024L) {
+                    "Native mod post-build data exceeds the 512-file / 64 MiB safety limit."
+                }
                 target.parentFile?.let { require(it.isDirectory || it.mkdirs()) }
                 entry.inputStream().use { input -> target.outputStream().use { input.copyTo(it) } }
             } else {
