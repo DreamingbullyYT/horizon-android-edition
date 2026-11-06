@@ -176,7 +176,7 @@ index 2fd12c0c6..b25fcb7b8 100644
              game::exit_code::USAGE
          } else {
 diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.rs
-index dd91773a0..16b8abe82 100644
+index bd638da91..2599e3a6c 100644
 --- a/crates/horizon-client/src/game.rs
 +++ b/crates/horizon-client/src/game.rs
 @@ -436,6 +436,9 @@ use std::{
@@ -206,7 +206,7 @@ index dd91773a0..16b8abe82 100644
          player.item_use_speed = item_use_speed;
          player.item_use_slows_sprint = item_use_slows_sprint;
          player.respiration = respiration;
-@@ -7999,7 +8003,7 @@ impl Game<'_> {
+@@ -8001,7 +8005,7 @@ impl Game<'_> {
      fn apply_mouse_look(&mut self) {
          let look = self.look_options();
          let time = self.started.elapsed().as_secs_f64();
@@ -215,7 +215,15 @@ index dd91773a0..16b8abe82 100644
          let grabbed = pointer && self.screen == Screen::Playing && self.player.is_some();
          let active = self.focused || self.agent_pointer;
          if let Some((xo, yo)) = self
-@@ -17050,8 +17054,12 @@ fn autosave_interval(rate: f32) -> i64 {
+@@ -15858,6 +15862,7 @@ impl Game<'_> {
+             Vec::new()
+         };
+         let mut hud = horizon_client::spans::time("hud", || self.hud(size));
++        self.draw_android_touch_controls(&mut hud);
+         self.flush_ime(&mut hud);
+         let title = self.shows_panorama();
+         let (yaw, pitch) = if title {
+@@ -17064,8 +17069,12 @@ fn autosave_interval(rate: f32) -> i64 {
      i64::from((rate * 300.0) as i32).max(100)
  }
  impl ApplicationHandler for Game<'_> {
@@ -228,7 +236,7 @@ index dd91773a0..16b8abe82 100644
              return;
          }
          // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
-@@ -17138,6 +17146,8 @@ impl ApplicationHandler for Game<'_> {
+@@ -17152,6 +17161,8 @@ impl ApplicationHandler for Game<'_> {
          }
      }
      fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -237,7 +245,7 @@ index dd91773a0..16b8abe82 100644
          self.idle(event_loop);
      }
      /// The application is ending. On macOS, Quit (Cmd+Q) ends it through
-@@ -17169,6 +17179,10 @@ impl Game<'_> {
+@@ -17183,6 +17194,10 @@ impl Game<'_> {
          if !ours {
              return;
          }
@@ -248,7 +256,7 @@ index dd91773a0..16b8abe82 100644
          follow_keymap(&mut event);
          // MacosUtil.setCtrlClickEmulatesRightClick: Control + left click is a right click.
          if let WindowEvent::MouseInput { state, button, .. } = &mut event
-@@ -18609,6 +18623,7 @@ impl Game<'_> {
+@@ -18623,6 +18638,7 @@ impl Game<'_> {
                          }
                          self.frames += 1;
                          self.fps_frames += 1;
@@ -256,7 +264,7 @@ index dd91773a0..16b8abe82 100644
                          horizon_client::crash::debug_crash_tick();
                          if self.fps_at.elapsed() >= Duration::from_secs(1) {
                              self.fps = self.fps_frames as f32 / self.fps_at.elapsed().as_secs_f32();
-@@ -18880,6 +18895,7 @@ impl<'a> Game<'a> {
+@@ -18894,6 +18910,7 @@ impl<'a> Game<'a> {
              physical_keys: HashSet::new(),
              physical_buttons: HashSet::new(),
              drag_button: None,
@@ -264,7 +272,7 @@ index dd91773a0..16b8abe82 100644
              right_click_emulation: Default::default(),
              left: false,
              right: false,
-@@ -20946,7 +20962,7 @@ fn run_event_loop(mut game: Game<'_>) -> Result<()> {
+@@ -20961,7 +20978,7 @@ fn run_event_loop(mut game: Game<'_>) -> Result<()> {
          return game.error.take().map_or(Ok(()), Err);
      }
      let mut split = split::Split::new(game);
@@ -273,7 +281,7 @@ index dd91773a0..16b8abe82 100644
      game = split.host;
      narrator::stop();
      leave_fullscreen_after(&result, &mut game.settings);
-@@ -21003,6 +21019,7 @@ impl Loading {
+@@ -21018,6 +21035,7 @@ impl Loading {
      }
      fn resumed(&mut self, event_loop: &ActiveEventLoop) {
          if self.window.is_some() {
@@ -281,7 +289,7 @@ index dd91773a0..16b8abe82 100644
              return;
          }
          // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
-@@ -21295,6 +21312,12 @@ enum App {
+@@ -21310,6 +21328,12 @@ enum App {
      Ready(Box<split::Split<'static>>),
  }
  impl ApplicationHandler for App {
@@ -294,7 +302,7 @@ index dd91773a0..16b8abe82 100644
      fn resumed(&mut self, event_loop: &ActiveEventLoop) {
          match self {
              App::Loading(loading) => loading.resumed(event_loop),
-@@ -21439,7 +21462,7 @@ fn run_loading(
+@@ -21454,7 +21478,7 @@ fn run_loading(
          error: None,
      };
      let mut app = App::Loading(Box::new(loading));
