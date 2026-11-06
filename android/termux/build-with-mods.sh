@@ -46,6 +46,22 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 # revision because the graph references an object absent from the object DB.
 # Disable that optional index and retry once with --refetch, which repairs the
 # object store without deleting the engine checkout or its Cargo cache.
+# Materialize an exact source snapshot without Git checkout/lazy blob fetching.
+# Git metadata is retained for revision/date resolution; source files come from codeload.
+restore_github_snapshot() {
+  local repo_dir="$1" revision="$2" slug="$3" archive="$WORK/source-$revision.tar.gz"
+  command -v curl >/dev/null || die "curl is required to download pinned source snapshots"
+  command -v tar >/dev/null || die "tar is required to unpack pinned source snapshots"
+  say "Downloading exact source snapshot $slug@$revision"
+  curl -fL --retry 3 --retry-all-errors --connect-timeout 20 \
+    "https://codeload.github.com/$slug/tar.gz/$revision" -o "$archive" \
+    || die "could not download source snapshot $slug@$revision"
+  find "$repo_dir" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+  tar -xzf "$archive" --strip-components=1 -C "$repo_dir" \
+    || die "could not extract source snapshot $slug@$revision"
+  rm -f "$archive"
+}
+
 git_fetch_revision() {
   local repo="$1" revision="$2"
   # Keep pack/index generation single-threaded. Android's private app filesystem can
@@ -63,7 +79,7 @@ git_fetch_revision() {
 }
 
 # ---- 0. tools ---------------------------------------------------------------------------------
-for t in cargo rustc clang git rsync sha256sum readelf python3 cmake make pkg-config; do
+for t in cargo rustc clang git rsync sha256sum readelf python3 cmake make pkg-config curl tar; do
   command -v "$t" >/dev/null || die "missing '$t'. The Horizon embedded toolchain is incomplete; repair or reinstall it from Horizon."
 done
 case $(uname -m) in aarch64|arm64) ;; *) die "this script is for a 64-bit ARM phone (aarch64), not $(uname -m)";; esac
@@ -88,8 +104,9 @@ SRC="$WORK/src/$PIN-$PATCH_SUM-$OVERLAY_SUM-pc"
 if [ ! -f "$SRC/.horizon-revision" ]; then
   say "Engine $PIN + Android patch (once)"
   rm -rf "$SRC.partial"; mkdir -p "$WORK/src"
-  git clone -q --filter=blob:none https://github.com/horizon-rust/horizon.git "$SRC.partial"
-  git -C "$SRC.partial" checkout -q "$PIN"
+  git clone -q --filter=blob:none --no-checkout https://github.com/horizon-rust/horizon.git "$SRC.partial"
+  git_fetch_revision "$SRC.partial" "$PIN" || die "could not fetch Horizon revision metadata $PIN"
+  restore_github_snapshot "$SRC.partial" "$PIN" "horizon-rust/horizon"
   git -C "$SRC.partial" config core.fileMode false
   git -C "$SRC.partial" apply --whitespace=nowarn "$REPO/android/android.patch" \
     || die "the Android patch does not apply to $PIN"
@@ -105,18 +122,11 @@ else
   CURRENT_SRC=$(tr -d '[:space:]' < "$SRC/.horizon-revision")
   if [ "$CURRENT_SRC" != "$PIN" ]; then
     say "Restoring base engine revision $PIN before resolving selected mods"
-    # A partial clone may know the pin in its commit graph but not have the
-    # commit object locally. Fetch it explicitly before reset so Git does not
-    # start an uncontrolled lazy fetch while rewriting the working tree.
-    if ! git -C "$SRC" cat-file -e "$PIN^{commit}" 2>/dev/null; then
-      git_fetch_revision "$SRC" "$PIN" \
-        || die "could not restore base engine revision $PIN (Git pack recovery failed)"
-    fi
+    git_fetch_revision "$SRC" "$PIN" \
+      || die "could not fetch base engine revision metadata $PIN"
     git -C "$SRC" cat-file -e "$PIN^{commit}" 2>/dev/null \
-      || die "base engine revision $PIN is still missing after fetch"
-    git -C "$SRC" reset --hard -q "$PIN" \
-      || die "could not reset engine checkout to base revision $PIN"
-    git -C "$SRC" clean -fdq
+      || die "base engine revision $PIN is missing from Git metadata"
+    restore_github_snapshot "$SRC" "$PIN" "horizon-rust/horizon"
     git -C "$SRC" apply --whitespace=nowarn "$REPO/android/android.patch" \
       || die "the Android patch does not apply to base revision $PIN"
     cp -a "$REPO/android/overlay/." "$SRC/"
@@ -185,8 +195,7 @@ if [ "$PLAIN" = 0 ]; then
   fi
   if [ "$BEST_PIN" != "$PIN" ]; then
     say "Selecting newest mod-compatible Horizon revision $BEST_PIN (by Git commit date)"
-    git -C "$SRC" reset --hard -q "$BEST_PIN"
-    git -C "$SRC" clean -fdq
+    restore_github_snapshot "$SRC" "$BEST_PIN" "horizon-rust/horizon"
     git -C "$SRC" apply --whitespace=nowarn "$REPO/android/android.patch" \
       || die "the Android patch does not apply to selected mod revision $BEST_PIN"
     cp -a "$REPO/android/overlay/." "$SRC/"
@@ -269,13 +278,14 @@ if [ ${#IDS[@]} -gt 0 ]; then
     MIXIN_SOURCE="$WORK/mixins-src"
     if [ ! -d "$MIXIN_SOURCE/.git" ]; then
       rm -rf "$MIXIN_SOURCE"
-      git clone -q --filter=blob:none https://github.com/horizon-rust/horizon-mixins.git "$MIXIN_SOURCE" \
-        || die "could not clone horizon-mixins source"
+      git clone -q --filter=blob:none --no-checkout https://github.com/horizon-rust/horizon-mixins.git "$MIXIN_SOURCE" \
+        || die "could not clone horizon-mixins metadata"
     fi
     git_fetch_revision "$MIXIN_SOURCE" "$REV" \
       || die "could not fetch horizon-mixins source revision $REV"
-    git -C "$MIXIN_SOURCE" checkout -q --detach "$REV" \
-      || die "could not check out horizon-mixins source revision $REV"
+    git -C "$MIXIN_SOURCE" cat-file -e "$REV^{commit}" 2>/dev/null \
+      || die "horizon-mixins revision metadata $REV is missing"
+    restore_github_snapshot "$MIXIN_SOURCE" "$REV" "horizon-rust/horizon-mixins"
     say "Building horizon-mixins $REV from the local checkout (once)"
     cargo install --locked --path "$MIXIN_SOURCE/crates/horizon-mixins-cli" --root "$TOOL" \
       || die "horizon-mixins failed to build from its local checkout"
