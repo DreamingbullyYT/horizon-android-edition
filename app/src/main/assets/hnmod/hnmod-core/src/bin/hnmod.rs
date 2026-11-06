@@ -1,5 +1,5 @@
 //! Small command-line front end used by the Android Termux compiler.
-use horizon_hnmod_core::{is_revision, read_bundle, resolve_compatibility, EngineCandidate};
+use horizon_hnmod_core::{dependencies, is_revision, read_bundle, resolve_compatibility, EngineCandidate};
 use serde_json::json;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -69,6 +69,41 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 let file = std::fs::File::open(path)?;
                 bundles.push(read_bundle(file)?);
             }
+            // Resolve the exact PC [dependencies] graph before any files are staged.
+            // API packages are required for every installed dependency, including present optional deps.
+            let mut declared = Vec::with_capacity(bundles.len());
+            for bundle in &bundles {
+                let manifest_path = format!("mixins/{}/horizon-mixin.toml", bundle.manifest.id);
+                let raw = bundle.files.get(&manifest_path)
+                    .ok_or_else(|| format!("{}: missing mixin manifest", bundle.manifest.id))?;
+                let manifest_text = std::str::from_utf8(raw)
+                    .map_err(|e| format!("{}: {e}", manifest_path))?;
+                let value: toml::Value = toml::from_str(manifest_text)
+                    .map_err(|e| format!("{}: {e}", manifest_path))?;
+                let api_path = value.get("api").and_then(|v| v.get("path")).and_then(toml::Value::as_str);
+                let has_api = if let Some(path) = api_path {
+                    let relative = Path::new(path);
+                    if relative.is_absolute() || !relative.components().all(|c| matches!(c, Component::Normal(_))) {
+                        return Err(format!("{}: invalid [api] path {path:?}", bundle.manifest.id).into());
+                    }
+                    let cargo = format!("mixins/{}/{}/Cargo.toml", bundle.manifest.id, path.trim_end_matches('/'));
+                    if !bundle.files.contains_key(&cargo) {
+                        return Err(format!("{}: [api] path must point to a bundled crate with Cargo.toml", bundle.manifest.id).into());
+                    }
+                    true
+                } else { false };
+                let deps = dependencies::parse(&bundle.manifest.id, value.get("dependencies"))
+                    .map_err(|e| e.to_string())?;
+                declared.push((has_api, deps));
+            }
+            let inputs: Vec<_> = bundles.iter().zip(&declared).map(|(bundle, (has_api, deps))| dependencies::Mod {
+                id: &bundle.manifest.id,
+                version: &bundle.manifest.version,
+                has_api: *has_api,
+                dependencies: deps,
+            }).collect();
+            let dependency_order = dependencies::resolve(&inputs).map_err(|e| e.to_string())?
+                .order.into_iter().map(|i| bundles[i].manifest.id.clone()).collect::<Vec<_>>();
             let candidate = EngineCandidate { revision, hooks_api, mixins_revision };
             let plan = resolve_compatibility(&bundles, &[candidate])?;
             println!("{}", serde_json::to_string(&json!({
@@ -76,7 +111,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "hooks_api": plan.selected.hooks_api,
                 "mixins_revision": plan.selected.mixins_revision,
                 "mods": plan.mods,
-                "warnings": plan.warnings
+                "warnings": plan.warnings,
+                "dependency_order": dependency_order
             }))?);
         }
         _ => {
