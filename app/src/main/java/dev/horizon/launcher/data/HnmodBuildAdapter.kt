@@ -80,7 +80,7 @@ object HnmodBuildAdapter {
             val buildName = "mods-${System.currentTimeMillis()}"
             val projectRoot = File(context.filesDir, "horizon-project")
             val script = File(projectRoot, "android/termux/build-with-mods.sh")
-            val args = listOf("--name", buildName, "--jobs", "3") + archives.map { it.absolutePath }
+            val args = listOf("--name", buildName, "--jobs", "3", "--allow-version-mismatch") + archives.map { it.absolutePath }
             val build = EmbeddedProcessRunner.runScript(context, script, args)
             check(build.exitCode == 0) {
                 "HNMod compilation failed (exit ${build.exitCode}). Full log: ${build.logFile.absolutePath}\n${build.output.takeLast(8000)}"
