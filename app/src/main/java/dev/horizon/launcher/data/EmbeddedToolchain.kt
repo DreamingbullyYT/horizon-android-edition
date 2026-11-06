@@ -11,9 +11,8 @@ import kotlinx.coroutines.withContext
  * Horizon-owned toolchain entry point.
  *
  * This deliberately does not call Termux RUN_COMMAND, inspect another app, or request shared
- * storage. The runtime is installed in Horizon's private files directory. Until the pinned,
- * app-prefix-compatible bootstrap and Android W^X execution bridge are shipped, fail closed
- * instead of silently falling back to an external Termux installation.
+ * storage. The pinned bootstrap is installed under Horizon's private files/usr prefix and must
+ * pass the Android linker, shell, Cargo and Clang smoke tests before HNMod builds are enabled.
  */
 object EmbeddedToolchain {
     private const val PREFIX_DIR = "usr"
@@ -78,7 +77,7 @@ object EmbeddedToolchain {
         val detail = when {
             !supported -> "The embedded compiler currently targets ARM64 (arm64-v8a) only."
             installed -> "Embedded toolchain runtime ready."
-            else -> "The embedded compiler runtime is not bundled in this build yet. No external Termux app is required or used."
+            else -> "The embedded compiler runtime is not installed yet. No external Termux app is required or used."
         }
         return RuntimeStatus(supported, installed, detail)
     }
