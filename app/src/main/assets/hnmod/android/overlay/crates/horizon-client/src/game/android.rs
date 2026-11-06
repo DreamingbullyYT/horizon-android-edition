@@ -1,5 +1,6 @@
 // Android input bridge and touch state, kept out of game.rs so upstream merges stay clean.
-// Included into `game` with `include!`, so it shares that module's scope and private fields.
+// Declared as `mod android;`; it can still access parent-private game state from this child module.
+use super::*;
 
 // Own names for what upstream's imports do not have, so a later upstream import of the same names cannot clash.
 #[cfg(target_os = "android")]
@@ -132,7 +133,7 @@ struct AndroidMenuTouch {
 }
 
 #[derive(Default)]
-struct AndroidTouchState {
+pub(super) struct AndroidTouchState {
     enabled: bool,
     haptics: bool,
     hold_to_sprint: bool,
@@ -140,7 +141,7 @@ struct AndroidTouchState {
     button_size: f32,
     look_sensitivity: f32,
     left_handed: bool,
-    auto_jump: bool,
+    pub(super) auto_jump: bool,
     layout: String,
     positions: HashMap<String, (f32, f32)>,
     bindings: HashMap<String, String>,
@@ -176,7 +177,7 @@ impl AndroidTouchState {
         android_touch_output(output).unwrap_or(fallback)
     }
 
-    fn from_environment() -> Self {
+    pub(super) fn from_environment() -> Self {
         let Some(raw) = std::env::var_os("HORIZON_ANDROID_TOUCH_CONTROLS") else {
             // A usable default layout must exist even before the player opens touch settings.
             return Self {
@@ -382,7 +383,7 @@ impl Game<'_> {
         }
     }
 
-    fn draw_android_touch_controls(&self, batch: &mut HudBatch) {
+    pub(super) fn draw_android_touch_controls(&self, batch: &mut HudBatch) {
         if !cfg!(target_os = "android")
             || self.screen != Screen::Playing
             || self.title.is_some()
@@ -744,7 +745,7 @@ impl Game<'_> {
     }
 
     #[cfg(target_os = "android")]
-    fn android_poll_input(&mut self, event_loop: &ActiveEventLoop) {
+    pub(super) fn android_poll_input(&mut self, event_loop: &ActiveEventLoop) {
             ANDROID_GAME_ACTIVE.store(
                 self.screen == Screen::Playing && self.title.is_none() && self.player.is_some(),
                 Ordering::Relaxed,
@@ -930,7 +931,7 @@ impl Game<'_> {
 }
 
 /// Winit's event loop; on Android it is built on the NativeActivity `AndroidApp` handed over earlier.
-fn new_event_loop() -> Result<EventLoop<()>> {
+pub(super) fn new_event_loop() -> Result<EventLoop<()>> {
     #[cfg(target_os = "android")]
     {
         use winit::platform::android::EventLoopBuilderExtAndroid;
@@ -950,7 +951,7 @@ fn new_event_loop() -> Result<EventLoop<()>> {
 
 /// Android destroys the native window on pause (a file picker, the home button): the surface made
 /// for it is dead from here on.
-fn android_surface_suspended(renderer: &mut Option<Renderer>) {
+pub(super) fn android_surface_suspended(renderer: &mut Option<Renderer>) {
     if cfg!(target_os = "android")
         && let Some(renderer) = renderer.as_mut()
     {
@@ -959,7 +960,7 @@ fn android_surface_suspended(renderer: &mut Option<Renderer>) {
 }
 
 /// Back from a pause on Android: the window has a new native surface.
-fn android_surface_resumed(renderer: &mut Option<Renderer>, window: &Option<Arc<Window>>) {
+pub(super) fn android_surface_resumed(renderer: &mut Option<Renderer>, window: &Option<Arc<Window>>) {
     if cfg!(target_os = "android") {
         if let Some(renderer) = renderer.as_mut()
             && let Err(error) = renderer.recreate_surface()
@@ -975,7 +976,7 @@ fn android_surface_resumed(renderer: &mut Option<Renderer>, window: &Option<Arc<
 impl Game<'_> {
     /// Android touch has no native cursor to capture. A finger held in the look region supplies
     /// relative motion instead, so that active pointer counts as captured for its gesture.
-    fn android_touch_look(&self) -> bool {
+    pub(super) fn android_touch_look(&self) -> bool {
         #[cfg(target_os = "android")]
         {
             ANDROID_LOOK_ACTIVE.load(Ordering::Relaxed)
@@ -989,7 +990,7 @@ impl Game<'_> {
 
     /// Ends a tap that opened a menu, then turns the finger's touch into the mouse event the game
     /// already understands. `None`: the event was used up here.
-    fn android_intercept(
+    pub(super) fn android_intercept(
         &mut self,
         event_loop: &dyn EventLoopCtl,
         id: WindowId,
@@ -1004,7 +1005,7 @@ impl Game<'_> {
     }
 
     /// Every frame: the hotbar's rectangle (once a second) and the frame rate, for the Kotlin side.
-    fn android_publish_stats(&self) {
+    pub(super) fn android_publish_stats(&self) {
         #[cfg(target_os = "android")]
         {
             ANDROID_GAME_FPS.store(self.fps.round().max(0.0) as u32, Ordering::Relaxed);
