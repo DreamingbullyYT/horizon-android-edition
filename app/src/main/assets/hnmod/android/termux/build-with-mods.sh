@@ -384,6 +384,16 @@ cp "$OUT/build.json" "$CACHE_PART/build.json"
 mkdir -p "$WORK/build-cache"
 rm -rf "$CACHE_BUILD"
 mv "$CACHE_PART" "$CACHE_BUILD"
+touch "$CACHE_BUILD"
+python3 - "$WORK/build-cache" "$CACHE_BUILD" <<'PYPRUNE'
+import pathlib, shutil, sys
+root, current = map(pathlib.Path, sys.argv[1:3])
+entries = [p for p in root.iterdir() if p.is_dir() and not p.name.endswith(".partial")]
+entries.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+for old in entries[5:]:
+    if old != current:
+        shutil.rmtree(old, ignore_errors=True)
+PYPRUNE
 say "Done: $OUT"
 echo "sha256 ${SUM:0:16}…   mods: ${IDS[*]:-none}"
 echo "Horizon will validate and import this local build automatically."
