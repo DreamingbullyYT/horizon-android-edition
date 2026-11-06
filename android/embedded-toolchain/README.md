@@ -4,24 +4,24 @@
 
 Horizon owns the build environment in its private app sandbox. The target is:
 
-- App ID: \`dev.horizon.launcher\`
-- ARM64 ABI: \`arm64-v8a\`
-- Runtime prefix: \`/data/data/dev.horizon.launcher/files/usr\`
+- App ID: `dev.horizon.launcher`
+- ARM64 ABI: `arm64-v8a`
+- Runtime prefix: `/data/data/dev.horizon.launcher/files/usr`
 - Android 10+ bootstrap format
 - No separate Termux app, RUN_COMMAND permission, external terminal, or shared-storage setup
 
 ## Bootstrap build
 
-The manual GitHub Actions workflow \`.github/workflows/embedded-toolchain.yml\` checks out a pinned
+The manual GitHub Actions workflow `.github/workflows/embedded-toolchain.yml` checks out a pinned
 Termux package-build-system commit and builds packages from source with Horizon's application ID.
-It does **not** install stock \`com.termux\` binary packages into Horizon's prefix.
+It does **not** install stock `com.termux` binary packages into Horizon's prefix.
 
 The initial package set is Rust/Cargo, Clang/LLVM, Git, rsync, binutils, Python, CMake, Make,
 pkg-config and coreutils. The workflow validates the archive contents, emits a SHA-256 checksum and
 a manifest, and uploads an artifact. Publishing is opt-in and creates an immutable, versioned
 GitHub Release.
 
-Pinned package-builder revision: \`2cce9f2663c75223f8418b9682a61bc690052097\`.
+Pinned package-builder revision: `2cce9f2663c75223f8418b9682a61bc690052097`.
 
 ## Runtime status
 
@@ -35,7 +35,7 @@ before local compilation can be enabled:
    duplicate paths and unexpected file types.
 3. Integrate an Android 10+ executable bridge compatible with app-private writable storage and
    verify it on API 29+ devices. Merely extracting binaries and setting executable bits is not enough.
-4. Run shell, Cargo, Clang and \`readelf\` smoke tests before marking the runtime ready.
+4. Run shell, Cargo, Clang and `readelf` smoke tests before marking the runtime ready.
 5. Connect the existing HNMod validator, compatibility resolver, mixins application and game build
    script to this runtime. Retain Cargo cache and logs across runs.
 6. Add artifact signature verification and rollback/repair support.
