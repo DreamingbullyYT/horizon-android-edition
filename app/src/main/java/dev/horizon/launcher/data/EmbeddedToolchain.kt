@@ -77,7 +77,7 @@ object EmbeddedToolchain {
             File(prefix, "bin/clang").exists()
         val detail = when {
             !supported -> "The embedded compiler currently targets ARM64 (arm64-v8a) only."
-            installed -> "Embedded toolchain runtime ready; HNMod build adapter is still pending."
+            installed -> "Embedded toolchain runtime ready."
             else -> "The embedded compiler runtime is not bundled in this build yet. No external Termux app is required or used."
         }
         return RuntimeStatus(supported, installed, detail)
@@ -98,8 +98,12 @@ object EmbeddedToolchain {
         val status = status(activity)
         check(status.supportedAbi) { status.detail }
         check(status.installed) {
-            status.detail + " The app-side runtime installer is being prepared; compilation is safely disabled until its checksum-verified bootstrap payload and Android executable bridge are included."
+            status.detail + " Install the Horizon embedded toolchain before compiling HNMods."
         }
-        error("The embedded toolchain runtime is present, but the HNMod build adapter is not enabled in this build.")
+        when (val imported = HnmodBuildAdapter.compile(activity, File(activity.filesDir, PREFIX_DIR), selected)) {
+            is Updater.Imported.Ok ->
+                "Build ${imported.name} (${imported.sha.take(12)}) imported and activated. Restart the game to use it."
+            is Updater.Imported.Bad -> error(imported.message)
+        }
     }
 }
