@@ -35,6 +35,8 @@ done
 case $PROFILE in fast|release) ;; *) echo "profile must be fast or release" >&2; exit 2;; esac
 [ "$PLAIN" = 1 ] || [ ${#INPUTS[@]} -gt 0 ] || { echo "Give at least one .hnmod (or --no-mods)." >&2; exit 2; }
 NAME=${NAME:-mods-$(date +%Y%m%d-%H%M)}
+mkdir -p "$WORK"
+: > "$WORK/build.log"
 
 say() { printf '\n== %s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
