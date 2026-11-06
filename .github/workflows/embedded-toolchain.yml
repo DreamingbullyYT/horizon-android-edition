@@ -1,6 +1,11 @@
 name: Build Horizon embedded Android toolchain
 
 on:
+  push:
+    branches:
+      - feature/hnmod-core
+    paths:
+      - .github/workflows/embedded-toolchain.yml
   workflow_dispatch:
     inputs:
       publish:
@@ -34,6 +39,13 @@ jobs:
           repository: termux/termux-packages
           ref: 2cce9f2663c75223f8418b9682a61bc690052097
           path: termux-packages
+
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          sudo rm -rf /usr/local/lib/android/sdk/ndk /usr/local/lib/android/sdk/system-images /usr/local/lib/android/sdk/emulator
+          docker system prune --all --force || true
+          df -h
 
       - name: Configure Horizon package identity
         working-directory: termux-packages
