@@ -10,7 +10,7 @@
 #   --profile P      fast (default) | release (slower, a bit faster game; much more RAM)
 #   --no-mods        build the plain game (checks that the toolchain works)
 #
-# First run: needs `pkg install rust clang git rsync binutils python` and 10+ GB free.
+# First run: needs `pkg install rust clang git rsync binutils python cmake make pkg-config coreutils` and 10+ GB free.
 # WARNING: native mod build scripts and procedural macros execute as your Termux user. This local
 # compiler is not sandboxed; only compile mods from sources you trust. The first build is large.
 set -euo pipefail
@@ -38,7 +38,7 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 # ---- 0. tools ---------------------------------------------------------------------------------
 for t in cargo rustc clang git rsync sha256sum readelf python3; do
-  command -v "$t" >/dev/null || die "missing '$t'. Run: pkg install rust clang git rsync binutils python"
+  command -v "$t" >/dev/null || die "missing '$t'. Run: pkg install rust clang git rsync binutils python cmake make pkg-config coreutils"
 done
 case $(uname -m) in aarch64|arm64) ;; *) die "this script is for a 64-bit ARM phone (aarch64), not $(uname -m)";; esac
 FREE_GB=$(df -k "$HOME" | awk 'NR==2{printf "%d", $4/1048576}')
@@ -88,9 +88,9 @@ if [ "$PLAIN" = 0 ]; then
     case "$f" in *.hnmod) ;; *) die "expected a .hnmod archive: $f";; esac
   done
 
-  HOOKS_API=$(sed -n 's/^pub(crate) const NATIVE_HOOKS_API: u32 = \\([0-9]*\\);.*/\\1/p' \
+  HOOKS_API=$(sed -n 's/^pub(crate) const NATIVE_HOOKS_API: u32 = \([0-9]*\);.*/\1/p' \
     "$SRC/crates/horizon-client/src/game/native_hooks.rs" | head -1)
-  REV=$(sed -n 's/^pub const MIXINS_REV: &str = "\\([0-9a-f]*\\)";.*/\\1/p' \
+  REV=$(sed -n 's/^pub const MIXINS_REV: &str = "\([0-9a-f]*\)";.*/\1/p' \
     "$SRC/launcher/src/native_mods.rs" | head -1)
   [ -n "$HOOKS_API" ] || die "could not read NATIVE_HOOKS_API from the engine"
   [ -n "$REV" ] || die "could not read MIXINS_REV from the engine"
