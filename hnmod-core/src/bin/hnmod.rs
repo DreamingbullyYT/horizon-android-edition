@@ -1,5 +1,5 @@
 //! Small command-line front end used by the Android Termux compiler.
-use horizon_hnmod_core::{is_revision, read_bundle, resolve_compatibility, EngineCandidate};
+use horizon_hnmod_core::{dependencies, is_revision, read_bundle, resolve_compatibility, EngineCandidate};
 use serde_json::json;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
