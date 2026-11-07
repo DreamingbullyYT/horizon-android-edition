@@ -56,10 +56,18 @@ class MainActivity : ComponentActivity() {
     private var initError: String? = null
 
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-        if (uri != null) run("Importing Minecraft folder") { GameSetup.importFolder(this, uri, this::show).let { "Imported $it files." } }
+        if (uri != null) run("Importing Minecraft folder") {
+            val count = GameSetup.importFolder(this, uri, this::show)
+            refreshDashboardState()
+            "Imported $count files."
+        }
     }
     private val backupPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) run("Restoring backup") { GameSetup.restoreBackup(this, uri, this::show).let { "Restored $it Minecraft resource set(s)." } }
+        if (uri != null) run("Restoring backup") {
+            val count = GameSetup.restoreBackup(this, uri, this::show)
+            refreshDashboardState()
+            "Restored $count Minecraft resource set(s)."
+        }
     }
     private val hnmodPicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) confirmAndCompileHnmods(uris)
@@ -207,6 +215,8 @@ class MainActivity : ComponentActivity() {
                             runOnUiThread { show(message) }
                         }
                     })
+                    refreshDashboardState()
+                    "HNMod build finished."
                 }
             }
             .show()
@@ -227,6 +237,7 @@ class MainActivity : ComponentActivity() {
                             dev.horizon.launcher.data.Updater.importLocal(this@MainActivity, it)
                         } ?: error("Could not open the selected library.")
                     }
+                    refreshDashboardState()
                     when (result) {
                         is dev.horizon.launcher.data.Updater.Imported.Ok ->
                             "Build ${result.name} imported and activated. Restart the game to use it."
