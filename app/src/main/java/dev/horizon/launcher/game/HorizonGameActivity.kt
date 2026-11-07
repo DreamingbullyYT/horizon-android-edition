@@ -395,8 +395,12 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         val prefs = getSharedPreferences("zalith-touch-settings", MODE_PRIVATE)
         if (!prefs.getBoolean("default_layout_v4", false)) {
             prefs.edit().putBoolean("default_layout_v4", true).apply()
-            // Keep whatever the player had as a saved layout ("Previous layout") before switching defaults.
-            if (file.isFile) runCatching { LayoutProfiles(this).save("Previous layout", loadLayoutFromFile(file)) }
+            // Preserve a valid layout already created by the editor or an older Horizon build.
+            val existing = runCatching { if (file.isFile) loadLayoutFromFile(file) else null }.getOrNull()
+            if (existing != null) {
+                runCatching { LayoutProfiles(this).save("Previous layout", existing) }
+                return ObservableControlLayout(existing)
+            }
             val fresh = defaultLayout()
             saveCurrentLayout(fresh)
             LayoutProfiles(this).activeName = ""
