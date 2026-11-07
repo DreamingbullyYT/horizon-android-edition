@@ -43,6 +43,7 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.movtery.layer_controller.ControlBoxLayout
 import com.movtery.layer_controller.data.HideLayerWhen
 import com.movtery.layer_controller.event.ClickEvent
@@ -102,9 +103,7 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
             or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
             or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
 
-        // No UI toolkit here: touches go straight to the router, which drives look, hotbar taps and menu
-        // touches through GameInput. The launcher UI is being rebuilt separately.
-        router = TouchInputRouter(this, window.decorView)
+        // Zalith's Compose control canvas is layered over the native game surface.
         gyro = GyroLook(this)
         PathManager.initialize(filesDir)
         AllSettings.initialize(this)
@@ -199,21 +198,14 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         )
     }
 
-    private var router: TouchInputRouter? = null
     private var gyro: GyroLook? = null
 
-    /**
-     * Let NativeActivity/Winit receive the original multi-touch stream.
-     * The Rust Android touch layer owns gameplay controls and menu gestures;
-     * routing these events through the old Kotlin mouse-look adapter turned
-     * vertical camera movement into menu-wheel input.
-     */
-    override fun dispatchTouchEvent(ev: MotionEvent): Boolean =
-        super.dispatchTouchEvent(ev)
+    /** Compose's Zalith layer consumes configured controls and forwards remaining touch deltas via GameInput. */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean = super.dispatchTouchEvent(ev)
 
     override fun onStart() { super.onStart(); lifecycleRegistry.currentState = Lifecycle.State.STARTED }
     override fun onResume() { super.onResume(); lifecycleRegistry.currentState = Lifecycle.State.RESUMED; activeLayout = runCatching { loadLayout() }.getOrNull() ?: activeLayout; gyro?.start() }
-    override fun onPause() { gyro?.stop(); router?.cancelAll(); runCatching { GameInput.nativeLookActive(false) }; lifecycleRegistry.currentState = Lifecycle.State.STARTED; super.onPause() }
+    override fun onPause() { gyro?.stop(); runCatching { GameInput.nativeLookActive(false) }; lifecycleRegistry.currentState = Lifecycle.State.STARTED; super.onPause() }
     override fun onStop() { lifecycleRegistry.currentState = Lifecycle.State.CREATED; super.onStop() }
     override fun onDestroy() {
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
