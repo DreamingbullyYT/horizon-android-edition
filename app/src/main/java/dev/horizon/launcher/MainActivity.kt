@@ -1,6 +1,8 @@
 package dev.horizon.launcher
 
 import android.net.Uri
+import android.content.Intent
+import android.net.Uri as AndroidUri
 import android.app.AlertDialog
 import android.os.Bundle
 import android.view.Gravity
@@ -18,6 +20,19 @@ import dev.horizon.launcher.ui.HorizonLauncherUi
 import androidx.activity.result.contract.ActivityResultContracts
 import dev.horizon.launcher.core.Native
 import dev.horizon.launcher.data.Core
+import dev.horizon.launcher.data.AccountsInfo
+import dev.horizon.launcher.data.Browse
+import dev.horizon.launcher.data.BrowseCatalog
+import dev.horizon.launcher.data.BrowseItem
+import dev.horizon.launcher.data.BrowseEntry
+import dev.horizon.launcher.data.BrowseProgress
+import dev.horizon.launcher.data.PlatformInfo
+import dev.horizon.launcher.data.Release
+import dev.horizon.launcher.data.SignInInfo
+import dev.horizon.launcher.data.TelemetryInfo
+import dev.horizon.launcher.data.TouchControlsInfo
+import dev.horizon.launcher.auth.MicrosoftAuth
+import dev.horizon.launcher.game.TouchControlEditorActivity
 import dev.horizon.launcher.data.InstanceInfo
 import dev.horizon.launcher.data.InstalledVersion
 import dev.horizon.launcher.data.ModInfo
@@ -51,6 +66,16 @@ class MainActivity : ComponentActivity() {
     private var versionsState by mutableStateOf<List<InstalledVersion>>(emptyList())
     private var settingsState by mutableStateOf<SettingsInfo?>(null)
     private var playerNameState by mutableStateOf("Local profile")
+    private var accountsState by mutableStateOf<AccountsInfo?>(null)
+    private var signInInfoState by mutableStateOf<SignInInfo?>(null)
+    private var platformState by mutableStateOf<PlatformInfo?>(null)
+    private var releasesState by mutableStateOf<List<Release>>(emptyList())
+    private var touchControlsState by mutableStateOf<TouchControlsInfo?>(null)
+    private var telemetryState by mutableStateOf<TelemetryInfo?>(null)
+    private var browseCatalogState by mutableStateOf<BrowseCatalog?>(null)
+    private var browseItemsState by mutableStateOf<List<BrowseItem>>(emptyList())
+    private var browseInstalledState by mutableStateOf<List<BrowseEntry>>(emptyList())
+    private var browseProgressState by mutableStateOf<BrowseProgress?>(null)
     private val buttons = mutableListOf<Button>()
     private var busy = false
     private var initError: String? = null
@@ -105,6 +130,16 @@ class MainActivity : ComponentActivity() {
                 versions = versionsState,
                 settings = settingsState,
                 playerName = playerNameState,
+                accounts = accountsState,
+                signInInfo = signInInfoState,
+                platform = platformState,
+                releases = releasesState,
+                touchControls = touchControlsState,
+                telemetry = telemetryState,
+                browseCatalog = browseCatalogState,
+                browseItems = browseItemsState,
+                browseInstalled = browseInstalledState,
+                browseProgress = browseProgressState,
                 onPlay = { GameSetup.play(this).onFailure { show("Could not open the game: " + it.message) } },
                 onInstall = {
                     run("Installing Minecraft") {
@@ -140,6 +175,13 @@ class MainActivity : ComponentActivity() {
                         "Selected ${selected?.name ?: "instance"}."
                     }
                 },
+                onDeleteInstance = { id ->
+                    run("Deleting instance") {
+                        Core.deleteInstance(id)
+                        refreshDashboardState()
+                        "Instance deleted."
+                    }
+                },
                 onAddServer = { name, address ->
                     run("Saving server") {
                         Core.addServer(name, address)
@@ -161,6 +203,96 @@ class MainActivity : ComponentActivity() {
                         Core.removeMod(id)
                         refreshDashboardState()
                         "Mod removed."
+                    }
+                },
+                onRemoveShader = { name ->
+                    run("Removing shader pack") {
+                        Core.removeShader(name)
+                        refreshDashboardState()
+                        "Shader pack removed."
+                    }
+                },
+                onInstallVersion = { tag ->
+                    run("Installing engine version") {
+                        val installed = Core.installVersion(tag)
+                        refreshDashboardState()
+                        "Installed $installed."
+                    }
+                },
+                onRemoveVersion = { tag ->
+                    run("Removing engine version") {
+                        Core.removeVersion(tag)
+                        refreshDashboardState()
+                        "Removed $tag."
+                    }
+                },
+                onSelectAccount = { id ->
+                    run("Selecting player identity") {
+                        if (id.startsWith("offline:")) Core.playOffline(id.removePrefix("offline:"))
+                        else Core.selectAccount(id)
+                        refreshDashboardState()
+                        "Player identity updated."
+                    }
+                },
+                onAddOffline = { name ->
+                    run("Adding offline profile") {
+                        Core.addOffline(name)
+                        refreshDashboardState()
+                        "Offline profile added."
+                    }
+                },
+                onRemoveOffline = { name ->
+                    run("Removing offline profile") {
+                        Core.removeOffline(name)
+                        refreshDashboardState()
+                        "Offline profile removed."
+                    }
+                },
+                onSignIn = { beginMicrosoftSignIn() },
+                onSaveSettings = { patch ->
+                    run("Saving core settings") {
+                        Core.saveSettings(patch)
+                        refreshDashboardState()
+                        "Core settings saved."
+                    }
+                },
+                onSetTelemetry = { enabled ->
+                    run("Updating diagnostics preference") {
+                        Core.setTelemetry(enabled)
+                        refreshDashboardState()
+                        "Diagnostics preference updated."
+                    }
+                },
+                onSaveTouchControls = { patch ->
+                    run("Saving touch preferences") {
+                        Core.saveTouchControls(patch)
+                        refreshDashboardState()
+                        "Touch preferences saved."
+                    }
+                },
+                onOpenControlsEditor = {
+                    startActivity(Intent(this, TouchControlEditorActivity::class.java))
+                },
+                onSearchBrowse = { source, kind, query ->
+                    run("Searching add-on catalog") {
+                        val result = Browse.search(source, kind, query, 0)
+                        browseItemsState = result.first
+                        browseProgressState = Browse.progress()
+                        "Found ${result.first.size} results."
+                    }
+                },
+                onInstallBrowse = { source, id ->
+                    run("Installing catalog item") {
+                        val installed = Browse.install(source, id)
+                        refreshDashboardState()
+                        "Installed ${installed.joinToString()}."
+                    }
+                },
+                onRemoveBrowse = { project ->
+                    run("Removing catalog item") {
+                        val removed = Browse.remove(project)
+                        refreshDashboardState()
+                        "Removed $removed."
                     }
                 },
                 onSaveSettings = { installNew, pruneOld, skipOpening ->
@@ -306,6 +438,36 @@ class MainActivity : ComponentActivity() {
         dialog.show()
     }
 
+    private fun beginMicrosoftSignIn() {
+        if (!MicrosoftAuth.available) {
+            show("Microsoft sign-in is not available in this build.")
+            return
+        }
+        scope.launch {
+            runCatching { MicrosoftAuth.start() }
+                .onSuccess { code ->
+                    runOnUiThread {
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("Microsoft sign-in")
+                            .setMessage("Open ${code.verificationUri} and enter this code:\n\n${code.userCode}\n\nAfter authorizing, return here and tap Continue.")
+                            .setNegativeButton("Cancel") { _, _ -> MicrosoftAuth.cancel() }
+                            .setNeutralButton("Open website") { _, _ ->
+                                startActivity(Intent(Intent.ACTION_VIEW, AndroidUri.parse(code.verificationUri)))
+                            }
+                            .setPositiveButton("Continue") { _, _ ->
+                                run("Completing Microsoft sign-in") {
+                                    val name = MicrosoftAuth.complete()
+                                    refreshDashboardState()
+                                    "Signed in as $name."
+                                }
+                            }
+                            .show()
+                    }
+                }
+                .onFailure { show("Microsoft sign-in failed: ${it.message}") }
+        }
+    }
+
     private fun refreshDashboard() {
         scope.launch { refreshDashboardState() }
     }
@@ -322,6 +484,14 @@ class MainActivity : ComponentActivity() {
         val mods = runCatching { Core.mods() }.getOrDefault(emptyList())
         val versions = runCatching { Core.installed() }.getOrDefault(emptyList())
         val accounts = runCatching { Core.accounts() }.getOrNull()
+        val signIn = runCatching { Core.signInInfo() }.getOrNull()
+        val platform = runCatching { Core.platform() }.getOrNull()
+        val releases = runCatching { Core.releases() }.getOrDefault(emptyList())
+        val touchControls = runCatching { Core.touchControls() }.getOrNull()
+        val telemetry = runCatching { Core.telemetry() }.getOrNull()
+        val browseCatalog = runCatching { Browse.catalog() }.getOrNull()
+        val browseInstalled = runCatching { Browse.installed() }.getOrDefault(emptyList())
+        val browseProgress = runCatching { Browse.progress() }.getOrNull()
 
         minecraftReadyState = ready
         toolchainReadyState = toolchain?.installed == true
@@ -335,6 +505,15 @@ class MainActivity : ComponentActivity() {
         modsState = mods
         versionsState = versions
         playerNameState = accounts?.player?.label ?: "Local profile"
+        accountsState = accounts
+        signInInfoState = signIn
+        platformState = platform
+        releasesState = releases
+        touchControlsState = touchControls
+        telemetryState = telemetry
+        browseCatalogState = browseCatalog
+        browseInstalledState = browseInstalled
+        browseProgressState = browseProgress
 
         val problem = initError?.let { " · core problem: $it" } ?: ""
         statusText = "CORE ${Core.coreVersion()}  /  MINECRAFT " +
