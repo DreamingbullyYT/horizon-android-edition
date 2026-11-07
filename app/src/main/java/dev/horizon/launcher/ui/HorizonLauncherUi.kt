@@ -100,6 +100,8 @@ fun HorizonLauncherUi(
     onSelectAccount: (String) -> Unit,
     onAddOffline: (String) -> Unit,
     onRemoveOffline: (String) -> Unit,
+    onRemoveAccount: (String) -> Unit,
+    onUseGameName: () -> Unit,
     onSignIn: () -> Unit,
     onSaveSettings: (JSONObject) -> Unit,
     onSetNoAi: (Boolean) -> Unit,
@@ -160,7 +162,7 @@ fun HorizonLauncherUi(
                 onSearch = onSearchBrowse, onInstall = onInstallBrowse
             )
             AtlasPage.SERVERS -> ServersAtlas(servers, onAddServer, onRemoveServer)
-            AtlasPage.ACCOUNTS -> AccountsAtlas(accounts, signInInfo, playerName, onSelectAccount, onAddOffline, onRemoveOffline, onSignIn)
+            AtlasPage.ACCOUNTS -> AccountsAtlas(accounts, signInInfo, playerName, onSelectAccount, onAddOffline, onRemoveOffline, onRemoveAccount, onUseGameName, onSignIn)
             AtlasPage.CONTROLS -> ControlsAtlas(touchControls, onSaveTouchControls, onOpenControlsEditor)
             AtlasPage.SYSTEM -> SystemAtlas(
                 status, settings, platform, releases, telemetry, toolchainReady,
@@ -537,7 +539,11 @@ private fun AccountsAtlas(
             EmptyState("Microsoft sign-in is not configured in this build", signInInfo?.message ?: "Use an offline profile, or configure the supported Microsoft auth client.")
         }
         accounts?.accounts?.forEach { account ->
-            DataSurface(account.name, account.uuid, if (accounts.selected == account.uuid) "ACTIVE" else "SELECT", onClick = { onSelect(account.uuid) })
+            DataSurface(
+                account.name, account.uuid, if (accounts.selected == account.uuid) "ACTIVE" else "SELECT",
+                onClick = { onSelect(account.uuid) },
+                trailing = { IconButton(onClick = { onRemoveAccount(account.uuid) }) { Icon(Icons.Default.DeleteOutline, "Remove Microsoft account", tint = Coral) } }
+            )
         }
         Spacer(Modifier.height(16.dp))
         SectionHeading("Offline profiles", "${accounts?.offline?.size ?: 0} saved")
@@ -547,6 +553,7 @@ private fun AccountsAtlas(
             })
         }
         OutlinedButton(onClick = { add = true }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Add, null); Text("Add offline profile") }
+        OutlinedButton(onClick = onUseGameName, modifier = Modifier.fillMaxWidth().padding(top = 7.dp)) { Icon(Icons.Default.PersonOutline, null); Text("Use Minecraft's own player name") }
         if (accounts != null) Text("Owner gate: ${if (accounts.hasOwner) "open" else "closed"} · keychain: ${if (accounts.keychain) "available" else "not available"}", color = MutedInk, fontSize = 9.sp, modifier = Modifier.padding(top = 12.dp))
     }
     if (add) NameDialog("Add offline profile", "3–16 letters, numbers or _", { add = false }, { add = false; onAddOffline(it) })
