@@ -66,6 +66,7 @@ fun HorizonLauncherUi(
     mods: List<ModInfo>,
     versions: List<InstalledVersion>,
     settings: SettingsInfo?,
+    renderApi: String,
     playerName: String,
     accounts: AccountsInfo?,
     signInInfo: SignInInfo?,
@@ -104,6 +105,7 @@ fun HorizonLauncherUi(
     onUseGameName: () -> Unit,
     onSignIn: () -> Unit,
     onSaveSettings: (JSONObject) -> Unit,
+    onSetRenderApi: (String) -> Unit,
     onSetNoAi: (Boolean) -> Unit,
     onSetTelemetry: (Boolean) -> Unit,
     onSaveTouchControls: (JSONObject) -> Unit,
@@ -165,8 +167,8 @@ fun HorizonLauncherUi(
             AtlasPage.ACCOUNTS -> AccountsAtlas(accounts, signInInfo, playerName, onSelectAccount, onAddOffline, onRemoveOffline, onRemoveAccount, onUseGameName, onSignIn)
             AtlasPage.CONTROLS -> ControlsAtlas(touchControls, onSaveTouchControls, onOpenControlsEditor)
             AtlasPage.SYSTEM -> SystemAtlas(
-                status, settings, platform, releases, telemetry, toolchainReady,
-                onSaveSettings, onSetNoAi, onSetTelemetry, onRefresh, onShowBuildLog, onInstallVersion
+                status, settings, renderApi, platform, releases, telemetry, toolchainReady,
+                onSaveSettings, onSetRenderApi, onSetNoAi, onSetTelemetry, onRefresh, onShowBuildLog, onInstallVersion
             )
         }
     }
@@ -610,9 +612,10 @@ private fun ControlsAtlas(
 
 @Composable
 private fun SystemAtlas(
-    status: String, settings: SettingsInfo?, platform: PlatformInfo?, releases: List<Release>,
+    status: String, settings: SettingsInfo?, renderApi: String, platform: PlatformInfo?, releases: List<Release>,
     telemetry: TelemetryInfo?, toolchainReady: Boolean,
-    onSave: (JSONObject) -> Unit, onSetNoAi: (Boolean) -> Unit, onSetTelemetry: (Boolean) -> Unit,
+    onSave: (JSONObject) -> Unit, onSetRenderApi: (String) -> Unit,
+    onSetNoAi: (Boolean) -> Unit, onSetTelemetry: (Boolean) -> Unit,
     onRefresh: () -> Unit, onBuildLog: () -> Unit, onInstallVersion: (String) -> Unit
 ) {
     var installNew by remember(settings) { mutableStateOf(settings?.installNewVersions ?: true) }
@@ -656,6 +659,30 @@ private fun SystemAtlas(
                 .put("language", language.takeIf { it.isNotBlank() })) },
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp), colors = ButtonDefaults.buttonColors(containerColor = Blue), shape = RoundedCornerShape(14.dp)
         ) { Text("SAVE CORE SETTINGS") }
+        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(18.dp))
+        SectionHeading("Graphics backend", "Applied the next time Minecraft starts")
+        Text(
+            "Auto tries Vulkan first, then OpenGL ES where supported. OpenGL ES 2.0 is not supported by the current Horizon renderer; the available wgpu path requires GLES 3.x.",
+            color = MutedInk, fontSize = 10.sp, lineHeight = 15.sp
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            listOf("auto" to "Auto", "vulkan" to "Vulkan", "opengl" to "OpenGL ES").forEach { (id, label) ->
+                FilterChip(
+                    selected = renderApi == id,
+                    onClick = { onSetRenderApi(id) },
+                    label = { Text(label, fontSize = 10.sp) }
+                )
+            }
+        }
+        Text(
+            when (renderApi) {
+                "vulkan" -> "Vulkan is forced. If the device driver cannot create a Vulkan device, Minecraft may fail to start; choose Auto to restore fallback."
+                "opengl" -> "OpenGL ES is forced through wgpu's GLES backend (GLES 3.x, not ES 2.0)."
+                else -> "Automatic mode prefers Vulkan and falls back to OpenGL ES when the driver or surface requires it."
+            },
+            color = MutedInk, fontSize = 9.sp, lineHeight = 14.sp
+        )
         Spacer(Modifier.height(18.dp))
         SectionHeading("Diagnostics", "Privacy controls")
         SettingSwitch("Share anonymous diagnostics", telemetry?.any ?: false, onSetTelemetry)
