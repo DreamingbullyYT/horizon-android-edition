@@ -92,6 +92,9 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         savedStateController.performAttach()
         savedStateController.performRestore(savedInstanceState)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
+        // WindowRecomposer resolves its owners from the window decor view tree.
+        window.decorView.setViewTreeLifecycleOwner(this)
+        window.decorView.setViewTreeSavedStateRegistryOwner(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Sustained-performance mode keeps clocks steady instead of boosting then throttling (MediaTek/Mali SoCs overheat fast).
         runCatching {
