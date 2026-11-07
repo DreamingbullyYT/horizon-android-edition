@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -44,6 +45,14 @@
                 android:name="android.app.lib_name"
                 android:value="horizon_core" />
         </activity>
+        <service
+            android:name=".data.HnmodBuildService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps the on-device HNMod compiler running while the app is in the background" />
+        </service>
         <service
             android:name=".game.GameKeepAliveService"
             android:process=":game"

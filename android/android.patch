@@ -179,25 +179,31 @@ diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.
 index dd91773a0..16b8abe82 100644
 --- a/crates/horizon-client/src/game.rs
 +++ b/crates/horizon-client/src/game.rs
-@@ -436,6 +436,9 @@ use std::{
+@@ -436,6 +436,15 @@ use std::{
      thread::JoinHandle,
      time::{Duration, Instant},
  };
 +
-+include!("game/android.rs");
++mod android;
++use android::new_event_loop as android_new_event_loop;
++pub use android::{
++    android_cursor_grabbing, android_game_fps, android_hotbar_rect, android_ime_allowed,
++    send_android_control_event, send_android_look, send_android_menu_touch,
++    set_android_app, set_android_haptic_callback, set_android_ime_allowed, set_android_look_active,
++};
 +
  use winit::{
      application::ApplicationHandler,
      error::EventLoopError,
-@@ -2425,6 +2428,7 @@ struct Game<'a> {
+@@ -2425,6 +2434,7 @@ struct Game<'a> {
      physical_keys: HashSet<KeyCode>,
      physical_buttons: HashSet<MouseButton>,
      drag_button: Option<MouseButton>,
-+    android_touch: AndroidTouchState,
++    android_touch: android::AndroidTouchState,
      /// Control + left click as a right click (macOS).
      right_click_emulation: horizon_client_input::mouse::RightClickEmulation,
      left: bool,
-@@ -3713,7 +3717,7 @@ impl Game<'_> {
+@@ -3713,7 +3723,7 @@ impl Game<'_> {
          player.mobility_restricted = blind;
          player.yaw = self.yaw;
          player.pitch = self.pitch;
@@ -206,7 +212,7 @@ index dd91773a0..16b8abe82 100644
          player.item_use_speed = item_use_speed;
          player.item_use_slows_sprint = item_use_slows_sprint;
          player.respiration = respiration;
-@@ -7999,7 +8003,7 @@ impl Game<'_> {
+@@ -7999,7 +8009,7 @@ impl Game<'_> {
      fn apply_mouse_look(&mut self) {
          let look = self.look_options();
          let time = self.started.elapsed().as_secs_f64();
@@ -215,20 +221,20 @@ index dd91773a0..16b8abe82 100644
          let grabbed = pointer && self.screen == Screen::Playing && self.player.is_some();
          let active = self.focused || self.agent_pointer;
          if let Some((xo, yo)) = self
-@@ -17050,8 +17054,12 @@ fn autosave_interval(rate: f32) -> i64 {
+@@ -17050,8 +17060,12 @@ fn autosave_interval(rate: f32) -> i64 {
      i64::from((rate * 300.0) as i32).max(100)
  }
  impl ApplicationHandler for Game<'_> {
 +    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
-+        android_surface_suspended(&mut self.renderer);
++        android::android_surface_suspended(&mut self.renderer);
 +    }
      fn resumed(&mut self, event_loop: &ActiveEventLoop) {
          if self.window.is_some() {
-+            android_surface_resumed(&mut self.renderer, &self.window);
++            android::android_surface_resumed(&mut self.renderer, &self.window);
              return;
          }
          // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
-@@ -17138,6 +17146,8 @@ impl ApplicationHandler for Game<'_> {
+@@ -17138,6 +17152,8 @@ impl ApplicationHandler for Game<'_> {
          }
      }
      fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -237,7 +243,7 @@ index dd91773a0..16b8abe82 100644
          self.idle(event_loop);
      }
      /// The application is ending. On macOS, Quit (Cmd+Q) ends it through
-@@ -17169,6 +17179,10 @@ impl Game<'_> {
+@@ -17169,6 +17185,10 @@ impl Game<'_> {
          if !ours {
              return;
          }
@@ -248,7 +254,7 @@ index dd91773a0..16b8abe82 100644
          follow_keymap(&mut event);
          // MacosUtil.setCtrlClickEmulatesRightClick: Control + left click is a right click.
          if let WindowEvent::MouseInput { state, button, .. } = &mut event
-@@ -18609,6 +18623,7 @@ impl Game<'_> {
+@@ -18609,6 +18629,7 @@ impl Game<'_> {
                          }
                          self.frames += 1;
                          self.fps_frames += 1;
@@ -256,55 +262,55 @@ index dd91773a0..16b8abe82 100644
                          horizon_client::crash::debug_crash_tick();
                          if self.fps_at.elapsed() >= Duration::from_secs(1) {
                              self.fps = self.fps_frames as f32 / self.fps_at.elapsed().as_secs_f32();
-@@ -18880,6 +18895,7 @@ impl<'a> Game<'a> {
+@@ -18880,6 +18901,7 @@ impl<'a> Game<'a> {
              physical_keys: HashSet::new(),
              physical_buttons: HashSet::new(),
              drag_button: None,
-+            android_touch: AndroidTouchState::from_environment(),
++            android_touch: android::AndroidTouchState::from_environment(),
              right_click_emulation: Default::default(),
              left: false,
              right: false,
-@@ -20946,7 +20962,7 @@ fn run_event_loop(mut game: Game<'_>) -> Result<()> {
+@@ -20946,7 +20968,7 @@ fn run_event_loop(mut game: Game<'_>) -> Result<()> {
          return game.error.take().map_or(Ok(()), Err);
      }
      let mut split = split::Split::new(game);
 -    let result = EventLoop::new()?.run_app(&mut split);
-+    let result = new_event_loop()?.run_app(&mut split);
++    let result = android_new_event_loop()?.run_app(&mut split);
      game = split.host;
      narrator::stop();
      leave_fullscreen_after(&result, &mut game.settings);
-@@ -21003,6 +21019,7 @@ impl Loading {
+@@ -21003,6 +21025,7 @@ impl Loading {
      }
      fn resumed(&mut self, event_loop: &ActiveEventLoop) {
          if self.window.is_some() {
-+            android_surface_resumed(&mut self.renderer, &self.window);
++            android::android_surface_resumed(&mut self.renderer, &self.window);
              return;
          }
          // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
-@@ -21295,6 +21312,12 @@ enum App {
+@@ -21295,6 +21318,12 @@ enum App {
      Ready(Box<split::Split<'static>>),
  }
  impl ApplicationHandler for App {
 +    fn suspended(&mut self, event_loop: &ActiveEventLoop) {
 +        match self {
-+            App::Loading(loading) => android_surface_suspended(&mut loading.renderer),
++            App::Loading(loading) => android::android_surface_suspended(&mut loading.renderer),
 +            App::Ready(game) => game.suspended(event_loop),
 +        }
 +    }
      fn resumed(&mut self, event_loop: &ActiveEventLoop) {
          match self {
              App::Loading(loading) => loading.resumed(event_loop),
-@@ -21439,7 +21462,7 @@ fn run_loading(
+@@ -21439,7 +21468,7 @@ fn run_loading(
          error: None,
      };
      let mut app = App::Loading(Box::new(loading));
 -    let result = EventLoop::new()?.run_app(&mut app);
-+    let result = new_event_loop()?.run_app(&mut app);
++    let result = android_new_event_loop()?.run_app(&mut app);
      narrator::stop();
      match &mut app {
          // Ready: splitscreen around P1's game.
 diff --git a/crates/horizon-client/src/game/ime.rs b/crates/horizon-client/src/game/ime.rs
-index f3109ef93..dab98892b 100644
+index f3109ef93..83d426823 100644
 --- a/crates/horizon-client/src/game/ime.rs
 +++ b/crates/horizon-client/src/game/ime.rs
 @@ -45,6 +45,8 @@ impl Game<'_> {
@@ -316,6 +322,15 @@ index f3109ef93..dab98892b 100644
          if want != self.ime_allowed
              && let Some(window) = &self.window
          {
+@@ -74,6 +76,8 @@ impl Game<'_> {
+     /// (`TextInputManager.setTextInputArea`, in window pixels).
+     pub(super) fn flush_ime(&mut self, hud: &mut HudBatch) {
+         preedit::draw_overlay(hud, &self.gui.atlas);
++        #[cfg(target_os = "android")]
++        self.draw_android_touch_controls(hud);
+         let Some([x0, y0, x1, y1]) = preedit::take_text_input_area() else {
+             return;
+         };
 diff --git a/crates/horizon-client/src/game/no_resources.rs b/crates/horizon-client/src/game/no_resources.rs
 index 12e1cf5b0..c3ef8e593 100644
 --- a/crates/horizon-client/src/game/no_resources.rs
@@ -325,7 +340,7 @@ index 12e1cf5b0..c3ef8e593 100644
      };
      horizon_client::hud::GUI_SCALE.store(settings.gui_scale, Ordering::Relaxed);
 -    EventLoop::new()?.run_app(&mut app)?;
-+    super::new_event_loop()?.run_app(&mut app)?;
++    super::android_new_event_loop()?.run_app(&mut app)?;
      app.error.map_or(Ok(()), Err)
  }
  

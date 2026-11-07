@@ -1,6 +1,7 @@
 package dev.horizon.launcher
 
 import android.net.Uri
+import android.app.AlertDialog
 import android.os.Bundle
 import android.view.Gravity
 import android.view.ViewGroup
@@ -38,6 +39,12 @@ class MainActivity : ComponentActivity() {
     private val backupPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) run("Restoring backup") { GameSetup.restoreBackup(this, uri, this::show).let { "Restored $it Minecraft resource set(s)." } }
     }
+    private val hnmodPicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) confirmAndCompileHnmods(uris)
+    }
+    private val compiledBuildPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) confirmAndImportBuild(uri)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,6 +76,17 @@ class MainActivity : ComponentActivity() {
         button("Install Minecraft (download)") { run("Installing Minecraft") { GameSetup.install(this, this::show); "Minecraft is ready." } }
         button("Import Minecraft folder") { folderPicker.launch(null) }
         button("Restore backup (.zip)") { backupPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }
+        // Kept outside the busy-button list so the user can open it during compilation.
+        column.addView(Button(this).apply {
+            text = "View live HNMod build log"
+            setOnClickListener { showLiveHnmodLog() }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        button("Compile HNMod (.hnmod) — embedded toolchain") {
+            hnmodPicker.launch(arrayOf("application/octet-stream", "application/zip", "*/*"))
+        }
+        button("Import compiled game library (.so)") {
+            compiledBuildPicker.launch(arrayOf("application/octet-stream", "*/*"))
+        }
         button("Export backup to Downloads") {
             run("Exporting backup") { "Saved to ${GameSetup.exportBackup(this, this::show)}" }
         }
@@ -84,11 +102,120 @@ class MainActivity : ComponentActivity() {
 
     private fun show(text: String) { status.text = text }
 
+    private fun confirmAndCompileHnmods(uris: List<Uri>) {
+        AlertDialog.Builder(this)
+            .setTitle("Compile native mod source?")
+            .setMessage(
+                "HNMod files contain Rust source. Their build scripts and procedural macros can execute code " +
+                    "with Horizon's app permissions during compilation. The local compiler is not sandboxed. " +
+                    "Only continue if you trust every selected mod. Like the PC launcher, Horizon will select the newest pinned engine revision; if selected mods target different revisions, this confirmation also authorizes trying that mixed set (which may fail to apply or compile). " +
+                    "Horizon manages its own private compiler runtime; no separate Termux app, external command permission, or shared-storage setup is needed."
+            )
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Continue") { _, _ ->
+                run("Starting HNMod compiler") {
+                    dev.horizon.launcher.data.EmbeddedToolchain.start(this, uris, onProgress = { message ->
+                        runOnUiThread { show(message) }
+                    }, onLogLine = { message ->
+                        // The complete line is persisted by HnmodBuildLog; status stays concise.
+                        if (message.startsWith("==") || message.startsWith("Compiling") || message.startsWith("ERROR:")) {
+                            runOnUiThread { show(message) }
+                        }
+                    })
+                }
+            }
+            .show()
+    }
+
+    private fun confirmAndImportBuild(uri: Uri) {
+        AlertDialog.Builder(this)
+            .setTitle("Trust this native build?")
+            .setMessage(
+                "A native mod is compiled into the game library and runs with the game's full access. " +
+                    "Only import builds made from mods you trust. The library becomes active on the next game launch."
+            )
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Import and activate") { _, _ ->
+                run("Importing native build") {
+                    val result = withContext(Dispatchers.IO) {
+                        contentResolver.openInputStream(uri)?.use {
+                            dev.horizon.launcher.data.Updater.importLocal(this@MainActivity, it)
+                        } ?: error("Could not open the selected library.")
+                    }
+                    when (result) {
+                        is dev.horizon.launcher.data.Updater.Imported.Ok ->
+                            "Build ${result.name} imported and activated. Restart the game to use it."
+                        is dev.horizon.launcher.data.Updater.Imported.Bad -> error(result.message)
+                    }
+                }
+            }
+            .show()
+    }
+
+
+    /** Opens a live, scrollable view of the complete HNMod build log. */
+    private fun showLiveHnmodLog() {
+        val logFile = dev.horizon.launcher.data.HnmodBuildLog.file(this)
+        val logView = TextView(this).apply {
+            textSize = 11f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setPadding(20, 16, 20, 16)
+            text = if (logFile.isFile) logFile.readText() else "No HNMod build log yet. Start a compilation first."
+        }
+        val scroll = ScrollView(this).apply {
+            addView(logView)
+            setPadding(0, 0, 0, 0)
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("HNMod — live build log")
+            .setView(scroll)
+            .setPositiveButton("Close", null)
+            .create()
+        dialog.setOnShowListener {
+            scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
+            scope.launch {
+                val content = StringBuilder()
+                var offset = 0L
+                while (dialog.isShowing) {
+                    if (logFile.isFile) {
+                        val length = logFile.length()
+                        if (length < offset) {
+                            offset = 0L
+                            content.setLength(0)
+                        }
+                        if (length > offset) {
+                            val count = (length - offset).coerceAtMost(1024L * 1024L).toInt()
+                            val bytes = ByteArray(count)
+                            val read = runCatching {
+                                java.io.RandomAccessFile(logFile, "r").use { input ->
+                                    input.seek(offset)
+                                    input.read(bytes)
+                                }
+                            }.getOrDefault(-1)
+                            if (read > 0) {
+                                val wasAtBottom = scroll.getChildAt(0).let { child ->
+                                    child.bottom - (scroll.scrollY + scroll.height) <= 48
+                                }
+                                content.append(String(bytes, 0, read, Charsets.UTF_8))
+                                offset += read
+                                logView.text = content.toString()
+                                if (wasAtBottom) scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
+                            }
+                        }
+                    }
+                    delay(500)
+                }
+            }
+        }
+        dialog.show()
+    }
+
     private fun refreshStatus() {
         scope.launch {
             val ready = GameSetup.ready()
+            val toolchain = dev.horizon.launcher.data.EmbeddedToolchain.status(this@MainActivity)
             val problem = initError?.let { "\nCore problem: $it" } ?: ""
-            status.text = "Core ${Core.coreVersion()} · Minecraft ${if (ready) "installed" else "not installed"}$problem"
+            status.text = "Core ${Core.coreVersion()} · Minecraft ${if (ready) "installed" else "not installed"} · HNMod runtime ${if (toolchain.installed) "ready" else "not installed"}$problem"
         }
     }
 
@@ -139,8 +266,9 @@ class MainActivity : ComponentActivity() {
             val message = try { action() } catch (e: Exception) { e.message ?: "$label failed" }
             busy = false
             buttons.forEach { it.isEnabled = true }
-            refreshStatus()
-            status.append("\n$message")
+            // Keep the final result visible. refreshStatus() launched asynchronously here could
+            // overwrite a compiler/download error immediately after the dialog closes.
+            status.text = "$label\n$message"
         }
     }
 }

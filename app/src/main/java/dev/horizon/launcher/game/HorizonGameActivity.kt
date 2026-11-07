@@ -100,11 +100,14 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     private var router: TouchInputRouter? = null
     private var gyro: GyroLook? = null
 
-    /** Consume every touch: the router forwards what the game needs, nothing reaches the native window twice. */
-    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        val r = router ?: return super.dispatchTouchEvent(ev)
-        return r.onTouchEvent(ev)
-    }
+    /**
+     * Let NativeActivity/Winit receive the original multi-touch stream.
+     * The Rust Android touch layer owns gameplay controls and menu gestures;
+     * routing these events through the old Kotlin mouse-look adapter turned
+     * vertical camera movement into menu-wheel input.
+     */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean =
+        super.dispatchTouchEvent(ev)
 
     override fun onStart() { super.onStart(); lifecycleRegistry.currentState = Lifecycle.State.STARTED }
     override fun onResume() { super.onResume(); lifecycleRegistry.currentState = Lifecycle.State.RESUMED; gyro?.start() }

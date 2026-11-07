@@ -9,6 +9,7 @@ import dev.horizon.launcher.core.NativeLoader
 import org.json.JSONObject
 import java.io.File
 import java.io.InputStream
+import java.nio.file.Files
 import java.security.MessageDigest
 
 /**
@@ -251,7 +252,7 @@ object Updater {
      * and engine data are the ones in use now (the active update's, else the APK's). The build number is
      * the APK's + 1, so a newer APK retires it (its core would be older than the app).
      */
-    fun importLocal(context: Context, source: InputStream): Imported {
+    fun importLocal(context: Context, source: InputStream, nativeData: File? = null): Imported {
         val files = context.filesDir
         val staging = File(root(files), "local.partial").apply { deleteRecursively(); mkdirs() }
         return try {
@@ -279,6 +280,11 @@ object Updater {
             (data?.inputStream() ?: context.assets.open(DATA)).use { src ->
                 File(staging, DATA).outputStream().use { src.copyTo(it) }
             }
+            // Post-build programs write runtime files here; keep them beside the imported
+            // game library so native_data::built() can resolve them on Android.
+            if (nativeData?.isDirectory == true) {
+                copyNativeData(nativeData, File(staging, "native-data"))
+            }
             val build = apkBuild(context) + 1
             val name = "$LOCAL${sha.take(8)}"
             File(staging, MANIFEST).writeText(
@@ -296,6 +302,34 @@ object Updater {
         } catch (t: Throwable) {
             staging.deleteRecursively()
             Imported.Bad(t.message ?: t.javaClass.simpleName)
+        }
+    }
+
+    private fun copyNativeData(source: File, destination: File) {
+        val root = source.canonicalFile.toPath()
+        var files = 0
+        var totalBytes = 0L
+        source.walkTopDown().forEach { entry ->
+            require(!Files.isSymbolicLink(entry.toPath())) {
+                "Native mod post-build data contains a symbolic link: ${entry.name}"
+            }
+            val canonical = entry.canonicalFile.toPath()
+            require(canonical.startsWith(root)) { "Native mod post-build data escaped its output directory." }
+            val relative = source.toPath().relativize(entry.toPath()).toString()
+            val target = if (relative.isEmpty()) destination else File(destination, relative)
+            if (entry.isDirectory) {
+                require(target.isDirectory || target.mkdirs()) { "Could not create native mod data directory." }
+            } else if (entry.isFile) {
+                files++
+                totalBytes += entry.length()
+                require(files <= 512 && totalBytes <= 64L * 1024L * 1024L) {
+                    "Native mod post-build data exceeds the 512-file / 64 MiB safety limit."
+                }
+                target.parentFile?.let { require(it.isDirectory || it.mkdirs()) }
+                entry.inputStream().use { input -> target.outputStream().use { input.copyTo(it) } }
+            } else {
+                error("Unsupported native mod data entry: ${entry.name}")
+            }
         }
     }
 
