@@ -81,6 +81,9 @@ object EmbeddedToolchain {
                     "Build ${imported.name} (${imported.sha.take(12)}) imported and activated. Restart the game to use it."
                 is Updater.Imported.Bad -> error(imported.message)
             }
+        } catch (error: Exception) {
+            logLine("FATAL: ${error.message ?: error::class.java.simpleName}")
+            throw error
         } finally {
             HnmodBuildLog.finish(activity)
             HnmodBuildService.end(activity.applicationContext)
