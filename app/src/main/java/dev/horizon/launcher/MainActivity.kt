@@ -248,6 +248,20 @@ class MainActivity : ComponentActivity() {
                         "Offline profile removed."
                     }
                 },
+                onRemoveAccount = { uuid ->
+                    run("Removing Microsoft account") {
+                        Core.removeAccount(uuid)
+                        refreshDashboardState()
+                        "Microsoft account removed."
+                    }
+                },
+                onUseGameName = {
+                    run("Selecting Minecraft player name") {
+                        Core.playAsGameName()
+                        refreshDashboardState()
+                        "Using the game's own player name."
+                    }
+                },
                 onSignIn = { beginMicrosoftSignIn() },
                 onSaveSettings = { patch ->
                     run("Saving core settings") {
