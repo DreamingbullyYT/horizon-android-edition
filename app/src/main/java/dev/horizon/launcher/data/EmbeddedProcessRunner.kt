@@ -9,7 +9,7 @@ import java.io.File
 object EmbeddedProcessRunner {
     data class Result(val exitCode: Int, val output: String, val logFile: File)
 
-    fun runScript(context: Context, script: File, args: List<String> = emptyList()): Result {
+    fun runScript(context: Context, script: File, args: List<String> = emptyList(), onLine: (String) -> Unit = {}): Result {
         require(script.isFile) { "Build script not found: ${script.name}" }
         val guestScript = guestPath(context, script)
         val guestArgs = args.map { arg ->
@@ -17,13 +17,13 @@ object EmbeddedProcessRunner {
         }
         val command = "exec ${EmbeddedTermuxPaths.GUEST_PREFIX}/bin/bash ${shellQuote(guestScript)} " +
             guestArgs.joinToString(" ") { shellQuote(it) }
-        return run(context, command, script.name)
+        return run(context, command, script.name, onLine)
     }
 
-    fun runShellCommand(context: Context, command: String, label: String): Result =
-        run(context, command, label)
+    fun runShellCommand(context: Context, command: String, label: String, onLine: (String) -> Unit = {}): Result =
+        run(context, command, label, onLine)
 
-    private fun run(context: Context, shellCommand: String, label: String): Result {
+    private fun run(context: Context, shellCommand: String, label: String, onLine: (String) -> Unit): Result {
         val root = EmbeddedTermuxPaths.root(context)
         val rootfs = EmbeddedTermuxPaths.rootfs(context)
         val termuxData = EmbeddedTermuxPaths.termuxData(context)
@@ -101,6 +101,8 @@ object EmbeddedProcessRunner {
             child.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
                 lines.forEach { line ->
                     writer.appendLine(line)
+                    writer.flush() // Make each compiler line visible to the live log immediately.
+                    onLine(line)
                     output.appendLine(line)
                     if (output.length > 256 * 1024) output.delete(0, output.length - 192 * 1024)
                 }
