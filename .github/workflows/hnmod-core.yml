@@ -72,8 +72,16 @@ jobs:
           assert "sparse+https://rsproxy.cn/index/" in script
           assert "CARGO_USE_MIRROR=1" in script
           assert 'cargo "${CARGO_MIRROR_CONFIG[@]}" "$@"' in script
-          assert "export CARGO_INCREMENTAL=0" in script
-          assert "HNMOD_CLI=(cargo_retry run" in script
+          cli_start = script.index("  hnmod_cli() {")
+          cli_end = script.index("\n  PINS=()", cli_start)
+          cli_block = script[cli_start:cli_end]
+          assert "local CARGO_INCREMENTAL=0" in cli_block
+          assert "export CARGO_INCREMENTAL" in cli_block
+          assert "export CARGO_INCREMENTAL=0" not in script, "validator setting must not leak into the game build"
+          assert '"${HNMOD_CLI[@]}"' not in script, "all validator calls must use the scoped helper"
+          incremental_pos = script.index("  export CARGO_INCREMENTAL=1")
+          build_pos = script.index('cargo_retry build --locked --manifest-path "$STAGE/Cargo.toml"')
+          assert incremental_pos < build_pos, "the native game build must enable Cargo incremental compilation"
           assert "cargo_retry install --locked --path" in script
           assert "cargo_retry fetch --manifest-path" in script
           fetch_pos = script.index('cargo_retry fetch --manifest-path "$SRC/Cargo.toml"')

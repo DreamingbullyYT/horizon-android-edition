@@ -20,5 +20,11 @@ The build sequence remains:
 The local build is **not sandboxed**. HNMod build scripts and Rust procedural macros execute with
 Horizon app permissions. The launcher asks for explicit confirmation before starting.
 
+The persistent Cargo target directory is kept between builds, so Cargo can reuse unchanged crate
+artifacts when a later HNMod changes only part of the engine. Exact engine/mod/toolchain matches
+also reuse the verified final Android game library. The validator CLI disables incremental
+compilation only inside its own helper; the game build explicitly enables Cargo incremental
+compilation to match Horizon's `fast` profile.
+
 The bootstrap must be installed and pass its linker/compiler smoke tests before the build action
 becomes available. Keep at least 10 GB free for the engine source, Rust caches and build output.

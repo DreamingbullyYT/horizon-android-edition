@@ -185,13 +185,15 @@ if [ "$PLAIN" = 0 ]; then
   # Match the PC launcher's revision selection: pinned mods build on the newest
   # pinned Horizon revision or the installed base, determined by Git commit dates.
   # A commit hash is never treated as a timestamp.
-  # cargo_retry is a Bash function, so invoke it in this shell rather than through env(1).
-  # Disable incremental compilation for the short-lived CLI to avoid concurrent cleanup races.
-  export CARGO_INCREMENTAL=0
-  HNMOD_CLI=(cargo_retry run --quiet --locked --manifest-path "$REPO/hnmod-core/Cargo.toml" --bin hnmod --)
+  # Keep the small validator CLI cheap without changing the environment of the much larger game build.
+  hnmod_cli() {
+    local CARGO_INCREMENTAL=0
+    export CARGO_INCREMENTAL
+    cargo_retry run --quiet --locked --manifest-path "$REPO/hnmod-core/Cargo.toml" --bin hnmod -- "$@"
+  }
   PINS=(); MOD_PINS=(); MIXIN_PINS=()
   for f in "${FILES[@]}"; do
-    info=$("${HNMOD_CLI[@]}" inspect "$f") || die "validation failed: $f"
+    info=$(hnmod_cli inspect "$f") || die "validation failed: $f"
     pin=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"].get("horizon") or "")' <<< "$info")
     hooks=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"].get("hooks") or "")' <<< "$info")
     if [ -n "$pin" ]; then
@@ -269,16 +271,16 @@ if [ "$PLAIN" = 0 ]; then
   fi
 
   say "Checking all mods against Horizon $PIN (hooks API $HOOKS_API; mixins $REV)"
-  "${HNMOD_CLI[@]}" resolve "$PIN" "$HOOKS_API" "$REV" "${FILES[@]}" \
+  hnmod_cli resolve "$PIN" "$HOOKS_API" "$REV" "${FILES[@]}" \
     || die "the selected mods are not compatible with this engine/mixins toolchain"
 
   say "Extracting validated source bundles"
   for f in "${FILES[@]}"; do
-    info=$("${HNMOD_CLI[@]}" inspect "$f") || die "validation failed: $f"
+    info=$(hnmod_cli inspect "$f") || die "validation failed: $f"
     id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"]["id"])' <<< "$info")
     hooks=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"].get("hooks") or "")' <<< "$info")
     mod_pin=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"].get("horizon") or "")' <<< "$info")
-    "${HNMOD_CLI[@]}" extract "$f" "$MODS/$id" || die "could not extract validated bundle: $f"
+    hnmod_cli extract "$f" "$MODS/$id" || die "could not extract validated bundle: $f"
     toml="$MODS/$id/horizon-mixin.toml"
     if [ -n "$hooks" ] || { [ -n "$mod_pin" ] && [ "$mod_pin" != "$PIN" ]; }; then
       python3 - "$toml" "$PIN" <<'PY'
@@ -297,7 +299,7 @@ PY
     echo "validated mod: $id"
   done
   API_PLAN="$WORK/api-plan.json"
-  "${HNMOD_CLI[@]}" prepare "$MODS" "$API_PLAN" || die "PC trait API/dependency preparation failed"
+  hnmod_cli prepare "$MODS" "$API_PLAN" || die "PC trait API/dependency preparation failed"
 fi
 
 # ---- 3. horizon-mixins (the same tool and commit the PC launcher uses) --------------------------
@@ -329,7 +331,7 @@ if [ ${#IDS[@]} -gt 0 ]; then
   mkdir -p "$STAGE"
   # Only changed files are written, so cargo (which goes by file times) redoes only what the mods touch.
   rsync -rc --delete --exclude target "$WORK/applied/" "$STAGE/"
-  API_RESULT=$("${HNMOD_CLI[@]}" stage-api "$MODS" "$STAGE" "$API_PLAN") || die "could not stage PC trait API crates into the Android game"
+  API_RESULT=$(hnmod_cli stage-api "$MODS" "$STAGE" "$API_PLAN") || die "could not stage PC trait API crates into the Android game"
   HAS_API=$(python3 -c 'import json,sys; print("1" if json.load(sys.stdin).get("has_api") else "0")' <<< "$API_RESULT")
   say "Resolving staged native crates and trait APIs"
   # Resolve the clean Android-patched workspace first. Its Cargo.lock includes
@@ -396,6 +398,9 @@ if [ -s "$CACHE_BUILD/libhorizon_android_game.so" ] && [ -s "$CACHE_BUILD/build.
 fi
 
 if [ "$CACHE_HIT" = "0" ]; then
+  # Horizon's fast profile already opts into incremental compilation. The HNMod CLI's
+  # validator-only setting is scoped to hnmod_cli(); enable incremental Rust builds here.
+  export CARGO_INCREMENTAL=1
   say "Compiling (profile $PROFILE). The first time this takes long; keep the phone charging."
   cargo_retry build --locked --manifest-path "$STAGE/Cargo.toml" \
     -p horizon-android-game --profile "$PROFILE" 2>&1 | tee "$WORK/build.log" \
