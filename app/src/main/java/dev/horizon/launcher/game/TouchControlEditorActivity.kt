@@ -57,14 +57,22 @@ class TouchControlEditorActivity : ComponentActivity() {
                         menuExit = {
                             // Save on exit so a back action never silently discards a layout edit.
                             editorModel.save(layoutFile) {
-                                setResult(RESULT_OK)
-                                finish()
+                                runOnUiThread {
+                                    setResult(RESULT_OK)
+                                    finish()
+                                }
                             }
                         },
                         onSaveLayout = { packed: ControlLayout ->
-                            runCatching { layoutFile.writeText(ControlJson.encode(packed)) }
-                                .onFailure { android.widget.Toast.makeText(this@TouchControlEditorActivity, "Could not save controls: ${it.message}", android.widget.Toast.LENGTH_LONG).show() }
-                            setResult(RESULT_OK)
+                            val failure = runCatching { layoutFile.writeText(ControlJson.encode(packed)) }.exceptionOrNull()
+                            runOnUiThread {
+                                if (failure != null) android.widget.Toast.makeText(
+                                    this@TouchControlEditorActivity,
+                                    "Could not save controls: ${failure.message}",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                                else setResult(RESULT_OK)
+                            }
                         }
                     )
                 }
