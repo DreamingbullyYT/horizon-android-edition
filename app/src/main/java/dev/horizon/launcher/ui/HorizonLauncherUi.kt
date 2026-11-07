@@ -341,7 +341,7 @@ private fun LibraryScreen(
     onCreate: (String) -> Unit
 ) {
     var showCreate by remember { mutableStateOf(false) }
-    PageShell("LIBRARY", "Everything you\\'ve built.", "INSTANCES  /  WORLDS  /  VERSIONS") {
+    PageShell("LIBRARY", "Everything you've built.", "INSTANCES  /  WORLDS  /  VERSIONS") {
         SectionLine("GAME DATA", "01")
         Readout(if (ready) "INSTALLATION" else "GAME DATA", if (ready) "READY" else "NOT FOUND", Modifier.fillMaxWidth())
         Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
