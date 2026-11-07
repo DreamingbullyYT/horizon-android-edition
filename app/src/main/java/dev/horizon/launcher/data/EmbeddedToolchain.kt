@@ -82,6 +82,7 @@ object EmbeddedToolchain {
                 is Updater.Imported.Bad -> error(imported.message)
             }
         } finally {
+            HnmodBuildLog.finish(activity)
             HnmodBuildService.end(activity.applicationContext)
         }
     }
@@ -133,7 +134,7 @@ object EmbeddedToolchain {
                     "-o Acquire::Retries=5 -o Acquire::Queue-Mode=access " +
                     "-o Dpkg::Options::=--force-confnew " +
                     "rust clang git rsync binutils python cmake make pkg-config coreutils",
-                "termux-install-build-packages", onLine = onProgress
+                "termux-install-build-packages", onLine = onLogLine
             )
             check(packages.exitCode == 0) {
                 "Could not install HNMod compiler packages (exit ${packages.exitCode}). Log: ${packages.logFile.absolutePath}\n${packages.output.takeLast(5000)}"
@@ -143,7 +144,7 @@ object EmbeddedToolchain {
             val smoke = EmbeddedProcessRunner.runShellCommand(
                 context,
                 "set -e; test \"\$(uname -m)\" = aarch64; cargo --version; rustc --version; clang --version; git --version; rsync --version; python --version; cmake --version; make --version; pkg-config --version; readelf --version",
-                "toolchain-smoke-test", onLine = onProgress
+                "toolchain-smoke-test", onLine = onLogLine
             )
             check(smoke.exitCode == 0) {
                 "Compiler verification failed (exit ${smoke.exitCode}). Log: ${smoke.logFile.absolutePath}\n${smoke.output.takeLast(5000)}"
