@@ -393,7 +393,7 @@ fi
 
 if [ "$CACHE_HIT" = "0" ]; then
   say "Compiling (profile $PROFILE). The first time this takes long; keep the phone charging."
-  nice -n 10 cargo_retry build --locked --manifest-path "$STAGE/Cargo.toml" \
+  cargo_retry build --locked --manifest-path "$STAGE/Cargo.toml" \
     -p horizon-android-game --profile "$PROFILE" 2>&1 | tee "$WORK/build.log" \
     || die "the build failed; the end of $WORK/build.log says why"
   LIB="$CARGO_TARGET_DIR/$PROFILE/libhorizon_android_game.so"
