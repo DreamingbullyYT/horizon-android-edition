@@ -70,6 +70,10 @@ object GameSetup {
 
     /** Starts the game process. */
     fun play(context: Context): Result<Unit> = runCatching {
-        context.startActivity(Intent(context, HorizonGameActivity::class.java))
+        context.startActivity(
+            Intent(context, HorizonGameActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            )
+        )
     }
 }
