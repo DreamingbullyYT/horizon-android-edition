@@ -366,6 +366,7 @@ internal fun HorizonGameControls(
                 val hotbarPointers = mutableSetOf<Long>()
                 val longPressJobs = mutableMapOf<Long, kotlinx.coroutines.Job>()
                 val heldButtons = mutableMapOf<Long, String>()
+                val tapSuppressed = mutableSetOf<Long>()
                 /** Zalith-style hotbar: index 0..8 of the slot under [p], or -1. Geometry comes from the game's HUD. */
                 fun hotbarSlotAt(p: Offset): Int {
                     val r = runCatching { GameInput.nativeHotbarRect() }.getOrNull() ?: return -1
@@ -384,8 +385,17 @@ internal fun HorizonGameControls(
                         heldButtons.values.forEach { GameInput.nativeSendControl(it, false) }
                         if (swipeLook) GameInput.nativeLookActive(false)
                         heldButtons.clear()
-                        positions.clear(); starts.clear(); downAt.clear(); lookPointers.clear(); gesturePointers.clear(); ignored.clear(); tuner.reset()
+                        positions.clear(); starts.clear(); downAt.clear(); lookPointers.clear(); gesturePointers.clear(); ignored.clear(); tapSuppressed.clear(); tuner.reset()
                         continue
+                    }
+                    // Once a control owns any pointer, a separate empty-screen touch must not
+                    // turn into a world click. Keep camera swipes, but cancel tap/long-press actions.
+                    if (occupied.isNotEmpty() && gesturePointers.isNotEmpty()) {
+                        tapSuppressed.addAll(gesturePointers)
+                        longPressJobs.values.forEach { it.cancel() }
+                        longPressJobs.clear()
+                        heldButtons.values.forEach { GameInput.nativeSendControl(it, false) }
+                        heldButtons.clear()
                     }
                     val areaStart = when (lookArea) { 1 -> 0.3f; 2 -> 0.5f; else -> 0f }
                     event.changes.forEach { change ->
@@ -408,16 +418,17 @@ internal fun HorizonGameControls(
                             }
                             if (grabbing) {
                                 if (prior == null) {
+                                    if (occupied.isNotEmpty()) tapSuppressed += id
                                     gesturePointers += id
                                     if (change.position.x >= size.width * areaStart) {
                                         lookPointers += id
                                         tuner.reset()
                                         if (swipeLook) GameInput.nativeLookActive(true)
                                     }
-                                    if (gesturesEnabled && longPressAction in 1..2) {
+                                    if (gesturesEnabled && longPressAction in 1..2 && id !in tapSuppressed && occupied.isEmpty()) {
                                         longPressJobs[id] = pointerScope.launch {
                                             kotlinx.coroutines.delay(longPressDelay.toLong())
-                                            if (id in gesturePointers && gesturesEnabled && longPressAction in 1..2) {
+                                            if (id in gesturePointers && id !in tapSuppressed && occupied.isEmpty() && gesturesEnabled && longPressAction in 1..2) {
                                                 val button = if (longPressAction == 1) "GLFW_MOUSE_BUTTON_LEFT" else "GLFW_MOUSE_BUTTON_RIGHT"
                                                 GameInput.nativeSendControl(button, true)
                                                 heldButtons[id] = button
@@ -449,10 +460,11 @@ internal fun HorizonGameControls(
                                 if (lookPointers.remove(id) && swipeLook) GameInput.nativeLookActive(lookPointers.isNotEmpty())
                                 longPressJobs.remove(id)?.cancel()
                                 val heldButton = heldButtons.remove(id)
+                                val suppressTap = tapSuppressed.remove(id) || occupied.isNotEmpty()
                                 val moved = start?.let { (it - change.position).getDistance() > 24f } ?: true
                                 if (heldButton != null) {
                                     GameInput.nativeSendControl(heldButton, false)
-                                } else if (!moved && gesturesEnabled) {
+                                } else if (!moved && gesturesEnabled && !suppressTap) {
                                     val action = if (duration >= longPressDelay) longPressAction else tapAction
                                     if (action in 1..2) {
                                         val button = if (action == 1) "GLFW_MOUSE_BUTTON_LEFT" else "GLFW_MOUSE_BUTTON_RIGHT"
@@ -473,7 +485,7 @@ internal fun HorizonGameControls(
             val activeEditor = editorViewModel!!
             ControlEditor(
                 viewModel = activeEditor,
-                targetFile = File(context.filesDir, "zalith-control-layout.json"),
+                targetFile = File(File(context.filesDir, "launcher"), "touch-layout.json"),
                 exit = { finishEditing(keep = true, updated = activeEditor.observableLayout.pack()) },
                 menuExit = { finishEditing(keep = false) },
                 onSaveLayout = { updated ->
@@ -559,7 +571,8 @@ internal fun HorizonGameControls(
                 }
             }
         } else {
-            if (storedHud) ControlBoxLayout(
+            // The settings sheet dims the whole game; do not render or hit-test the HUD beneath it.
+            if (storedHud && !quickSettings) ControlBoxLayout(
                 modifier = Modifier.fillMaxSize(), observedLayout = activeLayout, eventHandler = handler,
                 isCursorGrabbing = grabbing,
                 checkOccupiedPointers = { it.value in occupied },
@@ -756,7 +769,7 @@ internal fun HorizonGameControls(
                             }
                             MenuSwitchButton(text = "Show process memory", switch = showMemory) { showMemory = it; prefs.edit().putBoolean("show_memory", it).apply() }
                             MenuSectionLabel("Session")
-                            MenuTextButton(text = "Close game") { (context as? Activity)?.finish() }
+                            MenuTextButton(text = "Close game") { (context as? HorizonGameActivity)?.closeGame() }
                         }
                     },
                 )
