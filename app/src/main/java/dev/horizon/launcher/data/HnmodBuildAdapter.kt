@@ -16,7 +16,7 @@ object HnmodBuildAdapter {
     private const val MAX_MOD_ARCHIVE_BYTES = 72L * 1024L * 1024L
     private const val MAX_TOTAL_ARCHIVE_BYTES = 288L * 1024L * 1024L
 
-    fun compile(context: Context, prefix: File, selected: List<Uri>): Updater.Imported {
+    fun compile(context: Context, prefix: File, selected: List<Uri>, onLogLine: (String) -> Unit = {}): Updater.Imported {
         require(selected.isNotEmpty()) { "Select at least one .hnmod archive." }
         materializeProject(context)
 
@@ -74,8 +74,10 @@ object HnmodBuildAdapter {
             val projectRoot = File(context.filesDir, "horizon-project")
             val script = File(projectRoot, "android/termux/build-with-mods.sh")
             val args = listOf("--name", buildName, "--jobs", "3", "--allow-version-mismatch") + archives.map { it.absolutePath }
-            val build = EmbeddedProcessRunner.runScript(context, script, args)
-            val logLocation = publishBuildLog(context, build.logFile, buildName) ?: build.logFile.absolutePath
+            val build = EmbeddedProcessRunner.runScript(context, script, args, onLine = onLogLine)
+            onLogLine("HNMod compiler process exited with code ${build.exitCode}")
+            val completeLog = HnmodBuildLog.file(context).takeIf { it.isFile } ?: build.logFile
+            val logLocation = publishBuildLog(context, completeLog, buildName) ?: completeLog.absolutePath
             check(build.exitCode == 0) {
                 "HNMod compilation failed (exit ${build.exitCode}). Full log: $logLocation\n${build.output.takeLast(8000)}"
             }
