@@ -30,8 +30,9 @@ optional dependency features, deterministic topological hook order, and the
 generated hook list attached to the existing `horizon-android-game` JNI
 entry point. It also validates mod-crate dependencies against Horizon's own
 `Cargo.lock`, stages the upstream `data/` payloads through
-`horizon-mixins`, and builds/runs `[[post_build]]` programs with the PC
-environment variables and per-mod data/cache directories.
+`horizon-mixins`, copies those bundle files into the imported Android game
+version, and builds/runs `[[post_build]]` programs with the PC environment
+variables and per-mod data/cache directories.
 
 The Android script now has a content-addressed ARM64 library cache keyed by
 the selected engine and mixins revisions, mod archive hashes, profile,

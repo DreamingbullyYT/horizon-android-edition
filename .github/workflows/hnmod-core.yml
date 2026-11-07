@@ -52,6 +52,8 @@ jobs:
           assert 'git -C "$SRC" reset --hard' not in script
           assert 'git -C "$SRC" checkout' not in script
           assert 'git_fetch_revision "$SRC" "$PIN"' in script
+          assert 'core.createObject=rename' in script, "Git under PRoot --link2symlink needs rename-based object creation"
+          assert Path("android/UPSTREAM_PIN").read_text() == Path("app/src/main/assets/hnmod/android/UPSTREAM_PIN").read_text(), "the phone builds from the bundled pin"
           assert 'git_fetch_revision "$SRC" "$candidate"' in script
           assert 'git_fetch_revision "$MIXIN_REPO" "$candidate"' in script
           asset = Path("app/src/main/assets/hnmod/android/termux/build-with-mods.sh").read_text()

@@ -177,9 +177,11 @@ jobs:
         run: |
           good="${{ steps.find.outputs.good }}"
           printf '%s\n' "$good" > android/UPSTREAM_PIN
+          # the phone builds from the copy bundled in the APK, so it must move with the pin
+          cp android/UPSTREAM_PIN app/src/main/assets/hnmod/android/UPSTREAM_PIN
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add android/UPSTREAM_PIN
+          git add android/UPSTREAM_PIN app/src/main/assets/hnmod/android/UPSTREAM_PIN
           git commit -m "chore: advance Android upstream pin to $good"
           git push
           # Pushes made with GITHUB_TOKEN do not start other workflows, so start the build explicitly.

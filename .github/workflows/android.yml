@@ -70,6 +70,9 @@ jobs:
           test -f app/src/main/java/dev/horizon/launcher/data/EmbeddedProcessRunner.kt
           test -f app/src/main/java/dev/horizon/launcher/data/HnmodBuildAdapter.kt
           diff -qr android/overlay app/src/main/assets/hnmod/android/overlay
+          cmp -s android/UPSTREAM_PIN app/src/main/assets/hnmod/android/UPSTREAM_PIN
+          cmp -s android/android.patch app/src/main/assets/hnmod/android/android.patch
+          cmp -s hnmod-core/README.md app/src/main/assets/hnmod/hnmod-core/README.md
           cmp -s android/termux/build-with-mods.sh app/src/main/assets/hnmod/android/termux/build-with-mods.sh
           cmp -s hnmod-core/Cargo.toml app/src/main/assets/hnmod/hnmod-core/Cargo.toml
           cmp -s hnmod-core/Cargo.lock app/src/main/assets/hnmod/hnmod-core/Cargo.lock

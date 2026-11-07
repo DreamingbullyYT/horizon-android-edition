@@ -91,16 +91,20 @@ git_fetch_revision() {
   local repo="$1" revision="$2"
   # Keep pack/index generation single-threaded. Android's private app filesystem can
   # otherwise lose temporary pack files during large partial-clone fetches.
-  if git -c pack.threads=1 -c index.threads=1 -C "$repo" fetch -q --filter=blob:none origin "$revision"; then
+  # core.createObject=rename: Git otherwise link()s each temporary pack into place and unlinks the
+  # original. PRoot's --link2symlink turns that link into a symlink to the file being unlinked, so Git
+  # reports "unable to write repeatedly vanishing file". A plain rename never creates a link.
+  if git -c core.createObject=rename -c pack.threads=1 -c index.threads=1 -C "$repo" fetch -q --filter=blob:none origin "$revision"; then
     return 0
   fi
   say "Repairing Git object/commit-graph metadata and retrying $revision"
+  git -C "$repo" config core.createObject rename
   git -C "$repo" config core.commitGraph false
   git -C "$repo" config pack.threads 1
   git -C "$repo" config index.threads 1
   rm -f "$repo/.git/objects/info/commit-graph"
   rm -rf "$repo/.git/objects/info/commit-graphs"
-  git -c pack.threads=1 -c index.threads=1 -C "$repo" fetch -q --refetch --filter=blob:none origin "$revision"
+  git -c core.createObject=rename -c pack.threads=1 -c index.threads=1 -C "$repo" fetch -q --refetch --filter=blob:none origin "$revision"
 }
 
 # ---- 0. tools ---------------------------------------------------------------------------------

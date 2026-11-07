@@ -60,12 +60,18 @@ object EmbeddedToolchain {
         val initial = status(activity)
         check(initial.supportedAbi) { initial.detail }
 
-        if (!initial.installed) installRuntime(activity, onProgress)
-        onProgress("Preparing HNMod build")
-        when (val imported = HnmodBuildAdapter.compile(activity, EmbeddedTermuxPaths.prefix(activity), selected)) {
-            is Updater.Imported.Ok ->
-                "Build ${imported.name} (${imported.sha.take(12)}) imported and activated. Restart the game to use it."
-            is Updater.Imported.Bad -> error(imported.message)
+        // Keeps the process in the foreground while PRoot/Cargo run, even if the user leaves the app.
+        HnmodBuildService.begin(activity.applicationContext)
+        try {
+            if (!initial.installed) installRuntime(activity, onProgress)
+            onProgress("Preparing HNMod build")
+            when (val imported = HnmodBuildAdapter.compile(activity, EmbeddedTermuxPaths.prefix(activity), selected)) {
+                is Updater.Imported.Ok ->
+                    "Build ${imported.name} (${imported.sha.take(12)}) imported and activated. Restart the game to use it."
+                is Updater.Imported.Bad -> error(imported.message)
+            }
+        } finally {
+            HnmodBuildService.end(activity.applicationContext)
         }
     }
 
@@ -90,7 +96,9 @@ object EmbeddedToolchain {
             val setup = EmbeddedProcessRunner.runShellCommand(
                 context,
                 // Termux apt stores downloads under app data, outside the prefix.
-                "mkdir -p /data/data/com.termux/cache/apt/archives/partial " +
+                "if [ -e \"\$PREFIX/etc/profile.d/01-termux-bootstrap-second-stage-fallback.sh\" ]; then " +
+                    "echo 'Termux bootstrap second stage failed'; exit 1; fi; " +
+                    "mkdir -p /data/data/com.termux/cache/apt/archives/partial " +
                     "/data/data/com.termux/cache/apt/lists/partial " +
                     "\$PREFIX/etc/apt \$PREFIX/var/cache/apt/archives/partial " +
                     "\$PREFIX/var/lib/apt/lists/partial; " +
@@ -100,7 +108,7 @@ object EmbeddedToolchain {
                 "termux-apt-update"
             )
             check(setup.exitCode == 0) {
-                "Could not update the official Termux package index (exit ${setup.exitCode}). Log: ${setup.logFile.absolutePath}\n${setup.output.takeLast(4000)}"
+                "Could not configure Termux or update its package index (exit ${setup.exitCode}). Log: ${setup.logFile.absolutePath}\n${setup.output.takeLast(4000)}"
             }
 
             onProgress("Installing Rust, Clang and HNMod build dependencies")

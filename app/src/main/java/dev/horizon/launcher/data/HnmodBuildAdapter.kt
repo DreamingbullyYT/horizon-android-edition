@@ -16,32 +16,6 @@ object HnmodBuildAdapter {
     private const val MAX_MOD_ARCHIVE_BYTES = 72L * 1024L * 1024L
     private const val MAX_TOTAL_ARCHIVE_BYTES = 288L * 1024L * 1024L
 
-    private val projectAssets = listOf(
-        "android/UPSTREAM_PIN",
-        "android/android.patch",
-        "android/overlay/crates/horizon-android-game/Cargo.toml",
-        "android/overlay/crates/horizon-android-game/src/lib.rs",
-        "android/overlay/crates/horizon-android-installer/Cargo.toml",
-        "android/overlay/crates/horizon-android-installer/src/android_resources.rs",
-        "android/overlay/crates/horizon-android-installer/src/lib.rs",
-        "android/overlay/crates/horizon-android-installer/src/official_install.rs",
-        "android/overlay/crates/horizon-android-installer/src/resource_install.rs",
-        "android/overlay/crates/horizon-client/src/game/android.rs",
-        "android/overlay/crates/horizon-client/src/native_data.rs",
-        "android/overlay/packaging/android/bedrock-controls.json",
-        "android/overlay/tools/android_engine_data.py",
-        "android/overlay/tools/android_prepare.py",
-        "android/termux/build-with-mods.sh",
-        "hnmod-core/Cargo.toml",
-        "hnmod-core/Cargo.lock",
-        "hnmod-core/README.md",
-        "hnmod-core/src/lib.rs",
-        "hnmod-core/src/dependencies.rs",
-        "hnmod-core/src/pc_api.rs",
-        "hnmod-core/src/bin/hnmod.rs",
-        "hnmod-core/THIRD_PARTY_LICENSES/starling-MIT.txt"
-    )
-
     fun compile(context: Context, prefix: File, selected: List<Uri>): Updater.Imported {
         require(selected.isNotEmpty()) { "Select at least one .hnmod archive." }
         materializeProject(context)
@@ -101,13 +75,14 @@ object HnmodBuildAdapter {
             val script = File(projectRoot, "android/termux/build-with-mods.sh")
             val args = listOf("--name", buildName, "--jobs", "3", "--allow-version-mismatch") + archives.map { it.absolutePath }
             val build = EmbeddedProcessRunner.runScript(context, script, args)
+            val logLocation = publishBuildLog(context, build.logFile, buildName) ?: build.logFile.absolutePath
             check(build.exitCode == 0) {
-                "HNMod compilation failed (exit ${build.exitCode}). Full log: ${build.logFile.absolutePath}\n${build.output.takeLast(8000)}"
+                "HNMod compilation failed (exit ${build.exitCode}). Full log: $logLocation\n${build.output.takeLast(8000)}"
             }
 
             val library = File(EmbeddedTermuxPaths.home(context), "Horizon-builds/$buildName/libhorizon_android_game.so")
             require(library.isFile && library.length() > 1_000_000L) {
-                "The build finished without producing a valid game library. Log: ${build.logFile.absolutePath}"
+                "The build finished without producing a valid game library. Log: $logLocation"
             }
             return Updater.importLocal(context, library.inputStream(), File(library.parentFile, "native-data"))
         } finally {
@@ -159,17 +134,28 @@ object HnmodBuildAdapter {
         }.getOrNull()
     }
 
+    /** Copies everything bundled under assets/hnmod into the private build workspace, so a new asset needs no list entry. */
     private fun materializeProject(context: Context) {
         val root = File(context.filesDir, "horizon-project")
         require(root.isDirectory || root.mkdirs()) { "Cannot create private Horizon build workspace." }
-        projectAssets.forEach { relative ->
-            val destination = File(root, relative)
+        // Drop files an older app version shipped; keep hnmod-core/target and the other build caches.
+        File(root, "android").deleteRecursively()
+        File(root, "hnmod-core/src").deleteRecursively()
+        copyAssetTree(context, "hnmod", root)
+    }
+
+    private fun copyAssetTree(context: Context, assetPath: String, destination: File) {
+        val children = context.assets.list(assetPath).orEmpty()
+        if (children.isEmpty()) {
             require(destination.parentFile?.let { it.isDirectory || it.mkdirs() } == true) {
-                "Cannot create build workspace directory for $relative"
+                "Cannot create build workspace directory for $assetPath"
             }
-            context.assets.open("hnmod/$relative").use { source ->
+            context.assets.open(assetPath).use { source ->
                 destination.outputStream().use { output -> source.copyTo(output) }
             }
+        } else {
+            require(destination.isDirectory || destination.mkdirs()) { "Cannot create build workspace directory for $assetPath" }
+            children.forEach { copyAssetTree(context, "$assetPath/$it", File(destination, it)) }
         }
     }
 }
