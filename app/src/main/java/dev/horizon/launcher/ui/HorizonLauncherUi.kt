@@ -164,7 +164,7 @@ fun HorizonLauncherUi(
             AtlasPage.CONTROLS -> ControlsAtlas(touchControls, onSaveTouchControls, onOpenControlsEditor)
             AtlasPage.SYSTEM -> SystemAtlas(
                 status, settings, platform, releases, telemetry, toolchainReady,
-                onSaveSettings, onSetNoAi, onSetTelemetry, onRefresh, onShowBuildLog
+                onSaveSettings, onSetNoAi, onSetTelemetry, onRefresh, onShowBuildLog, onInstallVersion
             )
         }
     }
@@ -419,7 +419,13 @@ private fun ModsAtlas(
         SectionHeading("Core-managed add-ons", "${installed.size} installed")
         if (installed.isEmpty()) EmptyState("No browser add-ons installed", "Items installed through Discover will appear here.")
         installed.forEach { item ->
-            DataSurface(item.title, "${item.kind} · ${item.source} · ${item.number}", "REMOVE", onClick = { onRemoveBrowse(item.project) })
+            val shader = item.kind.contains("shader", ignoreCase = true)
+            DataSurface(
+                item.title,
+                "${item.kind} · ${item.source} · ${item.number}",
+                "REMOVE",
+                onClick = { if (shader) onRemoveShader(item.title) else onRemoveBrowse(item.project) }
+            )
         }
     }
 }
@@ -601,7 +607,7 @@ private fun SystemAtlas(
     status: String, settings: SettingsInfo?, platform: PlatformInfo?, releases: List<Release>,
     telemetry: TelemetryInfo?, toolchainReady: Boolean,
     onSave: (JSONObject) -> Unit, onSetNoAi: (Boolean) -> Unit, onSetTelemetry: (Boolean) -> Unit,
-    onRefresh: () -> Unit, onBuildLog: () -> Unit
+    onRefresh: () -> Unit, onBuildLog: () -> Unit, onInstallVersion: (String) -> Unit
 ) {
     var installNew by remember(settings) { mutableStateOf(settings?.installNewVersions ?: true) }
     var prune by remember(settings) { mutableStateOf(settings?.pruneOldVersions ?: true) }
@@ -652,7 +658,12 @@ private fun SystemAtlas(
         SectionHeading("Available engine releases", "${releases.size} returned")
         if (releases.isEmpty()) EmptyState("No release metadata", "The native core did not return a release list.")
         releases.take(15).forEach { release ->
-            DataSurface(release.name.ifBlank { release.tag }, "${release.tag} · ${release.date} · ${if (release.nightly) "Nightly" else if (release.prerelease) "Pre-release" else "Release"}", null)
+            DataSurface(
+                release.name.ifBlank { release.tag },
+                "${release.tag} · ${release.date} · ${if (release.nightly) "Nightly" else if (release.prerelease) "Pre-release" else "Release"}",
+                "INSTALL",
+                onClick = { onInstallVersion(release.tag) }
+            )
         }
     }
 }
