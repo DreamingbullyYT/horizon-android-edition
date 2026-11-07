@@ -8,6 +8,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.BufferedOutputStream
 import java.io.File
 import java.util.zip.Deflater
@@ -48,6 +49,11 @@ object MinecraftBackup {
         val versions = installedVersions(context)
         require(versions.isNotEmpty()) { "Minecraft is not installed yet" }
         val files = versions.flatMap { dir -> dir.walkTopDown().filter { it.isFile }.map { dir to it }.toList() } + userFiles(context)
+        // The engine-data bundle is regenerated from the installed APK, not copied into the
+        // backup. Record its hash so restore can detect resource tables prepared by another build.
+        val engineDataSha = File(gameDir(context), ".engine-data.sha")
+            .takeIf { it.isFile }?.readText()?.trim()
+            ?.takeIf { it.matches(Regex("[0-9a-fA-F]{64}")) }
 
         fun write(out: java.io.OutputStream) {
             ZipOutputStream(BufferedOutputStream(out, 1 shl 16)).use { zip ->
@@ -59,6 +65,13 @@ object MinecraftBackup {
                     file.inputStream().use { it.copyTo(zip, 1 shl 16) }
                     zip.closeEntry()
                 }
+                zip.putNextEntry(ZipEntry("__horizon_backup__/manifest.json"))
+                val manifest = JSONObject()
+                    .put("schema", 1)
+                    .put("engineDataSha256", engineDataSha ?: JSONObject.NULL)
+                    .toString().toByteArray(Charsets.UTF_8)
+                zip.write(manifest)
+                zip.closeEntry()
             }
         }
 
@@ -118,7 +131,25 @@ object MinecraftBackup {
             }
             val restored = staging.listFiles { f -> f.isDirectory && File(f, "horizon-resources.json").isFile }.orEmpty()
             require(restored.isNotEmpty()) { "This is not a Horizon Minecraft backup" }
+
+            // Backups deliberately omit engine-data.zip because it is supplied by the APK.
+            // If the backup was made by a different build (or is an older backup without a
+            // manifest), its prepared Android tables cannot be trusted with today's engine data.
+            // Remove the install-complete marker so GameSetup.restoreBackup runs the native
+            // installer before allowing the game to launch.
+            val backupEngineSha = runCatching {
+                JSONObject(File(staging, "__horizon_backup__/manifest.json").readText())
+                    .optString("engineDataSha256")
+                    .takeIf { it.matches(Regex("[0-9a-fA-F]{64}")) }
+            }.getOrNull()
+            val currentEngineSha = runCatching {
+                File(gameDir(context), ".engine-data.sha").readText().trim()
+                    .takeIf { it.matches(Regex("[0-9a-fA-F]{64}")) }
+            }.getOrNull()
+            val engineDataMatches = backupEngineSha != null && backupEngineSha.equals(currentEngineSha, ignoreCase = true)
+
             for (dir in restored) {
+                if (!engineDataMatches) File(dir, "android-downloads-v2.json").delete()
                 val live = File(versions, dir.name)
                 live.deleteRecursively()
                 check(dir.renameTo(live)) { "Could not move ${dir.name} into place" }
