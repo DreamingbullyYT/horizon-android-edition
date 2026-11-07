@@ -3,6 +3,7 @@ package dev.horizon.launcher.game
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.lifecycle.ViewModelProvider
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -29,12 +30,10 @@ class TouchControlEditorActivity : ComponentActivity() {
         layoutFile = File(File(filesDir, "launcher"), "touch-layout.json").apply {
             parentFile?.mkdirs()
         }
-        val initial = runCatching {
-            if (layoutFile.isFile) loadLayoutFromFile(layoutFile) else TouchLayoutDefaults.create()
-        }.getOrElse { TouchLayoutDefaults.create() }
-        if (!layoutFile.isFile) layoutFile.writeText(ControlJson.encode(initial))
+        val initial = runCatching { if (layoutFile.isFile) loadLayoutFromFile(layoutFile) else null }.getOrNull()
+            ?: TouchLayoutDefaults.create().also { layoutFile.writeText(ControlJson.encode(it)) }
 
-        editorModel = EditorViewModel().apply { initLayout(initial) }
+        editorModel = ViewModelProvider(this)[EditorViewModel::class.java].apply { initLayout(initial) }
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
