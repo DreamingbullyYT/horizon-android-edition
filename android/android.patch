@@ -221,7 +221,7 @@ index dd91773a0..16b8abe82 100644
 +    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
 +        android::android_surface_suspended(&mut self.renderer);
 +    }
-+@@ -17058,1 +17061,2 @@
+@@ -17058,1 +17061,2 @@
          if self.window.is_some() {
 +            android::android_surface_resumed(&mut self.renderer, &self.window);
 @@ -17138,6 +17152,8 @@ impl ApplicationHandler for Game<'_> {
