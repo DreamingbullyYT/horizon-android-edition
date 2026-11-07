@@ -6,6 +6,9 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.IOException
 
+data class BrowseOption(val id: String, val label: String)
+data class BrowseCatalog(val sources: List<BrowseOption>, val kinds: List<BrowseOption>, val game: String)
+
 data class BrowseItem(
     val source: String,
     val id: String,
@@ -27,6 +30,18 @@ data class BrowseEntry(val project: String, val title: String, val kind: String,
 
 /** The mod browser: Kotlin side of core/src/browse.rs (search, install, remove). */
 object Browse {
+    suspend fun catalog(): BrowseCatalog = withContext(Dispatchers.IO) {
+        val o = obj(Native.nativeBrowseCatalog())
+        fun options(key: String): List<BrowseOption> {
+            val array = o.optJSONArray(key) ?: return emptyList()
+            return (0 until array.length()).map { index ->
+                val item = array.getJSONObject(index)
+                BrowseOption(item.optString("id"), item.optString("label"))
+            }
+        }
+        BrowseCatalog(options("sources"), options("kinds"), o.optString("game"))
+    }
+
     private fun obj(raw: String): JSONObject {
         val o = JSONObject(raw)
         if (o.has("error") && o.optString("error").isNotEmpty()) throw IOException(o.optString("error"))
