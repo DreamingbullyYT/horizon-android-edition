@@ -168,7 +168,7 @@ jobs:
           assert '"toolchain-smoke-test", onLine = onLogLine' in toolchain
           assert "HnmodBuildLog.finish(activity)" in toolchain
           assert "onLine = onLogLine" in adapter
-          assert "OPEN LIVE BUILD LOG" in ui and "onLog" in ui
+          assert "Live build log" in ui and "onBuildLog" in ui
           assert "onShowBuildLog = { showLiveHnmodLog() }" in activity
           assert "showLiveHnmodLog()" in activity
           assert "delay(500)" in activity
