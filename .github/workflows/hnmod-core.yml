@@ -11,6 +11,7 @@ on:
       - "app/src/main/assets/hnmod/android/**"
       - "app/src/main/java/dev/horizon/launcher/data/**"
       - "app/src/main/java/dev/horizon/launcher/MainActivity.kt"
+      - "app/src/main/java/dev/horizon/launcher/ui/**"
       - ".github/workflows/hnmod-core.yml"
   pull_request:
     paths:
@@ -158,6 +159,7 @@ jobs:
           adapter = Path("app/src/main/java/dev/horizon/launcher/data/HnmodBuildAdapter.kt").read_text()
           toolchain = Path("app/src/main/java/dev/horizon/launcher/data/EmbeddedToolchain.kt").read_text()
           activity = Path("app/src/main/java/dev/horizon/launcher/MainActivity.kt").read_text()
+          ui = Path("app/src/main/java/dev/horizon/launcher/ui/HorizonLauncherUi.kt").read_text()
           assert "writer.flush()" in runner and "onLine(line)" in runner
           assert "onLine: (String) -> Unit = {}" in runner
           assert "HnmodBuildLog.begin(activity)" in toolchain
@@ -166,7 +168,8 @@ jobs:
           assert '"toolchain-smoke-test", onLine = onLogLine' in toolchain
           assert "HnmodBuildLog.finish(activity)" in toolchain
           assert "onLine = onLogLine" in adapter
-          assert "View live HNMod build log" in activity
+          assert "OPEN LIVE BUILD LOG" in ui and "onLog" in ui
+          assert "onShowBuildLog = { showLiveHnmodLog() }" in activity
           assert "showLiveHnmodLog()" in activity
           assert "delay(500)" in activity
           PY
