@@ -62,16 +62,21 @@ object EmbeddedToolchain {
         check(initial.supportedAbi) { initial.detail }
 
         HnmodBuildLog.begin(activity)
-        fun log(message: String) {
+        fun logLine(message: String) {
             HnmodBuildLog.append(activity, message)
+            onLogLine(message)
+        }
+        fun progress(message: String) {
+            HnmodBuildLog.append(activity, message)
+            onProgress(message)
             onLogLine(message)
         }
         // Keeps the process in the foreground while PRoot/Cargo run, even if the user leaves the app.
         HnmodBuildService.begin(activity.applicationContext)
         try {
-            if (!initial.installed) installRuntime(activity) { message -> log(message) }
-            log("Preparing HNMod build")
-            when (val imported = HnmodBuildAdapter.compile(activity, EmbeddedTermuxPaths.prefix(activity), selected, ::log)) {
+            if (!initial.installed) installRuntime(activity, ::progress, ::logLine)
+            progress("Preparing HNMod build")
+            when (val imported = HnmodBuildAdapter.compile(activity, EmbeddedTermuxPaths.prefix(activity), selected, ::logLine)) {
                 is Updater.Imported.Ok ->
                     "Build ${imported.name} (${imported.sha.take(12)}) imported and activated. Restart the game to use it."
                 is Updater.Imported.Bad -> error(imported.message)
@@ -81,7 +86,11 @@ object EmbeddedToolchain {
         }
     }
 
-    private suspend fun installRuntime(context: android.content.Context, onProgress: (String) -> Unit) {
+    private suspend fun installRuntime(
+        context: android.content.Context,
+        onProgress: (String) -> Unit,
+        onLogLine: (String) -> Unit
+    ) {
         val marker = EmbeddedTermuxPaths.marker(context)
         marker.delete()
         val archive = File(context.cacheDir, "termux-bootstrap-arm64.zip")
@@ -111,7 +120,7 @@ object EmbeddedToolchain {
                     "printf '%s\\n' 'deb https://packages-cf.termux.dev/apt/termux-main stable main' > \$PREFIX/etc/apt/sources.list; " +
                     "apt update -o Acquire::Retries=5 -o Acquire::Queue-Mode=access || " +
                     "apt update -o Acquire::Retries=5 -o Acquire::Queue-Mode=access",
-                "termux-apt-update", onLine = onProgress
+                "termux-apt-update", onLine = onLogLine
             )
             check(setup.exitCode == 0) {
                 "Could not configure Termux or update its package index (exit ${setup.exitCode}). Log: ${setup.logFile.absolutePath}\n${setup.output.takeLast(4000)}"
