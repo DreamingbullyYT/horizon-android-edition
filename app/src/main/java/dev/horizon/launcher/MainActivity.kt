@@ -18,6 +18,13 @@ import dev.horizon.launcher.ui.HorizonLauncherUi
 import androidx.activity.result.contract.ActivityResultContracts
 import dev.horizon.launcher.core.Native
 import dev.horizon.launcher.data.Core
+import dev.horizon.launcher.data.InstanceInfo
+import dev.horizon.launcher.data.InstalledVersion
+import dev.horizon.launcher.data.ModInfo
+import dev.horizon.launcher.data.ServerInfo
+import dev.horizon.launcher.data.SettingsInfo
+import dev.horizon.launcher.data.WorldInfo
+import org.json.JSONObject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,6 +43,14 @@ class MainActivity : ComponentActivity() {
     private var statusText by mutableStateOf("")
     private var minecraftReadyState by mutableStateOf(false)
     private var toolchainReadyState by mutableStateOf(false)
+    private var instancesState by mutableStateOf<List<InstanceInfo>>(emptyList())
+    private var selectedInstanceState by mutableStateOf<InstanceInfo?>(null)
+    private var worldsState by mutableStateOf<List<WorldInfo>>(emptyList())
+    private var serversState by mutableStateOf<List<ServerInfo>>(emptyList())
+    private var modsState by mutableStateOf<List<ModInfo>>(emptyList())
+    private var versionsState by mutableStateOf<List<InstalledVersion>>(emptyList())
+    private var settingsState by mutableStateOf<SettingsInfo?>(null)
+    private var playerNameState by mutableStateOf("Local profile")
     private val buttons = mutableListOf<Button>()
     private var busy = false
     private var initError: String? = null
@@ -51,6 +66,12 @@ class MainActivity : ComponentActivity() {
     }
     private val compiledBuildPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) confirmAndImportBuild(uri)
+    }
+    private val modPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) importNativeFile(uri, shader = false)
+    }
+    private val shaderPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) importNativeFile(uri, shader = true)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,17 +89,94 @@ class MainActivity : ComponentActivity() {
                 status = statusText,
                 minecraftReady = minecraftReadyState,
                 toolchainReady = toolchainReadyState,
+                instances = instancesState,
+                selectedInstance = selectedInstanceState,
+                worlds = worldsState,
+                servers = serversState,
+                mods = modsState,
+                versions = versionsState,
+                settings = settingsState,
+                playerName = playerNameState,
                 onPlay = { GameSetup.play(this).onFailure { show("Could not open the game: " + it.message) } },
-                onInstall = { run("Installing Minecraft") { GameSetup.install(this, this::show); "Minecraft is ready." } },
+                onInstall = {
+                    run("Installing Minecraft") {
+                        GameSetup.install(this, this::show)
+                        refreshDashboardState()
+                        "Minecraft is ready."
+                    }
+                },
                 onImportFolder = { folderPicker.launch(null) },
                 onRestoreBackup = { backupPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
                 onCompileHnmod = { hnmodPicker.launch(arrayOf("application/octet-stream", "application/zip", "*/*")) },
                 onImportBuild = { compiledBuildPicker.launch(arrayOf("application/octet-stream", "*/*")) },
-                onExportBackup = { run("Exporting backup") { "Saved to " + GameSetup.exportBackup(this, this::show) } },
-                onShowBuildLog = { showLiveHnmodLog() }
+                onExportBackup = {
+                    run("Exporting backup") {
+                        val destination = GameSetup.exportBackup(this, this::show)
+                        refreshDashboardState()
+                        "Saved to $destination"
+                    }
+                },
+                onShowBuildLog = { showLiveHnmodLog() },
+                onRefresh = { refreshDashboard() },
+                onCreateInstance = { name ->
+                    run("Creating instance") {
+                        val created = Core.createInstance(name)
+                        refreshDashboardState()
+                        "Created ${created.name}."
+                    }
+                },
+                onSelectInstance = { id ->
+                    run("Selecting instance") {
+                        val selected = Core.selectInstance(id).firstOrNull { it.id == id }
+                        refreshDashboardState()
+                        "Selected ${selected?.name ?: "instance"}."
+                    }
+                },
+                onAddServer = { name, address ->
+                    run("Saving server") {
+                        Core.addServer(name, address)
+                        refreshDashboardState()
+                        "Saved $name."
+                    }
+                },
+                onRemoveServer = { index ->
+                    run("Removing server") {
+                        Core.removeServer(index)
+                        refreshDashboardState()
+                        "Server removed."
+                    }
+                },
+                onImportMod = { modPicker.launch(arrayOf("application/java-archive", "application/octet-stream", "*/*")) },
+                onImportShader = { shaderPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
+                onRemoveMod = { id ->
+                    run("Removing mod") {
+                        Core.removeMod(id)
+                        refreshDashboardState()
+                        "Mod removed."
+                    }
+                },
+                onSaveSettings = { installNew, pruneOld, skipOpening ->
+                    run("Saving settings") {
+                        Core.saveSettings(
+                            JSONObject()
+                                .put("install_new_versions", installNew)
+                                .put("prune_old_versions", pruneOld)
+                                .put("skip_opening", skipOpening)
+                        )
+                        refreshDashboardState()
+                        "Settings saved."
+                    }
+                },
+                onSetNoAi = { enabled ->
+                    run("Saving preference") {
+                        Core.setNoAi(enabled)
+                        refreshDashboardState()
+                        "Preference saved."
+                    }
+                }
             )
         }
-        refreshStatus()
+        refreshDashboard()
         startUpdateMonitor()
     }
 
@@ -197,14 +295,62 @@ class MainActivity : ComponentActivity() {
         dialog.show()
     }
 
-    private fun refreshStatus() {
-        scope.launch {
-            val ready = GameSetup.ready()
-            val toolchain = dev.horizon.launcher.data.EmbeddedToolchain.status(this@MainActivity)
-            minecraftReadyState = ready
-            toolchainReadyState = toolchain.installed
-            val problem = initError?.let { "\nCore problem: $it" } ?: ""
-            statusText = "Core ${Core.coreVersion()} · Minecraft ${if (ready) "installed" else "not installed"} · HNMod runtime ${if (toolchain.installed) "ready" else "not installed"}$problem"
+    private fun refreshDashboard() {
+        scope.launch { refreshDashboardState() }
+    }
+
+    private suspend fun refreshDashboardState() {
+        val ready = runCatching { GameSetup.ready() }.getOrDefault(false)
+        val toolchain = runCatching {
+            dev.horizon.launcher.data.EmbeddedToolchain.status(this@MainActivity)
+        }.getOrNull()
+        val instances = runCatching { Core.instances() }.getOrDefault(emptyList())
+        val settings = runCatching { Core.settings() }.getOrNull()
+        val worlds = runCatching { Core.worlds() }.getOrDefault(emptyList())
+        val servers = runCatching { Core.servers() }.getOrDefault(emptyList())
+        val mods = runCatching { Core.mods() }.getOrDefault(emptyList())
+        val versions = runCatching { Core.installed() }.getOrDefault(emptyList())
+        val accounts = runCatching { Core.accounts() }.getOrNull()
+
+        minecraftReadyState = ready
+        toolchainReadyState = toolchain?.installed == true
+        instancesState = instances
+        settingsState = settings
+        selectedInstanceState = instances.firstOrNull {
+            it.id == settings?.instance || it.name == settings?.instance
+        } ?: instances.firstOrNull()
+        worldsState = worlds
+        serversState = servers
+        modsState = mods
+        versionsState = versions
+        playerNameState = accounts?.player?.label ?: "Local profile"
+
+        val problem = initError?.let { " · core problem: $it" } ?: ""
+        statusText = "CORE ${Core.coreVersion()}  /  MINECRAFT " +
+            (if (ready) "READY" else "NOT INSTALLED") +
+            "  /  HNMOD " + (if (toolchainReadyState) "READY" else "NOT INSTALLED") + problem
+    }
+
+    private fun importNativeFile(uri: Uri, shader: Boolean) {
+        val label = if (shader) "Importing shader pack" else "Importing HMod package"
+        run(label) {
+            val file = withContext(Dispatchers.IO) {
+                val folder = File(cacheDir, "launcher-imports").apply { mkdirs() }
+                val extension = if (shader) "zip" else "jar"
+                val target = File(folder, "horizon-import-${System.currentTimeMillis()}.$extension")
+                contentResolver.openInputStream(uri)?.use { input ->
+                    target.outputStream().use { output -> input.copyTo(output) }
+                } ?: error("Could not open the selected file.")
+                target
+            }
+            try {
+                val imported = if (shader) Core.importShader(file.absolutePath)
+                    else Core.importMod(file.absolutePath)
+                refreshDashboardState()
+                "Imported $imported."
+            } finally {
+                file.delete()
+            }
         }
     }
 
