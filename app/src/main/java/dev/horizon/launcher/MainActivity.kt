@@ -174,19 +174,34 @@ class MainActivity : ComponentActivity() {
         dialog.setOnShowListener {
             scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
             scope.launch {
-                var lastLength = -1
+                val content = StringBuilder()
+                var offset = 0L
                 while (dialog.isShowing) {
-                    val content = runCatching {
-                        if (logFile.isFile) logFile.readText()
-                        else "Waiting for the HNMod compiler log…"
-                    }.getOrElse { "Could not read live log: ${it.message}" }
-                    if (content.length != lastLength) {
-                        val wasAtBottom = scroll.getChildAt(0).let { child ->
-                            child.bottom - (scroll.scrollY + scroll.height) <= 48
+                    if (logFile.isFile) {
+                        val length = logFile.length()
+                        if (length < offset) {
+                            offset = 0L
+                            content.setLength(0)
                         }
-                        logView.text = content
-                        lastLength = content.length
-                        if (wasAtBottom) scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
+                        if (length > offset) {
+                            val count = (length - offset).coerceAtMost(1024L * 1024L).toInt()
+                            val bytes = ByteArray(count)
+                            val read = runCatching {
+                                java.io.RandomAccessFile(logFile, "r").use { input ->
+                                    input.seek(offset)
+                                    input.read(bytes)
+                                }
+                            }.getOrDefault(-1)
+                            if (read > 0) {
+                                val wasAtBottom = scroll.getChildAt(0).let { child ->
+                                    child.bottom - (scroll.scrollY + scroll.height) <= 48
+                                }
+                                content.append(String(bytes, 0, read, Charsets.UTF_8))
+                                offset += read
+                                logView.text = content.toString()
+                                if (wasAtBottom) scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
+                            }
+                        }
                     }
                     delay(500)
                 }
