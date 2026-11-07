@@ -148,10 +148,15 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         zalithOverlay?.let { view -> runCatching { windowManager.removeView(view) } }
         zalithOverlay = null
+        // Do not kill :game or stop its foreground service on an ordinary Activity teardown.
+        // The game Activity is hosted in its own task so the launcher can be reopened independently.
         super.onDestroy()
-        // The game lives in its own process (:game); the native engine cannot start twice in one process.
+    }
+
+    /** Explicit player action: close the native game session and its keep-alive notification. */
+    fun closeGame() {
         stopService(Intent(this, GameKeepAliveService::class.java))
-        android.os.Process.killProcess(android.os.Process.myPid())
+        finish()
     }
     override fun onSaveInstanceState(outState: Bundle) {
         savedStateController.performSave(outState)
