@@ -328,13 +328,15 @@ if [ ${#IDS[@]} -gt 0 ]; then
   API_RESULT=$("${HNMOD_CLI[@]}" stage-api "$MODS" "$STAGE" "$API_PLAN") || die "could not stage PC trait API crates into the Android game"
   HAS_API=$(python3 -c 'import json,sys; print("1" if json.load(sys.stdin).get("has_api") else "0")' <<< "$API_RESULT")
   say "Resolving staged native crates and trait APIs"
-  # Preserve the exact upstream lock before Cargo reconciles workspace metadata.
-  # Some engine snapshots need a lockfile metadata refresh after the Android overlay;
-  # the staged dependency allow-list below must still be checked against this original.
-  cp "$SRC/Cargo.lock" "$WORK/horizon-pinned-Cargo.lock" \
-    || die "Horizon Cargo.lock is missing; refusing an unpinned native build"
+  # Resolve the clean Android-patched workspace first. Its Cargo.lock includes
+  # legitimate Android-only packages from horizon-android-game/installer (e.g.
+  # android_logger and zip), none of which are present in upstream's desktop lock.
+  # Save this baseline before inspecting STAGE: STAGE is where HNMods are applied,
+  # so comparing against this lock rejects only crates introduced by staged mods.
   cargo_retry fetch --manifest-path "$SRC/Cargo.toml" >/dev/null \
     || die "could not fetch Horizon's pinned Cargo packages"
+  cp "$SRC/Cargo.lock" "$WORK/horizon-pinned-Cargo.lock" \
+    || die "Horizon Android workspace Cargo.lock is missing; refusing an unpinned native build"
   cargo metadata --offline --format-version 1 --manifest-path "$STAGE/Cargo.toml" >/dev/null \
     || die "native mod dependency resolution failed (only packages available to Horizon can be used)"
   python3 - "$WORK/horizon-pinned-Cargo.lock" "$STAGE/Cargo.lock" <<'PYLOCK'
