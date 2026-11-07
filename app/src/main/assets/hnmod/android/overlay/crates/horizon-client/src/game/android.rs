@@ -384,6 +384,10 @@ impl Game<'_> {
     }
 
     pub(super) fn draw_android_touch_controls(&self, batch: &mut HudBatch) {
+        // Horizon's Kotlin Zalith LayerController owns touch visuals when enabled.
+        if std::env::var_os("HORIZON_ANDROID_ZALITH_CONTROLS").is_some() {
+            return;
+        }
         if !cfg!(target_os = "android")
             || self.screen != Screen::Playing
             || self.title.is_some()
@@ -833,6 +837,7 @@ impl Game<'_> {
     fn android_translate_touch(&mut self, event_loop: &dyn EventLoopCtl, touch: winit::event::Touch) -> Option<WindowEvent> {
         Some({
                 if cfg!(target_os = "android")
+                    && std::env::var_os("HORIZON_ANDROID_ZALITH_CONTROLS").is_none()
                     && self.android_touch.enabled
                     && self.screen == Screen::Playing
                     && self.title.is_none()

@@ -15,10 +15,13 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Toast
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
@@ -54,6 +57,7 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     private val activePadAxes = mutableSetOf<String>()
     private var layoutImportCallback: ((ControlLayout) -> Unit)? = null
     private var pendingExport: ControlLayout? = null
+    private var zalithOverlay: ComposeView? = null
     override val savedStateRegistry: SavedStateRegistry get() = savedStateController.savedStateRegistry
 
     private val currentLayoutFile: File get() = File(File(filesDir, "launcher"), "touch-layout.json")
@@ -63,6 +67,8 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         dev.horizon.launcher.data.Updater.gamePath(filesDir)?.let {
             runCatching { android.system.Os.setenv("HORIZON_GAME_LIB", it, true) }
         }
+        // Disable the legacy Rust HUD; Zalith owns the touch layer in this Activity.
+        runCatching { android.system.Os.setenv("HORIZON_ANDROID_ZALITH_CONTROLS", "1", true) }
         dev.horizon.launcher.data.Updater.armGuard(filesDir)
         super.onCreate(savedInstanceState)
         runCatching {
@@ -74,6 +80,9 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         savedStateController.performAttach()
         savedStateController.performRestore(savedInstanceState)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
+        // Supply owners on the decor tree before Compose creates its WindowRecomposer.
+        window.decorView.setViewTreeLifecycleOwner(this)
+        window.decorView.setViewTreeSavedStateRegistryOwner(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Sustained-performance mode keeps clocks steady instead of boosting then throttling (MediaTek/Mali SoCs overheat fast).
         runCatching {
@@ -87,34 +96,58 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
             or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
             or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
 
-        // No UI toolkit here: touches go straight to the router, which drives look, hotbar taps and menu
-        // touches through GameInput. The launcher UI is being rebuilt separately.
-        router = TouchInputRouter(this, window.decorView)
-        gyro = GyroLook(this)
+        val initialLayout = loadLayout()
+        val profiles = LayoutProfiles(this)
+        val overlay = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(this@HorizonGameActivity)
+            Class.forName("androidx.savedstate.ViewTreeSavedStateRegistryOwner")
+                .getMethod("set", View::class.java, SavedStateRegistryOwner::class.java)
+                .invoke(null, this, this@HorizonGameActivity)
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                HorizonGameControls(
+                    layout = initialLayout,
+                    profiles = profiles,
+                    defaultLayout = { defaultLayout() },
+                    setKeepAwake = { enabled ->
+                        if (enabled) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    },
+                    setMaxRefresh = { enabled ->
+                        val attributes = window.attributes
+                        attributes.preferredRefreshRate = if (enabled) windowManager.defaultDisplay.refreshRate else 0f
+                        window.attributes = attributes
+                    },
+                    save = { packed -> saveCurrentLayout(packed) }
+                )
+            }
+        }
         window.decorView.post {
-            val prefs = getSharedPreferences("zalith-touch-settings", MODE_PRIVATE)
-            runCatching { GameInput.nativeSetImeAllowed(prefs.getBoolean("auto_keyboard", true)) }
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                token = window.decorView.windowToken
+                gravity = Gravity.TOP or Gravity.START
+                title = "Horizon touch controls"
+            }
+            zalithOverlay = overlay
+            runCatching { windowManager.addView(overlay, params) }
+                .onFailure { android.util.Log.e("HorizonZalith", "Could not attach Zalith overlay", it) }
         }
     }
 
-    private var router: TouchInputRouter? = null
-    private var gyro: GyroLook? = null
-
-    /**
-     * Let NativeActivity/Winit receive the original multi-touch stream.
-     * The Rust Android touch layer owns gameplay controls and menu gestures;
-     * routing these events through the old Kotlin mouse-look adapter turned
-     * vertical camera movement into menu-wheel input.
-     */
-    override fun dispatchTouchEvent(ev: MotionEvent): Boolean =
-        super.dispatchTouchEvent(ev)
-
     override fun onStart() { super.onStart(); lifecycleRegistry.currentState = Lifecycle.State.STARTED }
-    override fun onResume() { super.onResume(); lifecycleRegistry.currentState = Lifecycle.State.RESUMED; gyro?.start() }
-    override fun onPause() { gyro?.stop(); router?.cancelAll(); lifecycleRegistry.currentState = Lifecycle.State.STARTED; super.onPause() }
+    override fun onResume() { super.onResume(); lifecycleRegistry.currentState = Lifecycle.State.RESUMED }
+    override fun onPause() { lifecycleRegistry.currentState = Lifecycle.State.STARTED; super.onPause() }
     override fun onStop() { lifecycleRegistry.currentState = Lifecycle.State.CREATED; super.onStop() }
     override fun onDestroy() {
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
+        zalithOverlay?.let { view -> runCatching { windowManager.removeView(view) } }
+        zalithOverlay = null
         super.onDestroy()
         // The game lives in its own process (:game); the native engine cannot start twice in one process.
         stopService(Intent(this, GameKeepAliveService::class.java))

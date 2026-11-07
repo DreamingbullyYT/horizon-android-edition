@@ -1,6 +1,8 @@
 package dev.horizon.launcher
 
 import android.net.Uri
+import android.content.Intent
+import android.net.Uri as AndroidUri
 import android.app.AlertDialog
 import android.os.Bundle
 import android.view.Gravity
@@ -10,9 +12,34 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import dev.horizon.launcher.ui.HorizonLauncherUi
 import androidx.activity.result.contract.ActivityResultContracts
 import dev.horizon.launcher.core.Native
 import dev.horizon.launcher.data.Core
+import dev.horizon.launcher.data.AccountsInfo
+import dev.horizon.launcher.data.Browse
+import dev.horizon.launcher.data.BrowseCatalog
+import dev.horizon.launcher.data.BrowseItem
+import dev.horizon.launcher.data.BrowseEntry
+import dev.horizon.launcher.data.BrowseProgress
+import dev.horizon.launcher.data.PlatformInfo
+import dev.horizon.launcher.data.Release
+import dev.horizon.launcher.data.SignInInfo
+import dev.horizon.launcher.data.TelemetryInfo
+import dev.horizon.launcher.data.TouchControlsInfo
+import dev.horizon.launcher.auth.MicrosoftAuth
+import dev.horizon.launcher.game.TouchControlEditorActivity
+import dev.horizon.launcher.data.InstanceInfo
+import dev.horizon.launcher.data.InstalledVersion
+import dev.horizon.launcher.data.ModInfo
+import dev.horizon.launcher.data.ServerInfo
+import dev.horizon.launcher.data.SettingsInfo
+import dev.horizon.launcher.data.WorldInfo
+import org.json.JSONObject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,22 +55,56 @@ import java.io.File
  */
 class MainActivity : ComponentActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private lateinit var status: TextView
+    private var statusText by mutableStateOf("")
+    private var minecraftReadyState by mutableStateOf(false)
+    private var toolchainReadyState by mutableStateOf(false)
+    private var instancesState by mutableStateOf<List<InstanceInfo>>(emptyList())
+    private var selectedInstanceState by mutableStateOf<InstanceInfo?>(null)
+    private var worldsState by mutableStateOf<List<WorldInfo>>(emptyList())
+    private var serversState by mutableStateOf<List<ServerInfo>>(emptyList())
+    private var modsState by mutableStateOf<List<ModInfo>>(emptyList())
+    private var versionsState by mutableStateOf<List<InstalledVersion>>(emptyList())
+    private var settingsState by mutableStateOf<SettingsInfo?>(null)
+    private var playerNameState by mutableStateOf("Local profile")
+    private var accountsState by mutableStateOf<AccountsInfo?>(null)
+    private var signInInfoState by mutableStateOf<SignInInfo?>(null)
+    private var platformState by mutableStateOf<PlatformInfo?>(null)
+    private var releasesState by mutableStateOf<List<Release>>(emptyList())
+    private var touchControlsState by mutableStateOf<TouchControlsInfo?>(null)
+    private var telemetryState by mutableStateOf<TelemetryInfo?>(null)
+    private var browseCatalogState by mutableStateOf<BrowseCatalog?>(null)
+    private var browseItemsState by mutableStateOf<List<BrowseItem>>(emptyList())
+    private var browseInstalledState by mutableStateOf<List<BrowseEntry>>(emptyList())
+    private var browseProgressState by mutableStateOf<BrowseProgress?>(null)
     private val buttons = mutableListOf<Button>()
     private var busy = false
     private var initError: String? = null
 
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-        if (uri != null) run("Importing Minecraft folder") { GameSetup.importFolder(this, uri, this::show).let { "Imported $it files." } }
+        if (uri != null) run("Importing Minecraft folder") {
+            val count = GameSetup.importFolder(this, uri, this::show)
+            refreshDashboardState()
+            "Imported $count files."
+        }
     }
     private val backupPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) run("Restoring backup") { GameSetup.restoreBackup(this, uri, this::show).let { "Restored $it Minecraft resource set(s)." } }
+        if (uri != null) run("Restoring backup") {
+            val count = GameSetup.restoreBackup(this, uri, this::show)
+            refreshDashboardState()
+            "Restored $count Minecraft resource set(s)."
+        }
     }
     private val hnmodPicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) confirmAndCompileHnmods(uris)
     }
     private val compiledBuildPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) confirmAndImportBuild(uri)
+    }
+    private val modPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) importNativeFile(uri, shader = false)
+    }
+    private val shaderPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) importNativeFile(uri, shader = true)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,42 +117,208 @@ class MainActivity : ComponentActivity() {
         initError = Native.loadError ?: runCatching { Native.nativeInit(home.absolutePath) }.exceptionOrNull()?.message ?: resourceError
         dev.horizon.launcher.data.Updater.armGuard(filesDir)
 
-        val pad = (16 * resources.displayMetrics.density).toInt()
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad * 2, pad, pad)
+        setContent {
+            HorizonLauncherUi(
+                status = statusText,
+                minecraftReady = minecraftReadyState,
+                toolchainReady = toolchainReadyState,
+                instances = instancesState,
+                selectedInstance = selectedInstanceState,
+                worlds = worldsState,
+                servers = serversState,
+                mods = modsState,
+                versions = versionsState,
+                settings = settingsState,
+                playerName = playerNameState,
+                accounts = accountsState,
+                signInInfo = signInInfoState,
+                platform = platformState,
+                releases = releasesState,
+                touchControls = touchControlsState,
+                telemetry = telemetryState,
+                browseCatalog = browseCatalogState,
+                browseItems = browseItemsState,
+                browseInstalled = browseInstalledState,
+                browseProgress = browseProgressState,
+                onPlay = { GameSetup.play(this).onFailure { show("Could not open the game: " + it.message) } },
+                onInstall = {
+                    run("Installing Minecraft") {
+                        GameSetup.install(this, this::show)
+                        refreshDashboardState()
+                        "Minecraft is ready."
+                    }
+                },
+                onImportFolder = { folderPicker.launch(null) },
+                onRestoreBackup = { backupPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
+                onCompileHnmod = { hnmodPicker.launch(arrayOf("application/octet-stream", "application/zip", "*/*")) },
+                onImportBuild = { compiledBuildPicker.launch(arrayOf("application/octet-stream", "*/*")) },
+                onExportBackup = {
+                    run("Exporting backup") {
+                        val destination = GameSetup.exportBackup(this, this::show)
+                        refreshDashboardState()
+                        "Saved to $destination"
+                    }
+                },
+                onShowBuildLog = { showLiveHnmodLog() },
+                onRefresh = { refreshDashboard() },
+                onCreateInstance = { name ->
+                    run("Creating instance") {
+                        val created = Core.createInstance(name)
+                        refreshDashboardState()
+                        "Created ${created.name}."
+                    }
+                },
+                onSelectInstance = { id ->
+                    run("Selecting instance") {
+                        val selected = Core.selectInstance(id).firstOrNull { it.id == id }
+                        refreshDashboardState()
+                        "Selected ${selected?.name ?: "instance"}."
+                    }
+                },
+                onDeleteInstance = { id ->
+                    run("Deleting instance") {
+                        Core.deleteInstance(id)
+                        refreshDashboardState()
+                        "Instance deleted."
+                    }
+                },
+                onAddServer = { name, address ->
+                    run("Saving server") {
+                        Core.addServer(name, address)
+                        refreshDashboardState()
+                        "Saved $name."
+                    }
+                },
+                onRemoveServer = { index ->
+                    run("Removing server") {
+                        Core.removeServer(index)
+                        refreshDashboardState()
+                        "Server removed."
+                    }
+                },
+                onImportMod = { modPicker.launch(arrayOf("application/java-archive", "application/octet-stream", "*/*")) },
+                onImportShader = { shaderPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
+                onRemoveMod = { id ->
+                    run("Removing mod") {
+                        Core.removeMod(id)
+                        refreshDashboardState()
+                        "Mod removed."
+                    }
+                },
+                onRemoveShader = { name ->
+                    run("Removing shader pack") {
+                        Core.removeShader(name)
+                        refreshDashboardState()
+                        "Shader pack removed."
+                    }
+                },
+                onInstallVersion = { tag ->
+                    run("Installing engine version") {
+                        val installed = Core.installVersion(tag)
+                        refreshDashboardState()
+                        "Installed $installed."
+                    }
+                },
+                onRemoveVersion = { tag ->
+                    run("Removing engine version") {
+                        Core.removeVersion(tag)
+                        refreshDashboardState()
+                        "Removed $tag."
+                    }
+                },
+                onSelectAccount = { id ->
+                    run("Selecting player identity") {
+                        if (id.startsWith("offline:")) Core.playOffline(id.removePrefix("offline:"))
+                        else Core.selectAccount(id)
+                        refreshDashboardState()
+                        "Player identity updated."
+                    }
+                },
+                onAddOffline = { name ->
+                    run("Adding offline profile") {
+                        Core.addOffline(name)
+                        refreshDashboardState()
+                        "Offline profile added."
+                    }
+                },
+                onRemoveOffline = { name ->
+                    run("Removing offline profile") {
+                        Core.removeOffline(name)
+                        refreshDashboardState()
+                        "Offline profile removed."
+                    }
+                },
+                onRemoveAccount = { uuid ->
+                    run("Removing Microsoft account") {
+                        Core.removeAccount(uuid)
+                        refreshDashboardState()
+                        "Microsoft account removed."
+                    }
+                },
+                onUseGameName = {
+                    run("Selecting Minecraft player name") {
+                        Core.playAsGameName()
+                        refreshDashboardState()
+                        "Using the game's own player name."
+                    }
+                },
+                onSignIn = { beginMicrosoftSignIn() },
+                onSaveSettings = { patch ->
+                    run("Saving core settings") {
+                        Core.saveSettings(patch)
+                        refreshDashboardState()
+                        "Core settings saved."
+                    }
+                },
+                onSetTelemetry = { enabled ->
+                    run("Updating diagnostics preference") {
+                        Core.setTelemetry(enabled)
+                        refreshDashboardState()
+                        "Diagnostics preference updated."
+                    }
+                },
+                onSaveTouchControls = { patch ->
+                    run("Saving touch preferences") {
+                        Core.saveTouchControls(patch)
+                        refreshDashboardState()
+                        "Touch preferences saved."
+                    }
+                },
+                onOpenControlsEditor = {
+                    startActivity(Intent(this, TouchControlEditorActivity::class.java))
+                },
+                onSearchBrowse = { source, kind, query ->
+                    run("Searching add-on catalog") {
+                        val result = Browse.search(source, kind, query, 0)
+                        browseItemsState = result.first
+                        browseProgressState = Browse.progress()
+                        "Found ${result.first.size} results."
+                    }
+                },
+                onInstallBrowse = { source, id ->
+                    run("Installing catalog item") {
+                        val installed = Browse.install(source, id)
+                        refreshDashboardState()
+                        "Installed ${installed.joinToString()}."
+                    }
+                },
+                onRemoveBrowse = { project ->
+                    run("Removing catalog item") {
+                        val removed = Browse.remove(project)
+                        refreshDashboardState()
+                        "Removed $removed."
+                    }
+                },
+                onSetNoAi = { enabled ->
+                    run("Saving preference") {
+                        Core.setNoAi(enabled)
+                        refreshDashboardState()
+                        "Preference saved."
+                    }
+                }
+            )
         }
-        status = TextView(this).apply { textSize = 15f; setPadding(0, 0, 0, pad) }
-        column.addView(TextView(this).apply { text = "Horizon"; textSize = 26f; gravity = Gravity.START })
-        column.addView(status)
-        fun button(label: String, onClick: () -> Unit) = Button(this).also {
-            it.text = label
-            it.setOnClickListener { if (!busy) onClick() }
-            buttons += it
-            column.addView(it, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        }
-        button("Play") {
-            GameSetup.play(this).onFailure { show("Could not open the game: ${it.message}") }
-        }
-        button("Install Minecraft (download)") { run("Installing Minecraft") { GameSetup.install(this, this::show); "Minecraft is ready." } }
-        button("Import Minecraft folder") { folderPicker.launch(null) }
-        button("Restore backup (.zip)") { backupPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }
-        // Kept outside the busy-button list so the user can open it during compilation.
-        column.addView(Button(this).apply {
-            text = "View live HNMod build log"
-            setOnClickListener { showLiveHnmodLog() }
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        button("Compile HNMod (.hnmod) — embedded toolchain") {
-            hnmodPicker.launch(arrayOf("application/octet-stream", "application/zip", "*/*"))
-        }
-        button("Import compiled game library (.so)") {
-            compiledBuildPicker.launch(arrayOf("application/octet-stream", "*/*"))
-        }
-        button("Export backup to Downloads") {
-            run("Exporting backup") { "Saved to ${GameSetup.exportBackup(this, this::show)}" }
-        }
-        setContentView(ScrollView(this).apply { addView(column) })
-        refreshStatus()
+        refreshDashboard()
         startUpdateMonitor()
     }
 
@@ -100,7 +327,7 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun show(text: String) { status.text = text }
+    private fun show(text: String) { statusText = text }
 
     private fun confirmAndCompileHnmods(uris: List<Uri>) {
         AlertDialog.Builder(this)
@@ -122,6 +349,8 @@ class MainActivity : ComponentActivity() {
                             runOnUiThread { show(message) }
                         }
                     })
+                    refreshDashboardState()
+                    "HNMod build finished."
                 }
             }
             .show()
@@ -142,6 +371,7 @@ class MainActivity : ComponentActivity() {
                             dev.horizon.launcher.data.Updater.importLocal(this@MainActivity, it)
                         } ?: error("Could not open the selected library.")
                     }
+                    refreshDashboardState()
                     when (result) {
                         is dev.horizon.launcher.data.Updater.Imported.Ok ->
                             "Build ${result.name} imported and activated. Restart the game to use it."
@@ -210,12 +440,120 @@ class MainActivity : ComponentActivity() {
         dialog.show()
     }
 
-    private fun refreshStatus() {
+    private fun beginMicrosoftSignIn() {
+        if (!MicrosoftAuth.available) {
+            show("Microsoft sign-in is not available in this build.")
+            return
+        }
         scope.launch {
-            val ready = GameSetup.ready()
-            val toolchain = dev.horizon.launcher.data.EmbeddedToolchain.status(this@MainActivity)
-            val problem = initError?.let { "\nCore problem: $it" } ?: ""
-            status.text = "Core ${Core.coreVersion()} · Minecraft ${if (ready) "installed" else "not installed"} · HNMod runtime ${if (toolchain.installed) "ready" else "not installed"}$problem"
+            runCatching { MicrosoftAuth.start() }
+                .onSuccess { code ->
+                    runOnUiThread {
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("Microsoft sign-in")
+                            .setMessage("Open ${code.verificationUri} and enter this code:\n\n${code.userCode}\n\nAfter authorizing, return here and tap Continue.")
+                            .setNegativeButton("Cancel") { _, _ -> MicrosoftAuth.cancel() }
+                            .setNeutralButton("Open website") { _, _ ->
+                                startActivity(Intent(Intent.ACTION_VIEW, AndroidUri.parse(code.verificationUri)))
+                            }
+                            .setPositiveButton("Continue") { _, _ ->
+                                run("Completing Microsoft sign-in") {
+                                    val name = MicrosoftAuth.complete()
+                                    refreshDashboardState()
+                                    "Signed in as $name."
+                                }
+                            }
+                            .show()
+                    }
+                }
+                .onFailure { show("Microsoft sign-in failed: ${it.message}") }
+        }
+    }
+
+    private fun refreshDashboard() {
+        scope.launch { refreshDashboardState() }
+    }
+
+    private suspend fun refreshDashboardState() {
+        val ready = runCatching { GameSetup.ready() }.getOrDefault(false)
+        val toolchain = runCatching {
+            dev.horizon.launcher.data.EmbeddedToolchain.status(this@MainActivity)
+        }.getOrNull()
+        val instances = runCatching { Core.instances() }.getOrDefault(emptyList())
+        val settings = runCatching { Core.settings() }.getOrNull()
+        val worlds = runCatching { Core.worlds() }.getOrDefault(emptyList())
+        val servers = runCatching { Core.servers() }.getOrDefault(emptyList())
+        val mods = runCatching { Core.mods() }.getOrDefault(emptyList())
+        val versions = runCatching { Core.installed() }.getOrDefault(emptyList())
+        val accounts = runCatching { Core.accounts() }.getOrNull()
+        val signIn = runCatching { Core.signInInfo() }.getOrNull()
+        val platform = runCatching { Core.platform() }.getOrNull()
+        val releases = runCatching { Core.releases() }.getOrDefault(emptyList())
+        val touchControls = runCatching { Core.touchControls() }.getOrNull()
+        val telemetry = runCatching { Core.telemetry() }.getOrNull()
+        val browseCatalog = runCatching { Browse.catalog() }.getOrNull()
+        val browseInstalled = runCatching { Browse.installed() }.getOrDefault(emptyList())
+        val browseProgress = runCatching { Browse.progress() }.getOrNull()
+
+        minecraftReadyState = ready
+        toolchainReadyState = toolchain?.installed == true
+        instancesState = instances
+        settingsState = settings
+        selectedInstanceState = instances.firstOrNull {
+            it.id == settings?.instance || it.name == settings?.instance
+        } ?: instances.firstOrNull()
+        worldsState = worlds
+        serversState = servers
+        modsState = mods
+        versionsState = versions
+        playerNameState = accounts?.player?.label ?: "Local profile"
+        accountsState = accounts
+        signInInfoState = signIn
+        platformState = platform
+        releasesState = releases
+        touchControlsState = touchControls
+        touchControls?.let { controls ->
+            getSharedPreferences("zalith-touch-settings", MODE_PRIVATE).edit()
+                .putBoolean("touch_enabled", controls.enabled)
+                .putFloat("touch_opacity", controls.opacity)
+                .putFloat("look_sensitivity", controls.lookSensitivity)
+                .putBoolean("left_handed", controls.leftHanded)
+                .putBoolean("auto_jump", controls.autoJump)
+                .putBoolean("hold_to_sprint", controls.holdToSprint)
+                .putBoolean("haptics", controls.haptics)
+                .apply()
+        }
+        telemetryState = telemetry
+        browseCatalogState = browseCatalog
+        browseInstalledState = browseInstalled
+        browseProgressState = browseProgress
+
+        val problem = initError?.let { " · core problem: $it" } ?: ""
+        statusText = "CORE ${Core.coreVersion()}  /  MINECRAFT " +
+            (if (ready) "READY" else "NOT INSTALLED") +
+            "  /  HNMOD " + (if (toolchainReadyState) "READY" else "NOT INSTALLED") + problem
+    }
+
+    private fun importNativeFile(uri: Uri, shader: Boolean) {
+        val label = if (shader) "Importing shader pack" else "Importing HMod package"
+        run(label) {
+            val file = withContext(Dispatchers.IO) {
+                val folder = File(cacheDir, "launcher-imports").apply { mkdirs() }
+                val extension = if (shader) "zip" else "jar"
+                val target = File(folder, "horizon-import-${System.currentTimeMillis()}.$extension")
+                contentResolver.openInputStream(uri)?.use { input ->
+                    target.outputStream().use { output -> input.copyTo(output) }
+                } ?: error("Could not open the selected file.")
+                target
+            }
+            try {
+                val imported = if (shader) Core.importShader(file.absolutePath)
+                    else Core.importMod(file.absolutePath)
+                refreshDashboardState()
+                "Imported $imported."
+            } finally {
+                file.delete()
+            }
         }
     }
 
@@ -268,7 +606,7 @@ class MainActivity : ComponentActivity() {
             buttons.forEach { it.isEnabled = true }
             // Keep the final result visible. refreshStatus() launched asynchronously here could
             // overwrite a compiler/download error immediately after the dialog closes.
-            status.text = "$label\n$message"
+            statusText = "$label\n$message"
         }
     }
 }
