@@ -32,16 +32,32 @@ import java.util.Locale
 
 // Horizon World Atlas: a warm, map-like launcher identity, deliberately unlike the previous
 // dark terminal / lime field-console direction.
-private val CanvasPaper = Color(0xFFF2F0E9)
-private val Ink = Color(0xFF171B2A)
-private val MutedInk = Color(0xFF777D8C)
-private val Blue = Color(0xFF5266E8)
-private val BlueDeep = Color(0xFF27378F)
-private val Sky = Color(0xFF8CD7E7)
-private val Coral = Color(0xFFFF987D)
-private val White = Color(0xFFFFFEFA)
-private val Border = Color(0xFFE2E0D8)
-private val Mint = Color(0xFFB9E6D0)
+private data class AtlasPalette(
+    val canvas: Color, val ink: Color, val mutedInk: Color, val blue: Color,
+    val blueDeep: Color, val sky: Color, val coral: Color, val white: Color,
+    val border: Color, val mint: Color
+)
+private val LightAtlasPalette = AtlasPalette(
+    Color(0xFFF2F0E9), Color(0xFF171B2A), Color(0xFF777D8C), Color(0xFF5266E8),
+    Color(0xFF27378F), Color(0xFF8CD7E7), Color(0xFFFF987D), Color(0xFFFFFEFA),
+    Color(0xFFE2E0D8), Color(0xFFB9E6D0)
+)
+private val DarkAtlasPalette = AtlasPalette(
+    Color(0xFF101521), Color(0xFFF1F3FA), Color(0xFFA6AFC1), Color(0xFF91A1FF),
+    Color(0xFF4659B9), Color(0xFF75C7D9), Color(0xFFFFA38D), Color(0xFF1B2433),
+    Color(0xFF344054), Color(0xFF244C45)
+)
+private val LocalAtlasPalette = staticCompositionLocalOf { LightAtlasPalette }
+private val CanvasPaper: Color @Composable get() = LocalAtlasPalette.current.canvas
+private val Ink: Color @Composable get() = LocalAtlasPalette.current.ink
+private val MutedInk: Color @Composable get() = LocalAtlasPalette.current.mutedInk
+private val Blue: Color @Composable get() = LocalAtlasPalette.current.blue
+private val BlueDeep: Color @Composable get() = LocalAtlasPalette.current.blueDeep
+private val Sky: Color @Composable get() = LocalAtlasPalette.current.sky
+private val Coral: Color @Composable get() = LocalAtlasPalette.current.coral
+private val White: Color @Composable get() = LocalAtlasPalette.current.white
+private val Border: Color @Composable get() = LocalAtlasPalette.current.border
+private val Mint: Color @Composable get() = LocalAtlasPalette.current.mint
 
 private enum class AtlasPage(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     HOME("Home", Icons.Default.Explore),
@@ -115,6 +131,8 @@ fun HorizonLauncherUi(
     onRemoveBrowse: (String) -> Unit
 ) {
     var page by remember { mutableStateOf(AtlasPage.HOME) }
+    var darkMode by remember(settings?.appearance) { mutableStateOf(settings?.appearance == "dark") }
+    CompositionLocalProvider(LocalAtlasPalette provides if (darkMode) DarkAtlasPalette else LightAtlasPalette) {
     Column(Modifier.fillMaxSize().background(CanvasPaper).statusBarsPadding()) {
         AtlasHeader(playerName = playerName, ready = minecraftReady, onRefresh = onRefresh)
         Row(
@@ -167,10 +185,13 @@ fun HorizonLauncherUi(
             AtlasPage.ACCOUNTS -> AccountsAtlas(accounts, signInInfo, playerName, onSelectAccount, onAddOffline, onRemoveOffline, onRemoveAccount, onUseGameName, onSignIn)
             AtlasPage.CONTROLS -> ControlsAtlas(touchControls, onSaveTouchControls, onOpenControlsEditor)
             AtlasPage.SYSTEM -> SystemAtlas(
-                status, settings, renderApi, platform, releases, telemetry, toolchainReady,
-                onSaveSettings, onSetRenderApi, onSetNoAi, onSetTelemetry, onRefresh, onShowBuildLog, onInstallVersion
+                status, settings, renderApi, darkMode, platform, releases, telemetry, toolchainReady,
+                onSaveSettings, onSetRenderApi,
+                onSetDarkMode = { enabled -> darkMode = enabled; onSaveSettings(JSONObject().put("appearance", if (enabled) "dark" else "light")) },
+                onSetNoAi, onSetTelemetry, onRefresh, onShowBuildLog, onInstallVersion
             )
         }
+    }
     }
 }
 
@@ -612,9 +633,9 @@ private fun ControlsAtlas(
 
 @Composable
 private fun SystemAtlas(
-    status: String, settings: SettingsInfo?, renderApi: String, platform: PlatformInfo?, releases: List<Release>,
+    status: String, settings: SettingsInfo?, renderApi: String, darkMode: Boolean, platform: PlatformInfo?, releases: List<Release>,
     telemetry: TelemetryInfo?, toolchainReady: Boolean,
-    onSave: (JSONObject) -> Unit, onSetRenderApi: (String) -> Unit,
+    onSave: (JSONObject) -> Unit, onSetRenderApi: (String) -> Unit, onSetDarkMode: (Boolean) -> Unit,
     onSetNoAi: (Boolean) -> Unit, onSetTelemetry: (Boolean) -> Unit,
     onRefresh: () -> Unit, onBuildLog: () -> Unit, onInstallVersion: (String) -> Unit
 ) {
@@ -624,7 +645,7 @@ private fun SystemAtlas(
     var noAi by remember(settings) { mutableStateOf(settings?.noAi ?: false) }
     var gameArgs by remember(settings) { mutableStateOf(settings?.gameArgs ?: "") }
     var proxy by remember(settings) { mutableStateOf(settings?.proxy ?: "") }
-    var appearance by remember(settings) { mutableStateOf(settings?.appearance ?: "dark") }
+    var appearance by remember(settings) { mutableStateOf(settings?.appearance ?: "light") }
     var accent by remember(settings) { mutableStateOf(settings?.accent ?: "violet") }
     var language by remember(settings) { mutableStateOf(settings?.language ?: "") }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp)) {
@@ -649,7 +670,10 @@ private fun SystemAtlas(
         SettingSwitch("Disable AI features", noAi) { noAi = it; onSetNoAi(it) }
         OutlinedTextField(gameArgs, { gameArgs = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Game arguments") })
         OutlinedTextField(proxy, { proxy = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Proxy") })
-        OutlinedTextField(appearance, { appearance = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Appearance preference") })
+        SettingSwitch("Dark mode", darkMode) { enabled ->
+            appearance = if (enabled) "dark" else "light"
+            onSetDarkMode(enabled)
+        }
         OutlinedTextField(accent, { accent = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Accent preference") })
         OutlinedTextField(language, { language = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Language") })
         Button(
