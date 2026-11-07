@@ -10,6 +10,11 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import dev.horizon.launcher.ui.HorizonLauncherUi
 import androidx.activity.result.contract.ActivityResultContracts
 import dev.horizon.launcher.core.Native
 import dev.horizon.launcher.data.Core
@@ -28,7 +33,7 @@ import java.io.File
  */
 class MainActivity : ComponentActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private lateinit var status: TextView
+    private var statusText by mutableStateOf("")
     private val buttons = mutableListOf<Button>()
     private var busy = false
     private var initError: String? = null
@@ -56,41 +61,21 @@ class MainActivity : ComponentActivity() {
         initError = Native.loadError ?: runCatching { Native.nativeInit(home.absolutePath) }.exceptionOrNull()?.message ?: resourceError
         dev.horizon.launcher.data.Updater.armGuard(filesDir)
 
-        val pad = (16 * resources.displayMetrics.density).toInt()
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad * 2, pad, pad)
+        setContent {
+            HorizonLauncherUi(
+                status = statusText,
+                minecraftReady = runCatching { GameSetup.ready() }.getOrDefault(false),
+                toolchainReady = dev.horizon.launcher.data.EmbeddedToolchain.status(this).installed,
+                onPlay = { GameSetup.play(this).onFailure { show("Could not open the game: " + it.message) } },
+                onInstall = { run("Installing Minecraft") { GameSetup.install(this, this::show); "Minecraft is ready." } },
+                onImportFolder = { folderPicker.launch(null) },
+                onRestoreBackup = { backupPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
+                onCompileHnmod = { hnmodPicker.launch(arrayOf("application/octet-stream", "application/zip", "*/*")) },
+                onImportBuild = { compiledBuildPicker.launch(arrayOf("application/octet-stream", "*/*")) },
+                onExportBackup = { run("Exporting backup") { "Saved to " + GameSetup.exportBackup(this, this::show) } },
+                onShowBuildLog = { showLiveHnmodLog() }
+            )
         }
-        status = TextView(this).apply { textSize = 15f; setPadding(0, 0, 0, pad) }
-        column.addView(TextView(this).apply { text = "Horizon"; textSize = 26f; gravity = Gravity.START })
-        column.addView(status)
-        fun button(label: String, onClick: () -> Unit) = Button(this).also {
-            it.text = label
-            it.setOnClickListener { if (!busy) onClick() }
-            buttons += it
-            column.addView(it, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        }
-        button("Play") {
-            GameSetup.play(this).onFailure { show("Could not open the game: ${it.message}") }
-        }
-        button("Install Minecraft (download)") { run("Installing Minecraft") { GameSetup.install(this, this::show); "Minecraft is ready." } }
-        button("Import Minecraft folder") { folderPicker.launch(null) }
-        button("Restore backup (.zip)") { backupPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }
-        // Kept outside the busy-button list so the user can open it during compilation.
-        column.addView(Button(this).apply {
-            text = "View live HNMod build log"
-            setOnClickListener { showLiveHnmodLog() }
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        button("Compile HNMod (.hnmod) — embedded toolchain") {
-            hnmodPicker.launch(arrayOf("application/octet-stream", "application/zip", "*/*"))
-        }
-        button("Import compiled game library (.so)") {
-            compiledBuildPicker.launch(arrayOf("application/octet-stream", "*/*"))
-        }
-        button("Export backup to Downloads") {
-            run("Exporting backup") { "Saved to ${GameSetup.exportBackup(this, this::show)}" }
-        }
-        setContentView(ScrollView(this).apply { addView(column) })
         refreshStatus()
         startUpdateMonitor()
     }
@@ -100,7 +85,7 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun show(text: String) { status.text = text }
+    private fun show(text: String) { statusText = text }
 
     private fun confirmAndCompileHnmods(uris: List<Uri>) {
         AlertDialog.Builder(this)
@@ -215,7 +200,7 @@ class MainActivity : ComponentActivity() {
             val ready = GameSetup.ready()
             val toolchain = dev.horizon.launcher.data.EmbeddedToolchain.status(this@MainActivity)
             val problem = initError?.let { "\nCore problem: $it" } ?: ""
-            status.text = "Core ${Core.coreVersion()} · Minecraft ${if (ready) "installed" else "not installed"} · HNMod runtime ${if (toolchain.installed) "ready" else "not installed"}$problem"
+            statusText = "Core ${Core.coreVersion()} · Minecraft ${if (ready) "installed" else "not installed"} · HNMod runtime ${if (toolchain.installed) "ready" else "not installed"}$problem"
         }
     }
 
@@ -268,7 +253,7 @@ class MainActivity : ComponentActivity() {
             buttons.forEach { it.isEnabled = true }
             // Keep the final result visible. refreshStatus() launched asynchronously here could
             // overwrite a compiler/download error immediately after the dialog closes.
-            status.text = "$label\n$message"
+            statusText = "$label\n$message"
         }
     }
 }
