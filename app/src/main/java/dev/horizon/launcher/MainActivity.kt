@@ -510,6 +510,17 @@ class MainActivity : ComponentActivity() {
         platformState = platform
         releasesState = releases
         touchControlsState = touchControls
+        touchControls?.let { controls ->
+            getSharedPreferences("zalith-touch-settings", MODE_PRIVATE).edit()
+                .putBoolean("touch_enabled", controls.enabled)
+                .putFloat("touch_opacity", controls.opacity)
+                .putFloat("look_sensitivity", controls.lookSensitivity)
+                .putBoolean("left_handed", controls.leftHanded)
+                .putBoolean("auto_jump", controls.autoJump)
+                .putBoolean("hold_to_sprint", controls.holdToSprint)
+                .putBoolean("haptics", controls.haptics)
+                .apply()
+        }
         telemetryState = telemetry
         browseCatalogState = browseCatalog
         browseInstalledState = browseInstalled
