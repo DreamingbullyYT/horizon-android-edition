@@ -309,18 +309,6 @@ class MainActivity : ComponentActivity() {
                         "Removed $removed."
                     }
                 },
-                onSaveSettings = { installNew, pruneOld, skipOpening ->
-                    run("Saving settings") {
-                        Core.saveSettings(
-                            JSONObject()
-                                .put("install_new_versions", installNew)
-                                .put("prune_old_versions", pruneOld)
-                                .put("skip_opening", skipOpening)
-                        )
-                        refreshDashboardState()
-                        "Settings saved."
-                    }
-                },
                 onSetNoAi = { enabled ->
                     run("Saving preference") {
                         Core.setNoAi(enabled)
