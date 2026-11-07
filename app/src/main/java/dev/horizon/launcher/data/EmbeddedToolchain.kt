@@ -45,7 +45,8 @@ object EmbeddedToolchain {
     suspend fun start(
         activity: Activity,
         selected: List<Uri>,
-        onProgress: (String) -> Unit = {}
+        onProgress: (String) -> Unit = {},
+        onLogLine: (String) -> Unit = {}
     ): String = withContext(Dispatchers.IO) {
         require(selected.isNotEmpty()) { "Select at least one .hnmod file." }
         val invalid = selected.firstOrNull { uri ->
@@ -60,12 +61,17 @@ object EmbeddedToolchain {
         val initial = status(activity)
         check(initial.supportedAbi) { initial.detail }
 
+        HnmodBuildLog.begin(activity)
+        fun log(message: String) {
+            HnmodBuildLog.append(activity, message)
+            onLogLine(message)
+        }
         // Keeps the process in the foreground while PRoot/Cargo run, even if the user leaves the app.
         HnmodBuildService.begin(activity.applicationContext)
         try {
-            if (!initial.installed) installRuntime(activity, onProgress)
-            onProgress("Preparing HNMod build")
-            when (val imported = HnmodBuildAdapter.compile(activity, EmbeddedTermuxPaths.prefix(activity), selected)) {
+            if (!initial.installed) installRuntime(activity) { message -> log(message) }
+            log("Preparing HNMod build")
+            when (val imported = HnmodBuildAdapter.compile(activity, EmbeddedTermuxPaths.prefix(activity), selected, ::log)) {
                 is Updater.Imported.Ok ->
                     "Build ${imported.name} (${imported.sha.take(12)}) imported and activated. Restart the game to use it."
                 is Updater.Imported.Bad -> error(imported.message)
@@ -105,7 +111,7 @@ object EmbeddedToolchain {
                     "printf '%s\\n' 'deb https://packages-cf.termux.dev/apt/termux-main stable main' > \$PREFIX/etc/apt/sources.list; " +
                     "apt update -o Acquire::Retries=5 -o Acquire::Queue-Mode=access || " +
                     "apt update -o Acquire::Retries=5 -o Acquire::Queue-Mode=access",
-                "termux-apt-update"
+                "termux-apt-update", onLine = onProgress
             )
             check(setup.exitCode == 0) {
                 "Could not configure Termux or update its package index (exit ${setup.exitCode}). Log: ${setup.logFile.absolutePath}\n${setup.output.takeLast(4000)}"
@@ -118,7 +124,7 @@ object EmbeddedToolchain {
                     "-o Acquire::Retries=5 -o Acquire::Queue-Mode=access " +
                     "-o Dpkg::Options::=--force-confnew " +
                     "rust clang git rsync binutils python cmake make pkg-config coreutils",
-                "termux-install-build-packages"
+                "termux-install-build-packages", onLine = onProgress
             )
             check(packages.exitCode == 0) {
                 "Could not install HNMod compiler packages (exit ${packages.exitCode}). Log: ${packages.logFile.absolutePath}\n${packages.output.takeLast(5000)}"
@@ -128,7 +134,7 @@ object EmbeddedToolchain {
             val smoke = EmbeddedProcessRunner.runShellCommand(
                 context,
                 "set -e; test \"\$(uname -m)\" = aarch64; cargo --version; rustc --version; clang --version; git --version; rsync --version; python --version; cmake --version; make --version; pkg-config --version; readelf --version",
-                "toolchain-smoke-test"
+                "toolchain-smoke-test", onLine = onProgress
             )
             check(smoke.exitCode == 0) {
                 "Compiler verification failed (exit ${smoke.exitCode}). Log: ${smoke.logFile.absolutePath}\n${smoke.output.takeLast(5000)}"
