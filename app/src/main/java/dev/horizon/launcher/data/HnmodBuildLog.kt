@@ -2,6 +2,9 @@ package dev.horizon.launcher.data
 
 import android.content.Context
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /** Shared append-only log shown by Horizon while the embedded HNMod compiler is running. */
 object HnmodBuildLog {
@@ -25,6 +28,7 @@ object HnmodBuildLog {
         require(target.parentFile?.let { it.isDirectory || it.mkdirs() } == true) {
             "Cannot create HNMod live log directory."
         }
-        target.appendText(line + "\n")
+        val stamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
+        target.appendText("[$stamp] $line\n")
     }
 }
