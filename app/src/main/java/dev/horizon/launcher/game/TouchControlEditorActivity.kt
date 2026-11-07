@@ -31,7 +31,11 @@ class TouchControlEditorActivity : ComponentActivity() {
             parentFile?.mkdirs()
         }
         val initial = runCatching { if (layoutFile.isFile) loadLayoutFromFile(layoutFile) else null }.getOrNull()
-            ?: TouchLayoutDefaults.create().also { layoutFile.writeText(ControlJson.encode(it)) }
+            ?: TouchLayoutDefaults.create().also {
+                layoutFile.writeText(ControlJson.encode(it))
+                getSharedPreferences("zalith-touch-settings", MODE_PRIVATE).edit()
+                    .putBoolean("default_layout_v4", true).apply()
+            }
 
         editorModel = ViewModelProvider(this)[EditorViewModel::class.java].apply { initLayout(initial) }
         setContent {
