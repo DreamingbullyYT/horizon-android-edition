@@ -76,6 +76,8 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         dev.horizon.launcher.data.Updater.gamePath(filesDir)?.let {
             runCatching { android.system.Os.setenv("HORIZON_GAME_LIB", it, true) }
         }
+        // Prevent the legacy Rust-drawn touch HUD from competing with Zalith LayerController.
+        runCatching { android.system.Os.setenv("HORIZON_ANDROID_ZALITH_CONTROLS", "1", true) }
         dev.horizon.launcher.data.Updater.armGuard(filesDir)
         super.onCreate(savedInstanceState)
         runCatching {
