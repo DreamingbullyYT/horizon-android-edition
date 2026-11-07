@@ -81,6 +81,66 @@ import dev.horizon.launcher.game.controls.LayoutProfiles
 import java.io.File
 import java.util.UUID
 
+private fun Modifier.horizonTouchForwarder(
+    cursorGrabbing: Boolean,
+    prefs: android.content.SharedPreferences
+): Modifier = pointerInput(cursorGrabbing) {
+    val positions = mutableMapOf<PointerId, Offset>()
+    val lookPointers = mutableSetOf<PointerId>()
+    val hotbarPointers = mutableSetOf<PointerId>()
+    val tuner = LookTuner()
+    awaitPointerEventScope {
+        while (true) {
+            val frame = awaitPointerEvent(pass = PointerEventPass.Initial)
+            frame.changes.forEach { change ->
+                val id = change.id
+                if (change.isConsumed) return@forEach
+                val x = change.position.x
+                val y = change.position.y
+                if (change.pressed && !change.previousPressed) {
+                    positions[id] = change.position
+                    val hotbar = runCatching { GameInput.nativeHotbarRect() }.getOrDefault(floatArrayOf())
+                    val slot = if (cursorGrabbing && hotbar.size >= 4 && hotbar[2] > 0f &&
+                        x >= hotbar[0] && x <= hotbar[0] + hotbar[2] &&
+                        y >= hotbar[1] - hotbar[3] * .25f && y <= hotbar[1] + hotbar[3] * 1.25f
+                    ) ((x - hotbar[0]) / hotbar[2] * 9f).toInt().coerceIn(0, 8) else -1
+                    if (slot >= 0) {
+                        hotbarPointers += id
+                        val key = "GLFW_KEY_${slot + 1}"
+                        GameInput.nativeSendControl(key, true)
+                        GameInput.nativeSendControl(key, false)
+                    } else if (cursorGrabbing) {
+                        lookPointers += id
+                        if (lookPointers.size == 1) tuner.reset()
+                        GameInput.nativeLookActive(true)
+                    } else {
+                        GameInput.nativeMenuTouch(id.value, x, y, 0)
+                    }
+                } else if (change.pressed && change.previousPressed) {
+                    val old = positions[id] ?: change.previousPosition
+                    if (id in lookPointers) {
+                        val dx = (x - old.x) * prefs.getFloat("look_sensitivity", 1f) *
+                            prefs.getFloat("look_sens_x", 1f) * if (prefs.getBoolean("invert_look_x", false)) -1f else 1f
+                        val dy = (y - old.y) * prefs.getFloat("look_sensitivity", 1f) *
+                            prefs.getFloat("look_sens_y", 1f) * if (prefs.getBoolean("invert_look_y", false)) -1f else 1f
+                        tuner.apply(dx, dy, prefs.getFloat("look_accel", 0f), prefs.getFloat("look_smoothing", 0f))
+                        GameInput.nativeLook(tuner.outX, tuner.outY)
+                    } else if (!cursorGrabbing && id !in hotbarPointers) {
+                        GameInput.nativeMenuTouch(id.value, x, y, 1)
+                    }
+                    positions[id] = change.position
+                } else if (!change.pressed && change.previousPressed) {
+                    if (!cursorGrabbing && id !in hotbarPointers) GameInput.nativeMenuTouch(id.value, x, y, 2)
+                    positions.remove(id)
+                    lookPointers.remove(id)
+                    hotbarPointers.remove(id)
+                    if (lookPointers.isEmpty()) GameInput.nativeLookActive(false)
+                }
+            }
+        }
+    }
+}
+
 /** Native game surface with Zalith's open-source control canvas above it. */
 class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistryOwner {
     private val lifecycleRegistry by lazy { LifecycleRegistry(this) }
@@ -90,7 +150,7 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     private var layoutImportCallback: ((ControlLayout) -> Unit)? = null
     private var pendingExport: ControlLayout? = null
     private var zalithOverlay: ComposeView? = null
-    private var activeLayout: ObservableControlLayout? = null
+    private var activeLayout by mutableStateOf<ObservableControlLayout?>(null)
     override val savedStateRegistry: SavedStateRegistry get() = savedStateController.savedStateRegistry
 
     private val currentLayoutFile: File get() = File(File(filesDir, "launcher"), "touch-layout.json")
@@ -144,7 +204,6 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
      * forwarded through Horizon's existing native look/menu bridge.
      */
     private fun attachZalithControls() {
-        val layout = activeLayout ?: return
         val prefs = getSharedPreferences("zalith-touch-settings", MODE_PRIVATE)
         val overlay = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@HorizonGameActivity)
@@ -157,111 +216,54 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
                         delay(120)
                     }
                 }
-                val lookTuner = remember { LookTuner() }
-                val pointerPositions = remember { mutableStateMapOf<PointerId, Offset>() }
-                val lookPointers = remember { mutableStateMapOf<PointerId, Boolean>() }
-                val hotbarPointers = remember { mutableStateMapOf<PointerId, Boolean>() }
                 val handler = remember {
                     EventHandler { event, pressed ->
                         when (event.type) {
                             ClickEvent.Type.Key -> runCatching { GameInput.nativeSendControl(event.key, pressed) }
-                            ClickEvent.Type.SendText -> if (pressed) {
-                                runCatching {
-                                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("Horizon control text", event.key))
-                                    GameInput.nativeSendControl("GLFW_KEY_LEFT_CONTROL", true)
-                                    GameInput.nativeSendControl("GLFW_KEY_V", true)
-                                    GameInput.nativeSendControl("GLFW_KEY_V", false)
-                                    GameInput.nativeSendControl("GLFW_KEY_LEFT_CONTROL", false)
-                                }
+                            ClickEvent.Type.SendText -> if (pressed) runCatching {
+                                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Horizon control text", event.key))
+                                GameInput.nativeSendControl("GLFW_KEY_LEFT_CONTROL", true)
+                                GameInput.nativeSendControl("GLFW_KEY_V", true)
+                                GameInput.nativeSendControl("GLFW_KEY_V", false)
+                                GameInput.nativeSendControl("GLFW_KEY_LEFT_CONTROL", false)
                             }
                             else -> Unit
                         }
                     }
                 }
+                val passthrough = Modifier.fillMaxSize().horizonTouchForwarder(cursorGrabbing, prefs)
                 MaterialTheme(colorScheme = androidx.compose.material3.darkColorScheme(
                     primary = Color(0xFF8B9CFF),
                     surface = Color(0xFF171A24),
                     background = Color.Transparent
                 )) {
                     Box(Modifier.fillMaxSize()) {
-                        ControlBoxLayout(
-                            modifier = Modifier.fillMaxSize(),
-                            observedLayout = layout,
-                            eventHandler = handler,
-                            isCursorGrabbing = cursorGrabbing,
-                            checkOccupiedPointers = { false },
-                            opacity = { prefs.getFloat("touch_opacity", 0.92f).coerceIn(0.3f, 1f) },
-                            markPointerAsMoveOnly = {},
-                            onOccupiedPointer = {},
-                            onReleasePointer = {},
-                            hideLayerWhen = HideLayerWhen.None,
-                            isDark = true
-                        ) {
-                            Box(
-                                Modifier.fillMaxSize().pointerInput(cursorGrabbing) {
-                                    awaitPointerEventScope {
-                                        while (true) {
-                                            val frame = awaitPointerEvent(pass = PointerEventPass.Initial)
-                                            frame.changes.forEach { change ->
-                                                val id = change.id
-                                                if (change.isConsumed) return@forEach
-                                                val x = change.position.x
-                                                val y = change.position.y
-                                                if (change.pressed && !change.previousPressed) {
-                                                    pointerPositions[id] = change.position
-                                                    val hotbar = runCatching { GameInput.nativeHotbarRect() }.getOrDefault(floatArrayOf())
-                                                    val slot = if (hotbar.size >= 4 && hotbar[2] > 0f &&
-                                                        x >= hotbar[0] && x <= hotbar[0] + hotbar[2] &&
-                                                        y >= hotbar[1] - hotbar[3] * 0.25f && y <= hotbar[1] + hotbar[3] * 1.25f
-                                                    ) (((x - hotbar[0]) / hotbar[2] * 9f).toInt().coerceIn(0, 8)) else -1
-                                                    if (slot >= 0 && cursorGrabbing) {
-                                                        hotbarPointers[id] = true
-                                                        val key = "GLFW_KEY_${slot + 1}"
-                                                        GameInput.nativeSendControl(key, true)
-                                                        GameInput.nativeSendControl(key, false)
-                                                    } else if (cursorGrabbing) {
-                                                        lookPointers[id] = true
-                                                        if (lookPointers.size == 1) lookTuner.reset()
-                                                        GameInput.nativeLookActive(true)
-                                                    } else {
-                                                        GameInput.nativeMenuTouch(id.value, x, y, 0)
-                                                    }
-                                                } else if (change.pressed && change.previousPressed) {
-                                                    val old = pointerPositions[id] ?: change.previousPosition
-                                                    if (id in lookPointers) {
-                                                        val dx = (x - old.x) * prefs.getFloat("look_sensitivity", 1f) *
-                                                            prefs.getFloat("look_sens_x", 1f) *
-                                                            if (prefs.getBoolean("invert_look_x", false)) -1f else 1f
-                                                        val dy = (y - old.y) * prefs.getFloat("look_sensitivity", 1f) *
-                                                            prefs.getFloat("look_sens_y", 1f) *
-                                                            if (prefs.getBoolean("invert_look_y", false)) -1f else 1f
-                                                        lookTuner.apply(dx, dy, prefs.getFloat("look_accel", 0f), prefs.getFloat("look_smoothing", 0f))
-                                                        GameInput.nativeLook(lookTuner.outX, lookTuner.outY)
-                                                    } else if (!cursorGrabbing && id !in hotbarPointers) {
-                                                        GameInput.nativeMenuTouch(id.value, x, y, 1)
-                                                    }
-                                                    pointerPositions[id] = change.position
-                                                } else if (!change.pressed && change.previousPressed) {
-                                                    if (!cursorGrabbing && id !in hotbarPointers) {
-                                                        GameInput.nativeMenuTouch(id.value, x, y, 2)
-                                                    }
-                                                    pointerPositions.remove(id)
-                                                    lookPointers.remove(id)
-                                                    hotbarPointers.remove(id)
-                                                    if (lookPointers.isEmpty()) GameInput.nativeLookActive(false)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            )
+                        val layout = activeLayout
+                        if (prefs.getBoolean("touch_enabled", true) && layout != null) {
+                            ControlBoxLayout(
+                                modifier = Modifier.fillMaxSize(),
+                                observedLayout = layout,
+                                eventHandler = handler,
+                                isCursorGrabbing = cursorGrabbing,
+                                checkOccupiedPointers = { false },
+                                opacity = { prefs.getFloat("touch_opacity", 0.92f).coerceIn(0.3f, 1f) },
+                                markPointerAsMoveOnly = {},
+                                onOccupiedPointer = {},
+                                onReleasePointer = {},
+                                hideLayerWhen = HideLayerWhen.None,
+                                isDark = true
+                            ) {
+                                Box(passthrough)
+                            }
+                        } else {
+                            // Disabling the touch layer must not disable camera look or native menu input.
+                            Box(passthrough)
                         }
                         Surface(
-                            modifier = Modifier.align(Alignment.TopStart).padding(12.dp)
-                                .clickable {
-                                    startActivity(Intent(this@HorizonGameActivity, TouchControlEditorActivity::class.java))
-                                },
+                            modifier = Modifier.align(Alignment.TopStart).padding(12.dp).clickable {
+                                startActivity(Intent(this@HorizonGameActivity, TouchControlEditorActivity::class.java))
+                            },
                             color = Color(0xAA151A2A),
                             contentColor = Color.White,
                             shape = RoundedCornerShape(18.dp)
@@ -292,8 +294,8 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         super.dispatchTouchEvent(ev)
 
     override fun onStart() { super.onStart(); lifecycleRegistry.currentState = Lifecycle.State.STARTED }
-    override fun onResume() { super.onResume(); lifecycleRegistry.currentState = Lifecycle.State.RESUMED; gyro?.start() }
-    override fun onPause() { gyro?.stop(); router?.cancelAll(); lifecycleRegistry.currentState = Lifecycle.State.STARTED; super.onPause() }
+    override fun onResume() { super.onResume(); lifecycleRegistry.currentState = Lifecycle.State.RESUMED; activeLayout = runCatching { loadLayout() }.getOrNull() ?: activeLayout; gyro?.start() }
+    override fun onPause() { gyro?.stop(); router?.cancelAll(); runCatching { GameInput.nativeLookActive(false) }; lifecycleRegistry.currentState = Lifecycle.State.STARTED; super.onPause() }
     override fun onStop() { lifecycleRegistry.currentState = Lifecycle.State.CREATED; super.onStop() }
     override fun onDestroy() {
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
