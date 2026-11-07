@@ -6,26 +6,16 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.graphics.PixelFormat
 import android.os.Bundle
-import android.view.Gravity
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Toast
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.LifecycleRegistry
-import androidx.lifecycle.setViewTreeLifecycleOwner
-import androidx.savedstate.SavedStateRegistry
-import androidx.savedstate.SavedStateRegistryController
-import androidx.savedstate.SavedStateRegistryOwner
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,108 +29,34 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
 import com.movtery.layer_controller.ControlBoxLayout
 import com.movtery.layer_controller.data.HideLayerWhen
 import com.movtery.layer_controller.event.ClickEvent
 import com.movtery.layer_controller.event.EventHandler
+import com.movtery.layer_controller.layout.ControlLayout
+import com.movtery.layer_controller.layout.loadLayoutFromFile
 import com.movtery.layer_controller.observable.ObservableControlLayout
 import com.movtery.zalithlauncher.path.PathManager
 import com.movtery.zalithlauncher.setting.AllSettings
-import com.movtery.zalithlauncher.ui.screens.main.control_editor.ControlEditor
-import com.movtery.zalithlauncher.viewmodel.EditorViewModel
-import dev.horizon.launcher.game.controls.LookTuner
-import kotlinx.coroutines.delay
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.PointerId
-import androidx.compose.runtime.mutableStateMapOf
-import com.movtery.layer_controller.data.ButtonShape
-import com.movtery.layer_controller.data.DefaultButtonStyleConfig
-import com.movtery.layer_controller.data.DefaultJoystickStyleConfig
-import com.movtery.layer_controller.data.TextAlignment
-import com.movtery.layer_controller.data.createNewButtonStyle
-import com.movtery.layer_controller.data.createNewJoystickStyle
-import com.movtery.layer_controller.data.ButtonPosition
-import com.movtery.layer_controller.data.DefaultSize
-import com.movtery.layer_controller.data.JoystickData
-import com.movtery.layer_controller.data.NormalData
-import com.movtery.layer_controller.data.VisibilityType
-import com.movtery.layer_controller.data.lang.createTranslatable
-import com.movtery.layer_controller.event.ClickEvent
-import com.movtery.layer_controller.layout.ControlLayout
-import com.movtery.layer_controller.layout.createNewLayer
-import com.movtery.layer_controller.layout.loadLayoutFromFile
-import com.movtery.layer_controller.observable.ObservableControlLayer
-import com.movtery.layer_controller.observable.ObservableControlLayout
 import dev.horizon.launcher.game.controls.ControlJson
 import dev.horizon.launcher.game.controls.LayoutProfiles
+import dev.horizon.launcher.game.controls.LookTuner
 import java.io.File
-import java.util.UUID
-
-private fun Modifier.horizonTouchForwarder(
-    cursorGrabbing: Boolean,
-    prefs: android.content.SharedPreferences
-): Modifier = pointerInput(cursorGrabbing) {
-    val positions = mutableMapOf<PointerId, Offset>()
-    val lookPointers = mutableSetOf<PointerId>()
-    val hotbarPointers = mutableSetOf<PointerId>()
-    val tuner = LookTuner()
-    awaitPointerEventScope {
-        while (true) {
-            val frame = awaitPointerEvent(pass = PointerEventPass.Initial)
-            frame.changes.forEach { change ->
-                val id = change.id
-                if (change.isConsumed) return@forEach
-                val x = change.position.x
-                val y = change.position.y
-                if (change.pressed && !change.previousPressed) {
-                    positions[id] = change.position
-                    val hotbar = runCatching { GameInput.nativeHotbarRect() }.getOrDefault(floatArrayOf())
-                    val slot = if (cursorGrabbing && hotbar.size >= 4 && hotbar[2] > 0f &&
-                        x >= hotbar[0] && x <= hotbar[0] + hotbar[2] &&
-                        y >= hotbar[1] - hotbar[3] * .25f && y <= hotbar[1] + hotbar[3] * 1.25f
-                    ) ((x - hotbar[0]) / hotbar[2] * 9f).toInt().coerceIn(0, 8) else -1
-                    if (slot >= 0) {
-                        hotbarPointers += id
-                        val key = "GLFW_KEY_${slot + 1}"
-                        GameInput.nativeSendControl(key, true)
-                        GameInput.nativeSendControl(key, false)
-                    } else if (cursorGrabbing) {
-                        lookPointers += id
-                        if (lookPointers.size == 1) tuner.reset()
-                        GameInput.nativeLookActive(true)
-                    } else {
-                        GameInput.nativeMenuTouch(id.value, x, y, 0)
-                    }
-                } else if (change.pressed && change.previousPressed) {
-                    val old = positions[id] ?: change.previousPosition
-                    if (id in lookPointers) {
-                        val dx = (x - old.x) * prefs.getFloat("look_sensitivity", 1f) *
-                            prefs.getFloat("look_sens_x", 1f) * if (prefs.getBoolean("invert_look_x", false)) -1f else 1f
-                        val dy = (y - old.y) * prefs.getFloat("look_sensitivity", 1f) *
-                            prefs.getFloat("look_sens_y", 1f) * if (prefs.getBoolean("invert_look_y", false)) -1f else 1f
-                        tuner.apply(dx, dy, prefs.getFloat("look_accel", 0f), prefs.getFloat("look_smoothing", 0f))
-                        GameInput.nativeLook(tuner.outX, tuner.outY)
-                    } else if (!cursorGrabbing && id !in hotbarPointers) {
-                        GameInput.nativeMenuTouch(id.value, x, y, 1)
-                    }
-                    positions[id] = change.position
-                } else if (!change.pressed && change.previousPressed) {
-                    if (!cursorGrabbing && id !in hotbarPointers) GameInput.nativeMenuTouch(id.value, x, y, 2)
-                    positions.remove(id)
-                    lookPointers.remove(id)
-                    hotbarPointers.remove(id)
-                    if (lookPointers.isEmpty()) GameInput.nativeLookActive(false)
-                }
-            }
-        }
-    }
-}
-
+import kotlinx.coroutines.delay
 /** Native game surface with Zalith's open-source control canvas above it. */
 class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistryOwner {
     private val lifecycleRegistry by lazy { LifecycleRegistry(this) }
