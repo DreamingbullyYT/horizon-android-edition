@@ -38,7 +38,7 @@
             android:exported="false"
             android:label="Horizon Controls"
             android:screenOrientation="sensorLandscape"
-            android:theme="@style/Theme.Horizon" />
+            android:theme="@style/Theme.Horizon.Controls" />
 
         <activity
             android:name=".game.HorizonGameActivity"
