@@ -34,6 +34,8 @@ import java.io.File
 class MainActivity : ComponentActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var statusText by mutableStateOf("")
+    private var minecraftReadyState by mutableStateOf(false)
+    private var toolchainReadyState by mutableStateOf(false)
     private val buttons = mutableListOf<Button>()
     private var busy = false
     private var initError: String? = null
@@ -64,8 +66,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             HorizonLauncherUi(
                 status = statusText,
-                minecraftReady = runCatching { GameSetup.ready() }.getOrDefault(false),
-                toolchainReady = dev.horizon.launcher.data.EmbeddedToolchain.status(this).installed,
+                minecraftReady = minecraftReadyState,
+                toolchainReady = toolchainReadyState,
                 onPlay = { GameSetup.play(this).onFailure { show("Could not open the game: " + it.message) } },
                 onInstall = { run("Installing Minecraft") { GameSetup.install(this, this::show); "Minecraft is ready." } },
                 onImportFolder = { folderPicker.launch(null) },
@@ -199,6 +201,8 @@ class MainActivity : ComponentActivity() {
         scope.launch {
             val ready = GameSetup.ready()
             val toolchain = dev.horizon.launcher.data.EmbeddedToolchain.status(this@MainActivity)
+            minecraftReadyState = ready
+            toolchainReadyState = toolchain.installed
             val problem = initError?.let { "\nCore problem: $it" } ?: ""
             statusText = "Core ${Core.coreVersion()} · Minecraft ${if (ready) "installed" else "not installed"} · HNMod runtime ${if (toolchain.installed) "ready" else "not installed"}$problem"
         }
