@@ -153,7 +153,10 @@ jobs:
           assert "writer.flush()" in runner and "onLine(line)" in runner
           assert "onLine: (String) -> Unit = {}" in runner
           assert "HnmodBuildLog.begin(activity)" in toolchain
-          assert "onLine = onProgress" in toolchain
+          assert "onLine = onLogLine" in toolchain
+          assert '"termux-install-build-packages", onLine = onLogLine' in toolchain
+          assert '"toolchain-smoke-test", onLine = onLogLine' in toolchain
+          assert "HnmodBuildLog.finish(activity)" in toolchain
           assert "onLine = onLogLine" in adapter
           assert "View live HNMod build log" in activity
           assert "showLiveHnmodLog()" in activity
