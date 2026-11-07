@@ -137,6 +137,24 @@ jobs:
           ):
               assert symbol in source, f"parent game module needs access to {symbol}"
           PY
+
+      - name: Verify HNMod live log is streamed and visible during compilation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          runner = Path("app/src/main/java/dev/horizon/launcher/data/EmbeddedProcessRunner.kt").read_text()
+          adapter = Path("app/src/main/java/dev/horizon/launcher/data/HnmodBuildAdapter.kt").read_text()
+          toolchain = Path("app/src/main/java/dev/horizon/launcher/data/EmbeddedToolchain.kt").read_text()
+          activity = Path("app/src/main/java/dev/horizon/launcher/MainActivity.kt").read_text()
+          assert "writer.flush()" in runner and "onLine(line)" in runner
+          assert "onLine: (String) -> Unit = {}" in runner
+          assert "HnmodBuildLog.begin(activity)" in toolchain
+          assert "onLine = onProgress" in toolchain
+          assert "onLine = onLogLine" in adapter
+          assert "View live HNMod build log" in activity
+          assert "showLiveHnmodLog()" in activity
+          assert "delay(500)" in activity
+          PY
       - name: Test engine compatibility metadata extraction
         shell: bash
         run: |
