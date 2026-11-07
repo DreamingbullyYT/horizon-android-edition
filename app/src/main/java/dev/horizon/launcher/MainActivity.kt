@@ -76,6 +76,11 @@ class MainActivity : ComponentActivity() {
         button("Install Minecraft (download)") { run("Installing Minecraft") { GameSetup.install(this, this::show); "Minecraft is ready." } }
         button("Import Minecraft folder") { folderPicker.launch(null) }
         button("Restore backup (.zip)") { backupPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }
+        // Kept outside the busy-button list so the user can open it during compilation.
+        column.addView(Button(this).apply {
+            text = "View live HNMod build log"
+            setOnClickListener { showLiveHnmodLog() }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         button("Compile HNMod (.hnmod) — embedded toolchain") {
             hnmodPicker.launch(arrayOf("application/octet-stream", "application/zip", "*/*"))
         }
@@ -109,9 +114,14 @@ class MainActivity : ComponentActivity() {
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Continue") { _, _ ->
                 run("Starting HNMod compiler") {
-                    dev.horizon.launcher.data.EmbeddedToolchain.start(this, uris) { message ->
+                    dev.horizon.launcher.data.EmbeddedToolchain.start(this, uris, onProgress = { message ->
                         runOnUiThread { show(message) }
-                    }
+                    }, onLogLine = { message ->
+                        // The complete line is persisted by HnmodBuildLog; status stays concise.
+                        if (message.startsWith("==") || message.startsWith("Compiling") || message.startsWith("ERROR:")) {
+                            runOnUiThread { show(message) }
+                        }
+                    })
                 }
             }
             .show()
@@ -140,6 +150,49 @@ class MainActivity : ComponentActivity() {
                 }
             }
             .show()
+    }
+
+
+    /** Opens a live, scrollable view of the complete HNMod build log. */
+    private fun showLiveHnmodLog() {
+        val logFile = dev.horizon.launcher.data.HnmodBuildLog.file(this)
+        val logView = TextView(this).apply {
+            textSize = 11f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setPadding(20, 16, 20, 16)
+            text = if (logFile.isFile) logFile.readText() else "No HNMod build log yet. Start a compilation first."
+        }
+        val scroll = ScrollView(this).apply {
+            addView(logView)
+            setPadding(0, 0, 0, 0)
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("HNMod — live build log")
+            .setView(scroll)
+            .setPositiveButton("Close", null)
+            .create()
+        dialog.setOnShowListener {
+            scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
+            scope.launch {
+                var lastLength = -1
+                while (dialog.isShowing) {
+                    val content = runCatching {
+                        if (logFile.isFile) logFile.readText()
+                        else "Waiting for the HNMod compiler log…"
+                    }.getOrElse { "Could not read live log: ${it.message}" }
+                    if (content.length != lastLength) {
+                        val wasAtBottom = scroll.getChildAt(0).let { child ->
+                            child.bottom - (scroll.scrollY + scroll.height) <= 48
+                        }
+                        logView.text = content
+                        lastLength = content.length
+                        if (wasAtBottom) scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
+                    }
+                    delay(500)
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun refreshStatus() {
