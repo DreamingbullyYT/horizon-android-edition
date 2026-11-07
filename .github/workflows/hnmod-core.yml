@@ -70,6 +70,10 @@ jobs:
           assert "HNMOD_CLI=(cargo_retry run" in script
           assert "cargo_retry install --locked --path" in script
           assert "cargo_retry fetch --manifest-path" in script
+          fetch_pos = script.index('cargo_retry fetch --manifest-path "$SRC/Cargo.toml"')
+          baseline_pos = script.index('cp "$SRC/Cargo.lock" "$WORK/horizon-pinned-Cargo.lock"')
+          stage_metadata_pos = script.index('cargo metadata --offline --format-version 1 --manifest-path "$STAGE/Cargo.toml"')
+          assert fetch_pos < baseline_pos < stage_metadata_pos, "baseline lock must include Android workspace deps but not staged mod deps"
           assert "cargo_retry fetch --locked --manifest-path" not in script
           assert "nice -n 10 cargo_retry build --locked --manifest-path" in script
           assert 'cargo install --locked --path' not in script
