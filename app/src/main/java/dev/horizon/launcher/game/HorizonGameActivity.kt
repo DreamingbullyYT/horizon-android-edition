@@ -5,6 +5,7 @@ import android.app.NativeActivity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.Intent
 import android.os.Bundle
 import android.view.InputDevice
@@ -34,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.detectDragGestures
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -433,5 +435,28 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
             "dpad_up" to "GLFW_KEY_W", "dpad_down" to "GLFW_KEY_S",
             "dpad_left" to "GLFW_KEY_A", "dpad_right" to "GLFW_KEY_D"
         )
+    }
+}
+
+
+/**
+ * Passes unclaimed drags through to the native game camera. Zalith's own controls
+ * receive their pointer events first; this modifier is hosted only in the unused
+ * portion of the overlay.
+ */
+private fun Modifier.horizonTouchForwarder(
+    cursorGrabbing: Boolean,
+    preferences: SharedPreferences
+): Modifier = pointerInput(cursorGrabbing, preferences.getFloat("look_sensitivity", 1.0f)) {
+    val sensitivity = preferences.getFloat("look_sensitivity", 1.0f).coerceIn(0.1f, 4.0f)
+    detectDragGestures(
+        onDragStart = { if (cursorGrabbing) GameInput.nativeLookActive(true) },
+        onDragEnd = { GameInput.nativeLookActive(false) },
+        onDragCancel = { GameInput.nativeLookActive(false) }
+    ) { change, dragAmount ->
+        if (cursorGrabbing) {
+            GameInput.nativeLook(dragAmount.x * sensitivity, dragAmount.y * sensitivity)
+            change.consume()
+        }
     }
 }
