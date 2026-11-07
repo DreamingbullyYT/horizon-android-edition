@@ -226,7 +226,7 @@ private fun HomeAtlas(
                     Text(if (ready) "WORLD LINK ESTABLISHED" else "YOUR WORLD IS WAITING", color = White, fontSize = 8.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp))
                 }
                 Spacer(Modifier.height(13.dp))
-                Text(selected?.name ?: "Find your\\nHorizon.", color = White, fontSize = 29.sp, lineHeight = 31.sp, fontWeight = FontWeight.Black)
+                Text(selected?.name ?: "Find your\nHorizon.", color = White, fontSize = 29.sp, lineHeight = 31.sp, fontWeight = FontWeight.Black)
                 Spacer(Modifier.height(4.dp))
                 Text(selected?.version ?: if (ready) "Default Minecraft profile" else "Install or import Minecraft to begin", color = Color(0xFFDCE3FF), fontSize = 10.sp, maxLines = 2)
                 Spacer(Modifier.height(15.dp))
