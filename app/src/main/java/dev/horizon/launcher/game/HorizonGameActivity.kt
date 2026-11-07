@@ -5,61 +5,50 @@ import android.app.NativeActivity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.SharedPreferences
 import android.content.Intent
+import android.graphics.PixelFormat
 import android.os.Bundle
+import android.view.Gravity
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Toast
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.PointerId
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
-import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.movtery.layer_controller.ControlBoxLayout
-import com.movtery.layer_controller.data.HideLayerWhen
+import androidx.compose.ui.graphics.Color
+import com.movtery.layer_controller.data.ButtonShape
+import com.movtery.layer_controller.data.DefaultButtonStyleConfig
+import com.movtery.layer_controller.data.DefaultJoystickStyleConfig
+import com.movtery.layer_controller.data.TextAlignment
+import com.movtery.layer_controller.data.createNewButtonStyle
+import com.movtery.layer_controller.data.createNewJoystickStyle
+import com.movtery.layer_controller.data.ButtonPosition
+import com.movtery.layer_controller.data.DefaultSize
+import com.movtery.layer_controller.data.JoystickData
+import com.movtery.layer_controller.data.NormalData
+import com.movtery.layer_controller.data.VisibilityType
+import com.movtery.layer_controller.data.lang.createTranslatable
 import com.movtery.layer_controller.event.ClickEvent
-import com.movtery.layer_controller.event.EventHandler
 import com.movtery.layer_controller.layout.ControlLayout
+import com.movtery.layer_controller.layout.createNewLayer
 import com.movtery.layer_controller.layout.loadLayoutFromFile
+import com.movtery.layer_controller.observable.ObservableControlLayer
 import com.movtery.layer_controller.observable.ObservableControlLayout
-import com.movtery.zalithlauncher.path.PathManager
-import com.movtery.zalithlauncher.setting.AllSettings
 import dev.horizon.launcher.game.controls.ControlJson
 import dev.horizon.launcher.game.controls.LayoutProfiles
-import dev.horizon.launcher.game.controls.LookTuner
 import java.io.File
-import kotlinx.coroutines.delay
+import java.util.UUID
+
 /** Native game surface with Zalith's open-source control canvas above it. */
 class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistryOwner {
     private val lifecycleRegistry by lazy { LifecycleRegistry(this) }
@@ -69,7 +58,6 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     private var layoutImportCallback: ((ControlLayout) -> Unit)? = null
     private var pendingExport: ControlLayout? = null
     private var zalithOverlay: ComposeView? = null
-    private var activeLayout by mutableStateOf<ObservableControlLayout?>(null)
     override val savedStateRegistry: SavedStateRegistry get() = savedStateController.savedStateRegistry
 
     private val currentLayoutFile: File get() = File(File(filesDir, "launcher"), "touch-layout.json")
@@ -79,7 +67,7 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         dev.horizon.launcher.data.Updater.gamePath(filesDir)?.let {
             runCatching { android.system.Os.setenv("HORIZON_GAME_LIB", it, true) }
         }
-        // Prevent the legacy Rust-drawn touch HUD from competing with Zalith LayerController.
+        // Disable the legacy Rust HUD; Zalith owns the touch layer in this Activity.
         runCatching { android.system.Os.setenv("HORIZON_ANDROID_ZALITH_CONTROLS", "1", true) }
         dev.horizon.launcher.data.Updater.armGuard(filesDir)
         super.onCreate(savedInstanceState)
@@ -92,7 +80,7 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         savedStateController.performAttach()
         savedStateController.performRestore(savedInstanceState)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
-        // WindowRecomposer resolves its owners from the window decor view tree.
+        // Supply owners on the decor tree before Compose creates its WindowRecomposer.
         window.decorView.setViewTreeLifecycleOwner(this)
         window.decorView.setViewTreeSavedStateRegistryOwner(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -108,115 +96,58 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
             or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
             or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
 
-        // Zalith's Compose control canvas is layered over the native game surface.
-        gyro = GyroLook(this)
-        PathManager.initialize(filesDir)
-        AllSettings.initialize(this)
-        activeLayout = loadLayout()
-        attachZalithControls()
-        window.decorView.post {
-            val prefs = getSharedPreferences("zalith-touch-settings", MODE_PRIVATE)
-            runCatching { GameInput.nativeSetImeAllowed(prefs.getBoolean("auto_keyboard", true)) }
-        }
-    }
-
-    /**
-     * Render the actual Zalith LayerController layout above the native game surface.
-     * The LayerController consumes configured buttons/joysticks; unconsumed pointers are
-     * forwarded through Horizon's existing native look/menu bridge.
-     */
-    private fun attachZalithControls() {
-        val prefs = getSharedPreferences("zalith-touch-settings", MODE_PRIVATE)
+        val initialLayout = loadLayout()
+        val profiles = LayoutProfiles(this)
         val overlay = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@HorizonGameActivity)
-            setViewTreeSavedStateRegistryOwner(this@HorizonGameActivity)
+            Class.forName("androidx.savedstate.ViewTreeSavedStateRegistryOwner")
+                .getMethod("set", View::class.java, SavedStateRegistryOwner::class.java)
+                .invoke(null, this, this@HorizonGameActivity)
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
-                var cursorGrabbing by remember { mutableStateOf(runCatching { GameInput.nativeCursorGrabbing() }.getOrDefault(true)) }
-                LaunchedEffect(Unit) {
-                    while (true) {
-                        cursorGrabbing = runCatching { GameInput.nativeCursorGrabbing() }.getOrDefault(cursorGrabbing)
-                        delay(120)
-                    }
-                }
-                val handler = remember {
-                    EventHandler { event, pressed ->
-                        when (event.type) {
-                            ClickEvent.Type.Key -> runCatching { GameInput.nativeSendControl(event.key, pressed) }
-                            ClickEvent.Type.SendText -> if (pressed) runCatching {
-                                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("Horizon control text", event.key))
-                                GameInput.nativeSendControl("GLFW_KEY_LEFT_CONTROL", true)
-                                GameInput.nativeSendControl("GLFW_KEY_V", true)
-                                GameInput.nativeSendControl("GLFW_KEY_V", false)
-                                GameInput.nativeSendControl("GLFW_KEY_LEFT_CONTROL", false)
-                            }
-                            else -> Unit
-                        }
-                    }
-                }
-                val passthrough = Modifier.fillMaxSize().horizonTouchForwarder(cursorGrabbing, prefs)
-                MaterialTheme(colorScheme = androidx.compose.material3.darkColorScheme(
-                    primary = Color(0xFF8B9CFF),
-                    surface = Color(0xFF171A24),
-                    background = Color.Transparent
-                )) {
-                    Box(Modifier.fillMaxSize()) {
-                        val layout = activeLayout
-                        if (prefs.getBoolean("touch_enabled", true) && layout != null) {
-                            ControlBoxLayout(
-                                modifier = Modifier.fillMaxSize(),
-                                observedLayout = layout,
-                                eventHandler = handler,
-                                isCursorGrabbing = cursorGrabbing,
-                                checkOccupiedPointers = { false },
-                                opacity = { prefs.getFloat("touch_opacity", 0.92f).coerceIn(0.3f, 1f) },
-                                markPointerAsMoveOnly = {},
-                                onOccupiedPointer = {},
-                                onReleasePointer = {},
-                                hideLayerWhen = HideLayerWhen.None,
-                                isDark = true
-                            ) {
-                                Box(passthrough)
-                            }
-                        } else {
-                            // Disabling the touch layer must not disable camera look or native menu input.
-                            Box(passthrough)
-                        }
-                        Surface(
-                            modifier = Modifier.align(Alignment.TopStart).padding(12.dp).clickable {
-                                startActivity(Intent(this@HorizonGameActivity, TouchControlEditorActivity::class.java))
-                            },
-                            color = Color(0xAA151A2A),
-                            contentColor = Color.White,
-                            shape = RoundedCornerShape(18.dp)
-                        ) {
-                            Text("EDIT CONTROLS", modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), color = Color.White)
-                        }
-                    }
-                }
+                HorizonGameControls(
+                    layout = initialLayout,
+                    profiles = profiles,
+                    defaultLayout = { defaultLayout() },
+                    setKeepAwake = { enabled ->
+                        if (enabled) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    },
+                    setMaxRefresh = { enabled ->
+                        val attributes = window.attributes
+                        attributes.preferredRefreshRate = if (enabled) windowManager.defaultDisplay.refreshRate else 0f
+                        window.attributes = attributes
+                    },
+                    save = { packed -> saveCurrentLayout(packed) }
+                )
             }
         }
-        zalithOverlay = overlay
-        (window.decorView as? ViewGroup)?.addView(
-            overlay,
-            ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        )
+        window.decorView.post {
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                token = window.decorView.windowToken
+                gravity = Gravity.TOP or Gravity.START
+                title = "Horizon touch controls"
+            }
+            zalithOverlay = overlay
+            runCatching { windowManager.addView(overlay, params) }
+                .onFailure { android.util.Log.e("HorizonZalith", "Could not attach Zalith overlay", it) }
+        }
     }
 
-    private var gyro: GyroLook? = null
-
-    /** Compose's Zalith layer consumes configured controls and forwards remaining touch deltas via GameInput. */
-    override fun dispatchTouchEvent(ev: MotionEvent): Boolean = super.dispatchTouchEvent(ev)
-
     override fun onStart() { super.onStart(); lifecycleRegistry.currentState = Lifecycle.State.STARTED }
-    override fun onResume() { super.onResume(); lifecycleRegistry.currentState = Lifecycle.State.RESUMED; activeLayout = runCatching { loadLayout() }.getOrNull() ?: activeLayout; gyro?.start() }
-    override fun onPause() { gyro?.stop(); runCatching { GameInput.nativeLookActive(false) }; lifecycleRegistry.currentState = Lifecycle.State.STARTED; super.onPause() }
+    override fun onResume() { super.onResume(); lifecycleRegistry.currentState = Lifecycle.State.RESUMED }
+    override fun onPause() { lifecycleRegistry.currentState = Lifecycle.State.STARTED; super.onPause() }
     override fun onStop() { lifecycleRegistry.currentState = Lifecycle.State.CREATED; super.onStop() }
     override fun onDestroy() {
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
-        zalithOverlay?.let { (window.decorView as? ViewGroup)?.removeView(it) }
+        zalithOverlay?.let { view -> runCatching { windowManager.removeView(view) } }
         zalithOverlay = null
-        runCatching { GameInput.nativeLookActive(false) }
         super.onDestroy()
         // The game lives in its own process (:game); the native engine cannot start twice in one process.
         stopService(Intent(this, GameKeepAliveService::class.java))
@@ -400,12 +331,8 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         val prefs = getSharedPreferences("zalith-touch-settings", MODE_PRIVATE)
         if (!prefs.getBoolean("default_layout_v4", false)) {
             prefs.edit().putBoolean("default_layout_v4", true).apply()
-            // Preserve a valid layout already created by the editor or an older Horizon build.
-            val existing = runCatching { if (file.isFile) loadLayoutFromFile(file) else null }.getOrNull()
-            if (existing != null) {
-                runCatching { LayoutProfiles(this).save("Previous layout", existing) }
-                return ObservableControlLayout(existing)
-            }
+            // Keep whatever the player had as a saved layout ("Previous layout") before switching defaults.
+            if (file.isFile) runCatching { LayoutProfiles(this).save("Previous layout", loadLayoutFromFile(file)) }
             val fresh = defaultLayout()
             saveCurrentLayout(fresh)
             LayoutProfiles(this).activeName = ""
@@ -421,7 +348,92 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
      * centre, and a "…" button that reveals extra keys. A separate menu layer keeps Back / Inventory /
      * Shift / Drop on screen whenever a GUI (inventory, pause, chat) has the cursor.
      */
-    internal fun defaultLayout(): ControlLayout = TouchLayoutDefaults.create()
+    internal fun defaultLayout(): ControlLayout {
+        val glass = createNewButtonStyle("Glass").copy(commonStyle = true).let { base ->
+            val cfg = DefaultButtonStyleConfig.copy(
+                backgroundColor = Color(0x40FFFFFF), pressedBackgroundColor = Color(0x80FFFFFF),
+                contentColor = Color.White, pressedContentColor = Color.White,
+                borderWidth = 2, pressedBorderWidth = 2,
+                borderColor = Color(0xBFFFFFFF), pressedBorderColor = Color.White,
+                borderRadius = ButtonShape(10f), pressedBorderRadius = ButtonShape(10f), alpha = 1f, pressedAlpha = 1f)
+            base.copy(lightStyle = cfg, darkStyle = cfg)
+        }
+        val squareStick = createNewJoystickStyle("Glass square").copy(commonStyle = true).let { base ->
+            val cfg = DefaultJoystickStyleConfig.copy(
+                backgroundShape = 10, joystickShape = 10,
+                backgroundColor = Color(0x4DFFFFFF), borderWidthRatio = 4, borderColor = Color(0xBFFFFFFF),
+                joystickColor = Color(0x99FFFFFF), joystickSize = 0.4f)
+            base.copy(lightStyle = cfg, darkStyle = cfg)
+        }
+
+        // Positions in LayerController are a fraction of the free space, so convert from "centre of the
+        // button at (cx, cy) of the screen" assuming a ~20:9 landscape screen.
+        fun pos(cx: Float, cy: Float, size: Int): ButtonPosition {
+            val h = size / 10000f
+            val w = h / 2.2f
+            val x = ((cx - w / 2f) / (1f - w)).coerceIn(0f, 1f)
+            val y = ((cy - h / 2f) / (1f - h)).coerceIn(0f, 1f)
+            return ButtonPosition((x * 10000).toInt(), (y * 10000).toInt())
+        }
+        fun button(label: String, events: List<ClickEvent>, cx: Float, cy: Float, size: Int,
+                   visibility: VisibilityType, toggle: Boolean = false) = NormalData(
+            text = createTranslatable(label), uuid = UUID.randomUUID().toString(),
+            position = pos(cx, cy, size),
+            buttonSize = DefaultSize.copy(widthPercentage = size, heightPercentage = size),
+            buttonStyle = glass.uuid, textAlignment = TextAlignment.Center, textBold = true,
+            visibilityType = visibility, _clickEvents = events,
+            isSwipple = false, isPenetrable = false, isToggleable = toggle
+        )
+        fun key(id: String) = listOf(ClickEvent(ClickEvent.Type.Key, id))
+
+        // Hidden-at-start layer opened by the "…" button.
+        val more = ObservableControlLayer(createNewLayer("More").copy(visibilityType = VisibilityType.IN_GAME))
+        more.editorHide = true
+        more.hide = true
+        more.addNormalButton(button("Drop", key("GLFW_KEY_Q"), 0.36f, 0.60f, 900, VisibilityType.IN_GAME))
+        more.addNormalButton(button("Swap", key("GLFW_KEY_F"), 0.42f, 0.60f, 900, VisibilityType.IN_GAME))
+        more.addNormalButton(button("Pick", listOf(ClickEvent(ClickEvent.Type.Key, "GLFW_MOUSE_BUTTON_MIDDLE")), 0.48f, 0.60f, 900, VisibilityType.IN_GAME))
+        more.addNormalButton(button("HUD", key("GLFW_KEY_F1"), 0.54f, 0.60f, 900, VisibilityType.IN_GAME))
+        more.addNormalButton(button("Run", key("GLFW_KEY_LEFT_CONTROL"), 0.60f, 0.60f, 900, VisibilityType.IN_GAME, toggle = true))
+
+        val gameplay = ObservableControlLayer(createNewLayer("Gameplay").copy(visibilityType = VisibilityType.IN_GAME))
+        gameplay.apply {
+            addJoystickButton(JoystickData(
+                uuid = UUID.randomUUID().toString(), position = pos(0.12f, 0.70f, 2800),
+                sizePercentage = 2800, visibilityType = VisibilityType.IN_GAME, joystickStyleId = squareStick.uuid
+            ))
+            addNormalButton(button("@sword", key("GLFW_MOUSE_BUTTON_LEFT"), 0.83f, 0.64f, 1400, VisibilityType.IN_GAME))
+            addNormalButton(button("@use", key("GLFW_MOUSE_BUTTON_RIGHT"), 0.94f, 0.52f, 1300, VisibilityType.IN_GAME))
+            addNormalButton(button("@jump", key("GLFW_KEY_SPACE"), 0.955f, 0.78f, 1400, VisibilityType.IN_GAME))
+            addNormalButton(button("@sprint", key("GLFW_KEY_LEFT_CONTROL"), 0.74f, 0.77f, 1100, VisibilityType.IN_GAME, toggle = true))
+            addNormalButton(button("@sneak", key("GLFW_KEY_LEFT_SHIFT"), 0.85f, 0.87f, 1100, VisibilityType.IN_GAME))
+            addNormalButton(button("@dots", listOf(ClickEvent(ClickEvent.Type.SwitchLayer, more.uuid)), 0.75f, 0.92f, 800, VisibilityType.IN_GAME))
+            // Icon row, top centre
+            addNormalButton(button("@bag", key("GLFW_KEY_E"), 0.430f, 0.08f, 850, VisibilityType.IN_GAME))
+            addNormalButton(button("@chat", key("GLFW_KEY_T"), 0.475f, 0.08f, 850, VisibilityType.IN_GAME))
+            addNormalButton(button("@pause", key("GLFW_KEY_ESCAPE"), 0.520f, 0.08f, 850, VisibilityType.IN_GAME))
+            addNormalButton(button("@camera", key("GLFW_KEY_F5"), 0.565f, 0.08f, 850, VisibilityType.IN_GAME))
+            addNormalButton(button("@list", key("GLFW_KEY_TAB"), 0.610f, 0.08f, 850, VisibilityType.IN_GAME))
+        }
+
+        // Shown whenever a GUI has the cursor (inventory, pause screen, chat, crafting, ...).
+        val menu = ObservableControlLayer(createNewLayer("Menu").copy(visibilityType = VisibilityType.IN_MENU))
+        menu.apply {
+            addNormalButton(button("Back", key("GLFW_KEY_ESCAPE"), 0.07f, 0.12f, 1100, VisibilityType.IN_MENU))
+            addNormalButton(button("@bag", key("GLFW_KEY_E"), 0.07f, 0.30f, 1100, VisibilityType.IN_MENU))
+            addNormalButton(button("Shift", key("GLFW_KEY_LEFT_SHIFT"), 0.07f, 0.48f, 1100, VisibilityType.IN_MENU, toggle = true))
+            addNormalButton(button("Drop", key("GLFW_KEY_Q"), 0.07f, 0.66f, 1100, VisibilityType.IN_MENU))
+            addNormalButton(button("Enter", key("GLFW_KEY_ENTER"), 0.93f, 0.30f, 1100, VisibilityType.IN_MENU))
+        }
+
+        return ControlLayout(
+            info = ControlLayout.Info(createTranslatable("Horizon touch"), createTranslatable("Horizon"),
+                createTranslatable("Default Horizon touch layout"), 3, "3"),
+            layers = listOf(more.pack(), menu.pack(), gameplay.pack()),
+            styles = listOf(glass), joystickStyles = listOf(squareStick),
+            editorVersion = 12
+        )
+    }
 
     companion object {
         private const val REQUEST_IMPORT_LAYOUT = 7412
@@ -438,28 +450,5 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
             "dpad_up" to "GLFW_KEY_W", "dpad_down" to "GLFW_KEY_S",
             "dpad_left" to "GLFW_KEY_A", "dpad_right" to "GLFW_KEY_D"
         )
-    }
-}
-
-
-/**
- * Passes unclaimed drags through to the native game camera. Zalith's own controls
- * receive their pointer events first; this modifier is hosted only in the unused
- * portion of the overlay.
- */
-private fun Modifier.horizonTouchForwarder(
-    cursorGrabbing: Boolean,
-    preferences: SharedPreferences
-): Modifier = pointerInput(cursorGrabbing, preferences.getFloat("look_sensitivity", 1.0f)) {
-    val sensitivity = preferences.getFloat("look_sensitivity", 1.0f).coerceIn(0.1f, 4.0f)
-    detectDragGestures(
-        onDragStart = { if (cursorGrabbing) GameInput.nativeLookActive(true) },
-        onDragEnd = { GameInput.nativeLookActive(false) },
-        onDragCancel = { GameInput.nativeLookActive(false) }
-    ) { change, dragAmount ->
-        if (cursorGrabbing) {
-            GameInput.nativeLook(dragAmount.x * sensitivity, dragAmount.y * sensitivity)
-            change.consume()
-        }
     }
 }
