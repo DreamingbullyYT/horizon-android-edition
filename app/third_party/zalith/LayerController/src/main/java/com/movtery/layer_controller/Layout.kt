@@ -80,6 +80,7 @@ fun ControlBoxLayout(
     markPointerAsMoveOnly: (PointerId) -> Unit = {},
     onOccupiedPointer: (PointerId) -> Unit = {},
     onReleasePointer: (PointerId) -> Unit = {},
+    onControlPointerChanged: (PointerId, Boolean) -> Unit = { _, _ -> },
     hideLayerWhen: HideLayerWhen = HideLayerWhen.None,
     isDark: Boolean = isSystemInDarkTheme(),
     content: @Composable BoxScope.() -> Unit
@@ -110,6 +111,7 @@ fun ControlBoxLayout(
                             markPointerAsMoveOnly = markPointerAsMoveOnly,
                             onOccupiedPointer = onOccupiedPointer,
                             onReleasePointer = onReleasePointer,
+                            onControlPointerChanged = onControlPointerChanged,
                             isCursorGrabbing = isCursorGrabbing,
                             hideLayerWhen = hideLayerWhen,
                             isDark = isDark,
@@ -135,6 +137,7 @@ private fun BoxWithConstraintsScope.BaseControlBoxLayout(
     markPointerAsMoveOnly: (PointerId) -> Unit,
     onOccupiedPointer: (PointerId) -> Unit,
     onReleasePointer: (PointerId) -> Unit,
+    onControlPointerChanged: (PointerId, Boolean) -> Unit,
     isCursorGrabbing: Boolean,
     hideLayerWhen: HideLayerWhen,
     isDark: Boolean,
@@ -184,7 +187,9 @@ private fun BoxWithConstraintsScope.BaseControlBoxLayout(
                             val pointerId = change.id
                             //手指抬起，清理该指针所有状态
                             if (!change.pressed) {
-                                pointerEventBus.endPointer(pointerId).forEach { widget ->
+                                val releasedWidgets = pointerEventBus.endPointer(pointerId)
+                                if (releasedWidgets.isNotEmpty()) onControlPointerChanged(pointerId, false)
+                                releasedWidgets.forEach { widget ->
                                     //释放该指针事件
                                     widget.onReleaseEvent(eventHandler, reversedLayers)
                                 }
@@ -202,6 +207,7 @@ private fun BoxWithConstraintsScope.BaseControlBoxLayout(
                                 isCursorGrabbing = currentIsCursorGrabbing,
                             )
 
+                            val wasOwned = pointerEventBus.activeWidgets(pointerId).isNotEmpty()
                             currentTouchProcessor.processFrame(
                                 session = pointerEventBus,
                                 change = change,
@@ -210,6 +216,10 @@ private fun BoxWithConstraintsScope.BaseControlBoxLayout(
                                 consumeEvent = { it.consume() },
                                 markPointerAsMoveOnly = currentMarkPointerAsMoveOnly,
                             )
+                            val isOwned = pointerEventBus.activeWidgets(pointerId).isNotEmpty()
+                            // Keep the bridge in sync when a swipable button releases because the
+                            // pointer moved outside its bounds, not only when the finger is lifted.
+                            if (wasOwned != isOwned) onControlPointerChanged(pointerId, isOwned)
                         }
                     }
                 }

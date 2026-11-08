@@ -32,16 +32,32 @@ import java.util.Locale
 
 // Horizon World Atlas: a warm, map-like launcher identity, deliberately unlike the previous
 // dark terminal / lime field-console direction.
-private val CanvasPaper = Color(0xFFF2F0E9)
-private val Ink = Color(0xFF171B2A)
-private val MutedInk = Color(0xFF777D8C)
-private val Blue = Color(0xFF5266E8)
-private val BlueDeep = Color(0xFF27378F)
-private val Sky = Color(0xFF8CD7E7)
-private val Coral = Color(0xFFFF987D)
-private val White = Color(0xFFFFFEFA)
-private val Border = Color(0xFFE2E0D8)
-private val Mint = Color(0xFFB9E6D0)
+private data class AtlasPalette(
+    val canvas: Color, val ink: Color, val mutedInk: Color, val blue: Color,
+    val blueDeep: Color, val sky: Color, val coral: Color, val white: Color,
+    val border: Color, val mint: Color
+)
+private val LightAtlasPalette = AtlasPalette(
+    Color(0xFFF2F0E9), Color(0xFF171B2A), Color(0xFF777D8C), Color(0xFF5266E8),
+    Color(0xFF27378F), Color(0xFF8CD7E7), Color(0xFFFF987D), Color(0xFFFFFEFA),
+    Color(0xFFE2E0D8), Color(0xFFB9E6D0)
+)
+private val DarkAtlasPalette = AtlasPalette(
+    Color(0xFF101521), Color(0xFFF1F3FA), Color(0xFFA6AFC1), Color(0xFF91A1FF),
+    Color(0xFF4659B9), Color(0xFF75C7D9), Color(0xFFFFA38D), Color(0xFF1B2433),
+    Color(0xFF344054), Color(0xFF244C45)
+)
+private val LocalAtlasPalette = staticCompositionLocalOf { LightAtlasPalette }
+private val CanvasPaper: Color @Composable get() = LocalAtlasPalette.current.canvas
+private val Ink: Color @Composable get() = LocalAtlasPalette.current.ink
+private val MutedInk: Color @Composable get() = LocalAtlasPalette.current.mutedInk
+private val Blue: Color @Composable get() = LocalAtlasPalette.current.blue
+private val BlueDeep: Color @Composable get() = LocalAtlasPalette.current.blueDeep
+private val Sky: Color @Composable get() = LocalAtlasPalette.current.sky
+private val Coral: Color @Composable get() = LocalAtlasPalette.current.coral
+private val White: Color @Composable get() = LocalAtlasPalette.current.white
+private val Border: Color @Composable get() = LocalAtlasPalette.current.border
+private val Mint: Color @Composable get() = LocalAtlasPalette.current.mint
 
 private enum class AtlasPage(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     HOME("Home", Icons.Default.Explore),
@@ -66,6 +82,7 @@ fun HorizonLauncherUi(
     mods: List<ModInfo>,
     versions: List<InstalledVersion>,
     settings: SettingsInfo?,
+    renderApi: String,
     playerName: String,
     accounts: AccountsInfo?,
     signInInfo: SignInInfo?,
@@ -104,6 +121,7 @@ fun HorizonLauncherUi(
     onUseGameName: () -> Unit,
     onSignIn: () -> Unit,
     onSaveSettings: (JSONObject) -> Unit,
+    onSetRenderApi: (String) -> Unit,
     onSetNoAi: (Boolean) -> Unit,
     onSetTelemetry: (Boolean) -> Unit,
     onSaveTouchControls: (JSONObject) -> Unit,
@@ -113,6 +131,9 @@ fun HorizonLauncherUi(
     onRemoveBrowse: (String) -> Unit
 ) {
     var page by remember { mutableStateOf(AtlasPage.HOME) }
+    var darkMode by remember(settings?.appearance) { mutableStateOf(settings?.appearance == "dark") }
+    CompositionLocalProvider(LocalAtlasPalette provides if (darkMode) DarkAtlasPalette else LightAtlasPalette) {
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(CanvasPaper).statusBarsPadding()) {
         AtlasHeader(playerName = playerName, ready = minecraftReady, onRefresh = onRefresh)
         Row(
@@ -165,10 +186,39 @@ fun HorizonLauncherUi(
             AtlasPage.ACCOUNTS -> AccountsAtlas(accounts, signInInfo, playerName, onSelectAccount, onAddOffline, onRemoveOffline, onRemoveAccount, onUseGameName, onSignIn)
             AtlasPage.CONTROLS -> ControlsAtlas(touchControls, onSaveTouchControls, onOpenControlsEditor)
             AtlasPage.SYSTEM -> SystemAtlas(
-                status, settings, platform, releases, telemetry, toolchainReady,
-                onSaveSettings, onSetNoAi, onSetTelemetry, onRefresh, onShowBuildLog, onInstallVersion
+                status, settings, renderApi, darkMode, platform, releases, telemetry, toolchainReady,
+                onSaveSettings, onSetRenderApi,
+                { enabled ->
+                    darkMode = enabled
+                    onSaveSettings(JSONObject().put("appearance", if (enabled) "dark" else "light"))
+                },
+                onSetNoAi, onSetTelemetry, onRefresh, onShowBuildLog, onInstallVersion
             )
         }
+    }
+    if (status.isNotBlank() && !status.startsWith("CORE ")) {
+        Surface(
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 10.dp, start = 16.dp, end = 16.dp),
+            color = Ink.copy(alpha = .94f),
+            contentColor = White,
+            shape = RoundedCornerShape(18.dp),
+            shadowElevation = 8.dp
+        ) {
+            Row(
+                Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                Icon(Icons.Default.Info, null, tint = Sky, modifier = Modifier.size(16.dp))
+                Text(
+                    status.replace('\n', ' · '),
+                    color = White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+    }
     }
 }
 
@@ -528,6 +578,11 @@ private fun AccountsAtlas(
                 }
             }
         }
+        accounts?.takeIf { it.player.kind == "microsoft" }?.let { microsoftAccounts ->
+            microsoftAccounts.accounts.firstOrNull { it.uuid == microsoftAccounts.selected }?.let { selectedAccount ->
+                AccountSkinPreview(uuid = selectedAccount.uuid, playerName = selectedAccount.name)
+            }
+        }
         Spacer(Modifier.height(15.dp))
         SectionHeading("Microsoft accounts", "${accounts?.accounts?.size ?: 0} linked")
         if (signInInfo?.configured == true) {
@@ -610,9 +665,10 @@ private fun ControlsAtlas(
 
 @Composable
 private fun SystemAtlas(
-    status: String, settings: SettingsInfo?, platform: PlatformInfo?, releases: List<Release>,
+    status: String, settings: SettingsInfo?, renderApi: String, darkMode: Boolean, platform: PlatformInfo?, releases: List<Release>,
     telemetry: TelemetryInfo?, toolchainReady: Boolean,
-    onSave: (JSONObject) -> Unit, onSetNoAi: (Boolean) -> Unit, onSetTelemetry: (Boolean) -> Unit,
+    onSave: (JSONObject) -> Unit, onSetRenderApi: (String) -> Unit, onSetDarkMode: (Boolean) -> Unit,
+    onSetNoAi: (Boolean) -> Unit, onSetTelemetry: (Boolean) -> Unit,
     onRefresh: () -> Unit, onBuildLog: () -> Unit, onInstallVersion: (String) -> Unit
 ) {
     var installNew by remember(settings) { mutableStateOf(settings?.installNewVersions ?: true) }
@@ -621,7 +677,7 @@ private fun SystemAtlas(
     var noAi by remember(settings) { mutableStateOf(settings?.noAi ?: false) }
     var gameArgs by remember(settings) { mutableStateOf(settings?.gameArgs ?: "") }
     var proxy by remember(settings) { mutableStateOf(settings?.proxy ?: "") }
-    var appearance by remember(settings) { mutableStateOf(settings?.appearance ?: "dark") }
+    var appearance by remember(settings) { mutableStateOf(settings?.appearance ?: "light") }
     var accent by remember(settings) { mutableStateOf(settings?.accent ?: "violet") }
     var language by remember(settings) { mutableStateOf(settings?.language ?: "") }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp)) {
@@ -646,7 +702,10 @@ private fun SystemAtlas(
         SettingSwitch("Disable AI features", noAi) { noAi = it; onSetNoAi(it) }
         OutlinedTextField(gameArgs, { gameArgs = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Game arguments") })
         OutlinedTextField(proxy, { proxy = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Proxy") })
-        OutlinedTextField(appearance, { appearance = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Appearance preference") })
+        SettingSwitch("Dark mode", darkMode) { enabled ->
+            appearance = if (enabled) "dark" else "light"
+            onSetDarkMode(enabled)
+        }
         OutlinedTextField(accent, { accent = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Accent preference") })
         OutlinedTextField(language, { language = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Language") })
         Button(
@@ -656,6 +715,29 @@ private fun SystemAtlas(
                 .put("language", language.takeIf { it.isNotBlank() })) },
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp), colors = ButtonDefaults.buttonColors(containerColor = Blue), shape = RoundedCornerShape(14.dp)
         ) { Text("SAVE CORE SETTINGS") }
+        Spacer(Modifier.height(18.dp))
+        SectionHeading("Graphics backend", "Applied the next time Minecraft starts")
+        Text(
+            "Auto tries Vulkan first, then OpenGL ES where supported. OpenGL ES 2.0 is not supported by the current Horizon renderer; the available wgpu path requires GLES 3.x.",
+            color = MutedInk, fontSize = 10.sp, lineHeight = 15.sp
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            listOf("auto" to "Auto", "vulkan" to "Vulkan", "opengl" to "OpenGL ES").forEach { (id, label) ->
+                FilterChip(
+                    selected = renderApi == id,
+                    onClick = { onSetRenderApi(id) },
+                    label = { Text(label, fontSize = 10.sp) }
+                )
+            }
+        }
+        Text(
+            when (renderApi) {
+                "vulkan" -> "Vulkan is forced. If the device driver cannot create a Vulkan device, Minecraft may fail to start; choose Auto to restore fallback."
+                "opengl" -> "OpenGL ES is forced through wgpu's GLES backend (GLES 3.x, not ES 2.0)."
+                else -> "Automatic mode prefers Vulkan and falls back to OpenGL ES when the driver or surface requires it."
+            },
+            color = MutedInk, fontSize = 9.sp, lineHeight = 14.sp
+        )
         Spacer(Modifier.height(18.dp))
         SectionHeading("Diagnostics", "Privacy controls")
         SettingSwitch("Share anonymous diagnostics", telemetry?.any ?: false, onSetTelemetry)

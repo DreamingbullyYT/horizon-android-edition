@@ -3,11 +3,15 @@ package dev.horizon.launcher.game
 import android.app.Activity
 import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.hardware.input.InputManager
 import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.Surface
@@ -195,7 +199,7 @@ internal fun HorizonGameControls(
     var padConnected by remember { mutableStateOf(false) }
 
     // ---- layout editor state ------------------------------------------------------------
-    var activeLayout by remember { mutableStateOf(layout) }
+    var activeLayout by remember(layout) { mutableStateOf(layout) }
     var selected by remember { mutableStateOf<ObservableWidget?>(null) }
     var selectedLayer by remember(activeLayout) { mutableStateOf(activeLayout.layers.value.firstOrNull()) }
     var panelOpen by remember { mutableStateOf(true) }
@@ -204,6 +208,8 @@ internal fun HorizonGameControls(
     val history = remember { ControlHistory() }
     var editSnapshot by remember { mutableStateOf<ControlLayout?>(null) }
     val occupied = remember { mutableSetOf<Long>() }
+    // Pointer ownership is input-only; keep it non-observable to avoid recomposing the HUD on every touch.
+    val controlPointers = remember { mutableSetOf<Long>() }
     val tuner = remember { LookTuner() }
     val haptics = remember(view) { Haptics(view) }
 
@@ -275,29 +281,47 @@ internal fun HorizonGameControls(
     }
 
     // ---- background polling / effects -----------------------------------------------------
-    LaunchedEffect(Unit) {
+    // Cursor-lock state is only needed by the touch HUD. Stop polling while Quick Settings
+    // or the full editor is visible, and sample less aggressively when the HUD is active.
+    LaunchedEffect(quickSettings, editing) {
+        if (quickSettings || editing) return@LaunchedEffect
         while (true) {
             grabbing = runCatching { GameInput.nativeCursorGrabbing() }.getOrDefault(true)
-            kotlinx.coroutines.delay(150)
+            kotlinx.coroutines.delay(350)
         }
     }
-    LaunchedEffect(Unit) {
-        while (true) {
+    // InputManager reports gamepad changes directly; avoid polling every two seconds on the UI thread.
+    DisposableEffect(context) {
+        val inputManager = context.getSystemService(Context.INPUT_SERVICE) as? InputManager
+        fun refreshGamepad() {
             padConnected = InputDevice.getDeviceIds().any { id ->
                 val device = InputDevice.getDevice(id)
-                device != null && !device.isVirtual && device.sources and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD
+                device != null && !device.isVirtual &&
+                    device.sources and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD
             }
-            kotlinx.coroutines.delay(2000)
         }
+        val listener = object : InputManager.InputDeviceListener {
+            override fun onInputDeviceAdded(deviceId: Int) = refreshGamepad()
+            override fun onInputDeviceRemoved(deviceId: Int) = refreshGamepad()
+            override fun onInputDeviceChanged(deviceId: Int) = refreshGamepad()
+        }
+        refreshGamepad()
+        inputManager?.registerInputDeviceListener(listener, Handler(Looper.getMainLooper()))
+        onDispose { inputManager?.unregisterInputDeviceListener(listener) }
     }
     LaunchedEffect(hapticLevel) { haptics.level = hapticLevel }
-    LaunchedEffect(showFps, showMemory) {
+    // Stats updates invalidate the overlay composition. Pause them while Quick Settings is
+    // open, and only collect graph samples when the graph is actually displayed.
+    LaunchedEffect(showFps, showMemory, fpsMode, quickSettings) {
+        if (quickSettings) return@LaunchedEffect
         val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         while (showFps || showMemory) {
             if (showFps) {
                 currentFps = runCatching { GameInput.nativeGameFps() }.getOrDefault(0)
-                fpsHistory.add(currentFps.toFloat())
-                while (fpsHistory.size > 30) fpsHistory.removeAt(0)
+                if (fpsMode == 1) {
+                    fpsHistory.add(currentFps.toFloat())
+                    while (fpsHistory.size > 30) fpsHistory.removeAt(0)
+                }
             }
             if (showMemory) currentMemoryMb = runCatching {
                 manager.getProcessMemoryInfo(intArrayOf(android.os.Process.myPid())).firstOrNull()?.totalPss?.div(1024) ?: 0
@@ -366,6 +390,7 @@ internal fun HorizonGameControls(
                 val hotbarPointers = mutableSetOf<Long>()
                 val longPressJobs = mutableMapOf<Long, kotlinx.coroutines.Job>()
                 val heldButtons = mutableMapOf<Long, String>()
+                val tapSuppressed = mutableSetOf<Long>()
                 /** Zalith-style hotbar: index 0..8 of the slot under [p], or -1. Geometry comes from the game's HUD. */
                 fun hotbarSlotAt(p: Offset): Int {
                     val r = runCatching { GameInput.nativeHotbarRect() }.getOrNull() ?: return -1
@@ -377,15 +402,25 @@ internal fun HorizonGameControls(
                 }
                 while (true) {
                     val event = awaitPointerEvent(PointerEventPass.Final)
-                    if (editing) {
-                        // Release any synthetic mouse button before the editor takes over input.
+                    if (editing || quickSettings) {
+                        // Editor and Quick Settings own the screen; do not route touches into Minecraft.
+                        // Release any synthetic mouse button before the panel takes over input.
                         longPressJobs.values.forEach { it.cancel() }
                         longPressJobs.clear()
                         heldButtons.values.forEach { GameInput.nativeSendControl(it, false) }
                         if (swipeLook) GameInput.nativeLookActive(false)
                         heldButtons.clear()
-                        positions.clear(); starts.clear(); downAt.clear(); lookPointers.clear(); gesturePointers.clear(); ignored.clear(); tuner.reset()
+                        positions.clear(); starts.clear(); downAt.clear(); lookPointers.clear(); gesturePointers.clear(); ignored.clear(); tapSuppressed.clear(); controlPointers.clear(); tuner.reset()
                         continue
+                    }
+                    // Once a control owns any pointer, a separate empty-screen touch must not
+                    // turn into a world click. Keep camera swipes, but cancel tap/long-press actions.
+                    if ((occupied.isNotEmpty() || controlPointers.isNotEmpty()) && gesturePointers.isNotEmpty()) {
+                        tapSuppressed.addAll(gesturePointers)
+                        longPressJobs.values.forEach { it.cancel() }
+                        longPressJobs.clear()
+                        heldButtons.values.forEach { GameInput.nativeSendControl(it, false) }
+                        heldButtons.clear()
                     }
                     val areaStart = when (lookArea) { 1 -> 0.3f; 2 -> 0.5f; else -> 0f }
                     event.changes.forEach { change ->
@@ -408,16 +443,17 @@ internal fun HorizonGameControls(
                             }
                             if (grabbing) {
                                 if (prior == null) {
+                                    if (occupied.isNotEmpty() || controlPointers.isNotEmpty()) tapSuppressed += id
                                     gesturePointers += id
                                     if (change.position.x >= size.width * areaStart) {
                                         lookPointers += id
                                         tuner.reset()
                                         if (swipeLook) GameInput.nativeLookActive(true)
                                     }
-                                    if (gesturesEnabled && longPressAction in 1..2) {
+                                    if (gesturesEnabled && longPressAction in 1..2 && id !in tapSuppressed && occupied.isEmpty() && controlPointers.isEmpty()) {
                                         longPressJobs[id] = pointerScope.launch {
                                             kotlinx.coroutines.delay(longPressDelay.toLong())
-                                            if (id in gesturePointers && gesturesEnabled && longPressAction in 1..2) {
+                                            if (id in gesturePointers && id !in tapSuppressed && occupied.isEmpty() && controlPointers.isEmpty() && gesturesEnabled && longPressAction in 1..2) {
                                                 val button = if (longPressAction == 1) "GLFW_MOUSE_BUTTON_LEFT" else "GLFW_MOUSE_BUTTON_RIGHT"
                                                 GameInput.nativeSendControl(button, true)
                                                 heldButtons[id] = button
@@ -449,10 +485,11 @@ internal fun HorizonGameControls(
                                 if (lookPointers.remove(id) && swipeLook) GameInput.nativeLookActive(lookPointers.isNotEmpty())
                                 longPressJobs.remove(id)?.cancel()
                                 val heldButton = heldButtons.remove(id)
+                                val suppressTap = tapSuppressed.remove(id) || occupied.isNotEmpty() || controlPointers.isNotEmpty()
                                 val moved = start?.let { (it - change.position).getDistance() > 24f } ?: true
                                 if (heldButton != null) {
                                     GameInput.nativeSendControl(heldButton, false)
-                                } else if (!moved && gesturesEnabled) {
+                                } else if (!moved && gesturesEnabled && !suppressTap) {
                                     val action = if (duration >= longPressDelay) longPressAction else tapAction
                                     if (action in 1..2) {
                                         val button = if (action == 1) "GLFW_MOUSE_BUTTON_LEFT" else "GLFW_MOUSE_BUTTON_RIGHT"
@@ -473,7 +510,7 @@ internal fun HorizonGameControls(
             val activeEditor = editorViewModel!!
             ControlEditor(
                 viewModel = activeEditor,
-                targetFile = File(context.filesDir, "zalith-control-layout.json"),
+                targetFile = File(File(context.filesDir, "launcher"), "touch-layout.json"),
                 exit = { finishEditing(keep = true, updated = activeEditor.observableLayout.pack()) },
                 menuExit = { finishEditing(keep = false) },
                 onSaveLayout = { updated ->
@@ -559,12 +596,16 @@ internal fun HorizonGameControls(
                 }
             }
         } else {
-            if (storedHud) ControlBoxLayout(
+            // The settings sheet dims the whole game; do not render or hit-test the HUD beneath it.
+            if (storedHud && !quickSettings) ControlBoxLayout(
                 modifier = Modifier.fillMaxSize(), observedLayout = activeLayout, eventHandler = handler,
                 isCursorGrabbing = grabbing,
                 checkOccupiedPointers = { it.value in occupied },
                 onOccupiedPointer = { occupied += it.value },
                 onReleasePointer = { occupied -= it.value },
+                onControlPointerChanged = { pointer, pressed ->
+                    if (pressed) controlPointers.add(pointer.value) else controlPointers.remove(pointer.value)
+                },
                 opacity = { opacity },
                 hideLayerWhen = if (autoHideForPad && padConnected) HideLayerWhen.WhenGamepad else HideLayerWhen.None,
                 isDark = true
@@ -608,7 +649,12 @@ internal fun HorizonGameControls(
                                     MenuSliderLayout(title = "Control opacity", value = opacity, valueRange = 0.2f..1f, format = { "${(it * 100).toInt()}%" }) {
                                         opacity = it; prefs.edit().putFloat("opacity", it).apply()
                                     }
-                                    MenuTextButton(text = "Customize controls") { startEditing() }
+                                    MenuTextButton(text = "Open full control editor") {
+                                         quickSettings = false
+                                         activity?.let { host ->
+                                             host.startActivity(Intent(host, TouchControlEditorActivity::class.java))
+                                         }
+                                     }
                                     MenuListLayout(title = "Haptic feedback", items = listOf(0, 1, 2, 3), currentItem = hapticLevel, getItemText = { Haptics.labels[it] }) {
                                         hapticLevel = it; prefs.edit().putInt("haptic_level", it).apply(); haptics.level = it; haptics.tick()
                                     }
@@ -756,7 +802,7 @@ internal fun HorizonGameControls(
                             }
                             MenuSwitchButton(text = "Show process memory", switch = showMemory) { showMemory = it; prefs.edit().putBoolean("show_memory", it).apply() }
                             MenuSectionLabel("Session")
-                            MenuTextButton(text = "Close game") { (context as? Activity)?.finish() }
+                            MenuTextButton(text = "Close game") { (context as? HorizonGameActivity)?.closeGame() }
                         }
                     },
                 )

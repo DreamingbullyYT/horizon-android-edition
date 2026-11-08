@@ -1,8 +1,10 @@
 package dev.horizon.launcher.data
 
+import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
 import android.os.Handler
+import android.os.Process
 import android.os.Looper
 import dev.horizon.launcher.core.Native
 import dev.horizon.launcher.core.NativeLoader
@@ -48,9 +50,35 @@ object Updater {
     data class Version(val name: String, val build: Long, val active: Boolean)
 
     private fun root(files: File) = File(files, "updates").apply { mkdirs() }
-    private fun marker(files: File) = File(root(files), "pending")
+    private fun startupMarker(files: File, role: String) = File(root(files), "pending-$role")
+    private fun runningGameMarker(files: File) = File(root(files), "running-game")
     private fun read(files: File, name: String): String? =
         runCatching { File(root(files), name).readText().trim() }.getOrNull()?.takeIf { it.isNotEmpty() }
+
+    private data class GuardRecord(val pid: Int, val version: String)
+
+    private fun readGuard(file: File): GuardRecord? = runCatching {
+        val lines = file.readLines()
+        GuardRecord(lines[0].toInt(), lines[1].trim()).takeIf { it.version.isNotBlank() }
+    }.getOrNull()
+
+    private fun isProcessAlive(context: Context, record: GuardRecord, role: String): Boolean {
+        if (record.pid == Process.myPid()) return true
+        val expectedName = if (role == "game") "${context.packageName}:game" else context.packageName
+        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return false
+        return manager.runningAppProcesses.orEmpty().any {
+            it.pid == record.pid && it.processName == expectedName
+        }
+    }
+
+    private fun rollbackFailedStart(files: File, failed: String) {
+        // Do not roll back a different version that may have been activated while this process ran.
+        if (activeVersion(files) != failed) return
+        val knownBad = bad(files) + failed
+        write(files, "bad", knownBad.joinToString("\n"))
+        val fallback = versions(files).firstOrNull { it.name != failed && it.name !in knownBad }
+        write(files, "current", fallback?.name)
+    }
     private fun write(files: File, name: String, value: String?) {
         val f = File(root(files), name)
         if (value == null) f.delete() else f.writeText(value)
@@ -100,16 +128,31 @@ object Updater {
 
     /** Call first in MainActivity: rolls back a failed update and points the loader at the active one. */
     fun prepare(files: File, context: Context? = null) {
-        if (marker(files).exists()) {
-            // The previous start with an update never got going: that build is bad, go back to the one before.
-            val failed = read(files, "pending") ?: activeVersion(files)
-            marker(files).delete()
-            if (failed != null) {
-                write(files, "bad", (bad(files) + failed).joinToString("\n"))
-                val fallback = versions(files).firstOrNull { it.name != failed && it.name !in bad(files) }
-                write(files, "current", fallback?.name)
+        // Older releases shared one marker between both Android processes. It has no PID,
+        // so it is ambiguous and must be removed without risking a currently running game.
+        File(root(files), "pending").delete()
+
+        for (role in listOf("launcher", "game")) {
+            val marker = startupMarker(files, role)
+            val guard = readGuard(marker)
+            if (guard == null) {
+                marker.delete()
+                continue
             }
+            val alive = context?.let { isProcessAlive(it, guard, role) } ?: (guard.pid == Process.myPid())
+            if (alive) continue
+            rollbackFailedStart(files, guard.version)
+            marker.delete()
         }
+
+        // Keep the game runtime pinned while :game remains alive, even after the startup
+        // guard expires. A stale record is removed after the process is no longer running.
+        val running = runningGameMarker(files)
+        val runningGuard = readGuard(running)
+        if (runningGuard != null && context != null && !isProcessAlive(context, runningGuard, "game")) {
+            running.delete()
+        }
+
         // A newer APK obsoletes updates older than itself.
         if (context != null) {
             current(files)?.let { if (buildOf(it) <= apkBuild(context)) write(files, "current", null) }
@@ -156,11 +199,33 @@ object Updater {
         stamp.writeText(sum)
     }
 
-    /** Marks "starting with an update"; cleared once the process has lived 20 s. */
-    fun armGuard(files: File) {
+    /**
+     * Separate guards for the launcher and :game process prevent one process from clearing
+     * the other's startup marker. The running-game record keeps its runtime from being pruned.
+     */
+    fun armGuard(files: File, role: String) {
+        require(role == "launcher" || role == "game") { "Unknown update guard role: $role" }
         val active = activeVersion(files) ?: return
-        marker(files).writeText(active)
-        Handler(Looper.getMainLooper()).postDelayed({ marker(files).delete() }, 20_000)
+        val pid = Process.myPid()
+        val value = "$pid\n$active"
+        val marker = startupMarker(files, role)
+        marker.writeText(value)
+        if (role == "game") runningGameMarker(files).writeText(value)
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (runCatching { marker.readText() }.getOrNull() == value) marker.delete()
+        }, 20_000)
+    }
+
+    /** Clear the persistent :game record on actual game teardown or explicit close. */
+    fun clearGameSession(files: File, clearStartupGuard: Boolean = false) {
+        val pid = Process.myPid()
+        val running = runningGameMarker(files)
+        if (readGuard(running)?.pid == pid) running.delete()
+        if (clearStartupGuard) {
+            val pending = startupMarker(files, "game")
+            if (readGuard(pending)?.pid == pid) pending.delete()
+        }
     }
 
     sealed class Result {
@@ -342,7 +407,14 @@ object Updater {
     /** Keeps the active version and the newest few; the rest go. */
     private fun prune(files: File) {
         val active = activeVersion(files)
-        versions(files).filter { !isLocal(it.name) }.drop(KEEP).filter { it.name != active }.forEach { File(root(files), it.name).deleteRecursively() }
+        val inUse = setOfNotNull(
+            readGuard(runningGameMarker(files))?.version,
+            readGuard(startupMarker(files, "game"))?.version,
+            readGuard(startupMarker(files, "launcher"))?.version
+        )
+        versions(files).filter { !isLocal(it.name) }.drop(KEEP)
+            .filter { it.name != active && it.name !in inUse }
+            .forEach { File(root(files), it.name).deleteRecursively() }
         root(files).listFiles { f -> f.name.endsWith(".partial") }?.forEach { it.deleteRecursively() }
     }
 

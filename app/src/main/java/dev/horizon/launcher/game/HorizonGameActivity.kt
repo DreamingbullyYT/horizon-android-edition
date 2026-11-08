@@ -16,6 +16,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -58,18 +59,25 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     private var layoutImportCallback: ((ControlLayout) -> Unit)? = null
     private var pendingExport: ControlLayout? = null
     private var zalithOverlay: ComposeView? = null
+    private val overlayLayoutState = mutableStateOf<ObservableControlLayout?>(null)
+    private var overlayLayoutSnapshot: String? = null
     override val savedStateRegistry: SavedStateRegistry get() = savedStateController.savedStateRegistry
 
     private val currentLayoutFile: File get() = File(File(filesDir, "launcher"), "touch-layout.json")
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Choose the upstream wgpu backend before NativeActivity starts loading the engine.
+        val renderApi = runCatching {
+            File(File(filesDir, "launcher"), "render-api.txt").readText().trim()
+        }.getOrDefault("auto").takeIf { it in setOf("auto", "vulkan", "opengl") } ?: "auto"
+        runCatching { android.system.Os.setenv("HORIZON_GRAPHICS_API", renderApi, true) }
         // NativeActivity loads the game inside super.onCreate: tell the boot stub which one.
         dev.horizon.launcher.data.Updater.gamePath(filesDir)?.let {
             runCatching { android.system.Os.setenv("HORIZON_GAME_LIB", it, true) }
         }
         // Disable the legacy Rust HUD; Zalith owns the touch layer in this Activity.
         runCatching { android.system.Os.setenv("HORIZON_ANDROID_ZALITH_CONTROLS", "1", true) }
-        dev.horizon.launcher.data.Updater.armGuard(filesDir)
+        dev.horizon.launcher.data.Updater.armGuard(filesDir, "game")
         super.onCreate(savedInstanceState)
         runCatching {
             if (android.os.Build.VERSION.SDK_INT >= 33 &&
@@ -97,6 +105,8 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
             or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
 
         val initialLayout = loadLayout()
+        overlayLayoutState.value = initialLayout
+        overlayLayoutSnapshot = runCatching { currentLayoutFile.takeIf { it.isFile }?.readText() }.getOrNull()
         val profiles = LayoutProfiles(this)
         val overlay = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@HorizonGameActivity)
@@ -106,7 +116,7 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 HorizonGameControls(
-                    layout = initialLayout,
+                    layout = overlayLayoutState.value ?: initialLayout,
                     profiles = profiles,
                     defaultLayout = { defaultLayout() },
                     setKeepAwake = { enabled ->
@@ -141,17 +151,37 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     }
 
     override fun onStart() { super.onStart(); lifecycleRegistry.currentState = Lifecycle.State.STARTED }
-    override fun onResume() { super.onResume(); lifecycleRegistry.currentState = Lifecycle.State.RESUMED }
+    override fun onResume() {
+        super.onResume()
+        lifecycleRegistry.currentState = Lifecycle.State.RESUMED
+        // The standalone Zalith editor writes the canonical Horizon layout file. Reload only
+        // when its contents changed so normal pause/resume does not recreate the live HUD.
+        val snapshot = runCatching { currentLayoutFile.takeIf { it.isFile }?.readText() }.getOrNull()
+        if (snapshot != null && snapshot != overlayLayoutSnapshot) {
+            runCatching { loadLayout() }
+                .onSuccess { overlayLayoutState.value = it; overlayLayoutSnapshot = snapshot }
+                .onFailure { android.util.Log.e("HorizonZalith", "Could not reload edited control layout", it) }
+        }
+    }
     override fun onPause() { lifecycleRegistry.currentState = Lifecycle.State.STARTED; super.onPause() }
     override fun onStop() { lifecycleRegistry.currentState = Lifecycle.State.CREATED; super.onStop() }
     override fun onDestroy() {
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         zalithOverlay?.let { view -> runCatching { windowManager.removeView(view) } }
         zalithOverlay = null
+        // Clear only the persistent running-session record. Keep the pending startup guard
+        // so a crash during the first 20 seconds can still trigger updater rollback.
+        dev.horizon.launcher.data.Updater.clearGameSession(filesDir)
+        // Do not kill :game or stop its foreground service on an ordinary Activity teardown.
+        // The game Activity is hosted in its own task so the launcher can be reopened independently.
         super.onDestroy()
-        // The game lives in its own process (:game); the native engine cannot start twice in one process.
+    }
+
+    /** Explicit player action: close the native game session and its keep-alive notification. */
+    fun closeGame() {
+        dev.horizon.launcher.data.Updater.clearGameSession(filesDir, clearStartupGuard = true)
         stopService(Intent(this, GameKeepAliveService::class.java))
-        android.os.Process.killProcess(android.os.Process.myPid())
+        finish()
     }
     override fun onSaveInstanceState(outState: Bundle) {
         savedStateController.performSave(outState)
@@ -170,6 +200,7 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
             val temp = File(file.parentFile, "${file.name}.tmp")
             temp.writeText(ControlJson.encode(packed))
             if (!temp.renameTo(file)) { temp.copyTo(file, overwrite = true); temp.delete() }
+            overlayLayoutSnapshot = file.readText()
         }.onFailure { toast("Could not save control layout: ${it.message}") }
     }
 

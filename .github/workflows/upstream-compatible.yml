@@ -87,8 +87,14 @@ jobs:
       - name: Fetch upstream history
         run: |
           git clone -q --filter=blob:none https://github.com/horizon-rust/horizon.git .horizon-candidates
-          git -C .horizon-candidates fetch -q --unshallow || true
+          if [[ "$(git -C .horizon-candidates rev-parse --is-shallow-repository)" == "true" ]]; then
+            git -C .horizon-candidates fetch -q --unshallow origin
+          fi
           git -C .horizon-candidates fetch -q --tags -f origin
+          # Three-way apply needs the old source blob named by android.patch's index line.
+          # The history clone is blob-filtered, so explicitly hydrate the known-good base tree.
+          known_good="$(tr -d '[:space:]' < android/UPSTREAM_PIN)"
+          git -C .horizon-candidates fetch -q --no-filter origin "$known_good"
           newest_tag="$(git -C .horizon-candidates tag --list 'nightly-source/*' --sort=-creatordate | head -n 1)"
           echo "UPSTREAM_HEAD=$(git -C .horizon-candidates rev-list -n1 "$newest_tag")" >> "$GITHUB_ENV"
           echo "Newest Nightly: $newest_tag"
@@ -129,8 +135,7 @@ jobs:
             echo "Testing candidate $sha"
             echo "============================================================"
 
-            # `git apply --3way` only works inside a repository that has the patch's original files,
-            # so (like android/sync.sh) check out the known-good pin first, then the candidate.
+            # The patch index hashes now name the pinned source blobs, so three-way apply can rebase edits.
             rm -rf horizon .compat-work/candidate
             git -C .horizon-candidates reset -q --hard
             git -C .horizon-candidates clean -fdq
@@ -140,6 +145,18 @@ jobs:
 
             if ! git -C .horizon-candidates apply --3way --whitespace=nowarn "$GITHUB_WORKSPACE/android/android.patch"; then
               echo "PATCH_FAIL $sha"
+              echo "=== conflicted Android patch files ==="
+              git -C .horizon-candidates diff --name-only --diff-filter=U || true
+              for conflicted in $(git -C .horizon-candidates diff --name-only --diff-filter=U); do
+                echo "=== conflict details: $conflicted ==="
+                git -C .horizon-candidates diff --cc -- "$conflicted" | head -n 260 || true
+                for stage in 1 2 3; do
+                  echo "=== conflict stage $stage: $conflicted ==="
+                  git -C .horizon-candidates show ":$stage:$conflicted" 2>/dev/null | grep -n -A 55 -B 8 -E "impl ApplicationHandler for Game|fn resumed\(|fn window_event\(" | head -n 220 || true
+                done
+                echo "=== working file conflict markers: $conflicted ==="
+                grep -n -A 55 -B 8 -E '^(<<<<<<<|=======|>>>>>>>)' ".horizon-candidates/$conflicted" | head -n 220 || true
+              done
               continue
             fi
             cp -a "$GITHUB_WORKSPACE/android/overlay/." .horizon-candidates/
