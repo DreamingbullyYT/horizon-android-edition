@@ -204,6 +204,7 @@ internal fun HorizonGameControls(
     val history = remember { ControlHistory() }
     var editSnapshot by remember { mutableStateOf<ControlLayout?>(null) }
     val occupied = remember { mutableSetOf<Long>() }
+    val controlPointers = remember { mutableStateMapOf<Long, Boolean>() }
     val tuner = remember { LookTuner() }
     val haptics = remember(view) { Haptics(view) }
 
@@ -386,12 +387,12 @@ internal fun HorizonGameControls(
                         heldButtons.values.forEach { GameInput.nativeSendControl(it, false) }
                         if (swipeLook) GameInput.nativeLookActive(false)
                         heldButtons.clear()
-                        positions.clear(); starts.clear(); downAt.clear(); lookPointers.clear(); gesturePointers.clear(); ignored.clear(); tapSuppressed.clear(); tuner.reset()
+                        positions.clear(); starts.clear(); downAt.clear(); lookPointers.clear(); gesturePointers.clear(); ignored.clear(); tapSuppressed.clear(); controlPointers.clear(); tuner.reset()
                         continue
                     }
                     // Once a control owns any pointer, a separate empty-screen touch must not
                     // turn into a world click. Keep camera swipes, but cancel tap/long-press actions.
-                    if (occupied.isNotEmpty() && gesturePointers.isNotEmpty()) {
+                    if ((occupied.isNotEmpty() || controlPointers.isNotEmpty()) && gesturePointers.isNotEmpty()) {
                         tapSuppressed.addAll(gesturePointers)
                         longPressJobs.values.forEach { it.cancel() }
                         longPressJobs.clear()
@@ -419,7 +420,7 @@ internal fun HorizonGameControls(
                             }
                             if (grabbing) {
                                 if (prior == null) {
-                                    if (occupied.isNotEmpty()) tapSuppressed += id
+                                    if (occupied.isNotEmpty() || controlPointers.isNotEmpty()) tapSuppressed += id
                                     gesturePointers += id
                                     if (change.position.x >= size.width * areaStart) {
                                         lookPointers += id
@@ -429,7 +430,7 @@ internal fun HorizonGameControls(
                                     if (gesturesEnabled && longPressAction in 1..2 && id !in tapSuppressed && occupied.isEmpty()) {
                                         longPressJobs[id] = pointerScope.launch {
                                             kotlinx.coroutines.delay(longPressDelay.toLong())
-                                            if (id in gesturePointers && id !in tapSuppressed && occupied.isEmpty() && gesturesEnabled && longPressAction in 1..2) {
+                                            if (id in gesturePointers && id !in tapSuppressed && occupied.isEmpty() && controlPointers.isEmpty() && gesturesEnabled && longPressAction in 1..2) {
                                                 val button = if (longPressAction == 1) "GLFW_MOUSE_BUTTON_LEFT" else "GLFW_MOUSE_BUTTON_RIGHT"
                                                 GameInput.nativeSendControl(button, true)
                                                 heldButtons[id] = button
@@ -461,7 +462,7 @@ internal fun HorizonGameControls(
                                 if (lookPointers.remove(id) && swipeLook) GameInput.nativeLookActive(lookPointers.isNotEmpty())
                                 longPressJobs.remove(id)?.cancel()
                                 val heldButton = heldButtons.remove(id)
-                                val suppressTap = tapSuppressed.remove(id) || occupied.isNotEmpty()
+                                val suppressTap = tapSuppressed.remove(id) || occupied.isNotEmpty() || controlPointers.isNotEmpty()
                                 val moved = start?.let { (it - change.position).getDistance() > 24f } ?: true
                                 if (heldButton != null) {
                                     GameInput.nativeSendControl(heldButton, false)
@@ -579,6 +580,9 @@ internal fun HorizonGameControls(
                 checkOccupiedPointers = { it.value in occupied },
                 onOccupiedPointer = { occupied += it.value },
                 onReleasePointer = { occupied -= it.value },
+                onControlPointerChanged = { pointer, pressed ->
+                    if (pressed) controlPointers[pointer.value] = true else controlPointers.remove(pointer.value)
+                },
                 opacity = { opacity },
                 hideLayerWhen = if (autoHideForPad && padConnected) HideLayerWhen.WhenGamepad else HideLayerWhen.None,
                 isDark = true
