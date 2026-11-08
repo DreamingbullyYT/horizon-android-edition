@@ -7,7 +7,10 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.hardware.input.InputManager
 import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.Surface
@@ -276,20 +279,33 @@ internal fun HorizonGameControls(
     }
 
     // ---- background polling / effects -----------------------------------------------------
-    LaunchedEffect(Unit) {
+    // Cursor-lock state is only needed by the touch HUD. Stop polling while Quick Settings
+    // or the full editor is visible, and sample less aggressively when the HUD is active.
+    LaunchedEffect(quickSettings, editing) {
+        if (quickSettings || editing) return@LaunchedEffect
         while (true) {
             grabbing = runCatching { GameInput.nativeCursorGrabbing() }.getOrDefault(true)
-            kotlinx.coroutines.delay(150)
+            kotlinx.coroutines.delay(350)
         }
     }
-    LaunchedEffect(Unit) {
-        while (true) {
+    // InputManager reports gamepad changes directly; avoid polling every two seconds on the UI thread.
+    DisposableEffect(context) {
+        val inputManager = context.getSystemService(Context.INPUT_SERVICE) as? InputManager
+        fun refreshGamepad() {
             padConnected = InputDevice.getDeviceIds().any { id ->
                 val device = InputDevice.getDevice(id)
-                device != null && !device.isVirtual && device.sources and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD
+                device != null && !device.isVirtual &&
+                    device.sources and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD
             }
-            kotlinx.coroutines.delay(2000)
         }
+        val listener = object : InputManager.InputDeviceListener {
+            override fun onInputDeviceAdded(deviceId: Int) = refreshGamepad()
+            override fun onInputDeviceRemoved(deviceId: Int) = refreshGamepad()
+            override fun onInputDeviceChanged(deviceId: Int) = refreshGamepad()
+        }
+        refreshGamepad()
+        inputManager?.registerInputDeviceListener(listener, Handler(Looper.getMainLooper()))
+        onDispose { inputManager?.unregisterInputDeviceListener(listener) }
     }
     LaunchedEffect(hapticLevel) { haptics.level = hapticLevel }
     LaunchedEffect(showFps, showMemory) {
