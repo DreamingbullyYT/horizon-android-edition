@@ -10,11 +10,30 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$PROOT_ASSETS/lib"
 
 BOOTSTRAP_URL="https://github.com/termux/termux-packages/releases/download/bootstrap-2026.11.01-r1%2Bapt.android-7/bootstrap-aarch64.zip"
+# Use the GitHub asset API first; it bypasses the release-page redirect path that can return
+# transient 502/504 responses on CI runners. Keep the browser URL as a fallback.
+BOOTSTRAP_ASSET_API="https://api.github.com/repos/termux/termux-packages/releases/assets/696854476"
 BOOTSTRAP_SHA256="5a1429b6c68ee3bdc17b5fd6e47ba42933ec924cd7283fe74992574e1d5badae"
 
 echo "Fetching pinned official Termux ARM64 bootstrap"
-curl --retry 5 --retry-all-errors -fsSL "$BOOTSTRAP_URL" -o "$ASSETS/bootstrap-aarch64.zip"
-echo "$BOOTSTRAP_SHA256  $ASSETS/bootstrap-aarch64.zip" | sha256sum -c -
+BOOTSTRAP_TMP="$WORK/bootstrap-aarch64.zip"
+downloaded=false
+for url in "$BOOTSTRAP_ASSET_API" "$BOOTSTRAP_URL"; do
+  rm -f "$BOOTSTRAP_TMP"
+  echo "Trying official Termux asset endpoint: $url"
+  if curl --connect-timeout 20 --max-time 300 --retry 3 --retry-all-errors \
+      --retry-delay 2 -H "Accept: application/octet-stream" -fsSL "$url" -o "$BOOTSTRAP_TMP" &&
+      echo "$BOOTSTRAP_SHA256  $BOOTSTRAP_TMP" | sha256sum -c -; then
+    downloaded=true
+    break
+  fi
+  echo "Endpoint failed or returned an unexpected checksum; trying the next official URL." >&2
+done
+if [ "$downloaded" != true ]; then
+  echo "::error::Could not fetch the pinned official Termux bootstrap from either verified GitHub endpoint." >&2
+  exit 1
+fi
+install -m 0644 "$BOOTSTRAP_TMP" "$ASSETS/bootstrap-aarch64.zip"
 
 REPO="https://packages-cf.termux.dev/apt/termux-main"
 curl --retry 5 --retry-all-errors -fsSL "$REPO/dists/stable/main/binary-aarch64/Packages" -o "$WORK/Packages"

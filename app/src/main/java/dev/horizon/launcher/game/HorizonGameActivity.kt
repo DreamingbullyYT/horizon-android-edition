@@ -6,14 +6,13 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.graphics.PixelFormat
 import android.os.Bundle
-import android.view.Gravity
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.ViewGroup
 import android.widget.Toast
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.runtime.mutableStateOf
@@ -66,10 +65,13 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     private val currentLayoutFile: File get() = File(File(filesDir, "launcher"), "touch-layout.json")
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Choose the upstream wgpu backend before NativeActivity starts loading the engine.
-        val renderApi = runCatching {
-            File(File(filesDir, "launcher"), "render-api.txt").readText().trim()
-        }.getOrDefault("auto").takeIf { it in setOf("auto", "vulkan", "opengl") } ?: "auto"
+        // Choose the wgpu backend (Vulkan or GLES) before NativeActivity starts loading the engine.
+        // Launcher settings write both render-api.txt and the "horizon-renderer" preference; either is accepted.
+        val renderChoices = setOf("auto", "vulkan", "opengl")
+        val renderApi = runCatching { File(File(filesDir, "launcher"), "render-api.txt").readText().trim() }
+            .getOrNull()?.takeIf { it in renderChoices }
+            ?: getSharedPreferences("horizon-renderer", MODE_PRIVATE).getString("api", "auto")?.takeIf { it in renderChoices }
+            ?: "auto"
         runCatching { android.system.Os.setenv("HORIZON_GRAPHICS_API", renderApi, true) }
         // NativeActivity loads the game inside super.onCreate: tell the boot stub which one.
         dev.horizon.launcher.data.Updater.gamePath(filesDir)?.let {
@@ -132,21 +134,20 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
                 )
             }
         }
-        window.decorView.post {
-            val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                PixelFormat.TRANSLUCENT
-            ).apply {
-                token = window.decorView.windowToken
-                gravity = Gravity.TOP or Gravity.START
-                title = "Horizon touch controls"
-            }
-            zalithOverlay = overlay
-            runCatching { windowManager.addView(overlay, params) }
-                .onFailure { android.util.Log.e("HorizonZalith", "Could not attach Zalith overlay", it) }
+        // Keep the Compose controls inside this Activity's existing decor/content tree.
+        // TYPE_APPLICATION_PANEL creates a second window with its own DecorView; that
+        // DecorView has no ViewTreeLifecycleOwner and crashes WindowRecomposer creation.
+        zalithOverlay = overlay
+        runCatching {
+            addContentView(
+                overlay,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
+        }.onFailure {
+            android.util.Log.e("HorizonZalith", "Could not attach Zalith overlay", it)
         }
     }
 
@@ -165,9 +166,16 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     }
     override fun onPause() { lifecycleRegistry.currentState = Lifecycle.State.STARTED; super.onPause() }
     override fun onStop() { lifecycleRegistry.currentState = Lifecycle.State.CREATED; super.onStop() }
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        // Keep NativeActivity alive: Minecraft's native session is tied to this Activity/process.
+        // A launcher screen above it lets Play bring this same singleTask Activity back.
+        startActivity(Intent(this, dev.horizon.launcher.MainActivity::class.java))
+    }
+
     override fun onDestroy() {
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
-        zalithOverlay?.let { view -> runCatching { windowManager.removeView(view) } }
+        zalithOverlay?.let { view -> (view.parent as? ViewGroup)?.removeView(view) }
         zalithOverlay = null
         // Clear only the persistent running-session record. Keep the pending startup guard
         // so a crash during the first 20 seconds can still trigger updater rollback.

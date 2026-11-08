@@ -9,13 +9,25 @@ ref=${1:-$(tr -d '[:space:]' < android/UPSTREAM_PIN)}
 rm -rf .horizon-sync
 git clone -q --filter=blob:none https://github.com/horizon-rust/horizon.git .horizon-sync
 pin=$(tr -d '[:space:]' < android/UPSTREAM_PIN)
-if [ "$ref" != "$pin" ]; then
-  # 3-way merging needs the files the patch was made against: check them out once so git fetches them.
-  git -C .horizon-sync checkout -q "$pin"
+stable_pin=$(tr -d '[:space:]' < android/STABLE_ANDROID_PIN)
+if [ "$ref" != "$stable_pin" ]; then
+  # Keep the original patch base in the object database even after UPSTREAM_PIN advances.
+  git -C .horizon-sync checkout -q "$stable_pin"
 fi
 git -C .horizon-sync checkout -q "$ref"
 git -C .horizon-sync config core.fileMode false
-if ! git -C .horizon-sync apply --3way --whitespace=nowarn "$PWD/android/android.patch"; then
+if [ "$ref" = "$stable_pin" ]; then
+  patch="$PWD/android/android.patch"
+  android_layout=stable
+else
+  patch="$PWD/android/android-next.patch"
+  if [ -f .horizon-sync/crates/horizon-client/src/game/window_handler.rs ]; then
+    android_layout=modules
+  else
+    android_layout=legacy
+  fi
+fi
+if ! git -C .horizon-sync apply --3way --whitespace=nowarn "$patch"; then
   echo "::error::Android patch conflicts with upstream $ref" >&2
   git -C .horizon-sync diff --name-only --diff-filter=U >&2 || true
   echo "=== Android patch diagnostic: pinned game.rs context ===" >&2
@@ -34,6 +46,10 @@ if ! git -C .horizon-sync apply --3way --whitespace=nowarn "$PWD/android/android
   exit 1
 fi
 cp -a android/overlay/. .horizon-sync/
+case "$android_layout" in
+  modules) python3 android/apply-next-overlay.py .horizon-sync ;;
+  legacy) python3 android/apply-legacy-overlay.py .horizon-sync ;;
+esac
 git -C .horizon-sync rev-parse HEAD > android/.upstream-built
 rm -rf horizon .horizon-sync/.git
 mv .horizon-sync horizon

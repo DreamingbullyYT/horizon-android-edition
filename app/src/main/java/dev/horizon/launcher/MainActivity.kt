@@ -56,6 +56,8 @@ import java.io.File
 class MainActivity : ComponentActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var statusText by mutableStateOf("")
+    private var darkModeState by mutableStateOf(false)
+    private var renderApiState by mutableStateOf("auto")
     private var minecraftReadyState by mutableStateOf(false)
     private var toolchainReadyState by mutableStateOf(false)
     private var instancesState by mutableStateOf<List<InstanceInfo>>(emptyList())
@@ -65,7 +67,6 @@ class MainActivity : ComponentActivity() {
     private var modsState by mutableStateOf<List<ModInfo>>(emptyList())
     private var versionsState by mutableStateOf<List<InstalledVersion>>(emptyList())
     private var settingsState by mutableStateOf<SettingsInfo?>(null)
-    private var renderApiState by mutableStateOf("auto")
     private var playerNameState by mutableStateOf("Local profile")
     private var accountsState by mutableStateOf<AccountsInfo?>(null)
     private var signInInfoState by mutableStateOf<SignInInfo?>(null)
@@ -110,11 +111,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        darkModeState = getSharedPreferences("horizon-ui", MODE_PRIVATE).getBoolean("dark_mode", false)
+        renderApiState = getSharedPreferences("horizon-renderer", MODE_PRIVATE).getString("api", "auto")?.takeIf { it in setOf("auto", "vulkan", "opengl") } ?: "auto"
         dev.horizon.launcher.data.Updater.prepare(filesDir, this)
 
         val home = File(filesDir, "launcher").apply { mkdirs() }
-        renderApiState = runCatching { File(home, "render-api.txt").readText().trim() }
-            .getOrDefault("auto").takeIf { it in setOf("auto", "vulkan", "opengl") } ?: "auto"
+        runCatching { File(home, "render-api.txt").readText().trim() }.getOrNull()
+            ?.takeIf { it in setOf("auto", "vulkan", "opengl") }?.let { renderApiState = it }
         val gameHome = File(home, "game").apply { mkdirs() }
         val resourceError = runCatching { dev.horizon.launcher.data.Updater.syncEngineData(this, gameHome) }.exceptionOrNull()?.message
         initError = Native.loadError ?: runCatching { Native.nativeInit(home.absolutePath) }.exceptionOrNull()?.message ?: resourceError
@@ -123,6 +126,20 @@ class MainActivity : ComponentActivity() {
         setContent {
             HorizonLauncherUi(
                 status = statusText,
+                darkMode = darkModeState,
+                onSetDarkMode = { enabled ->
+                    darkModeState = enabled
+                    getSharedPreferences("horizon-ui", MODE_PRIVATE).edit().putBoolean("dark_mode", enabled).apply()
+                },
+                renderApi = renderApiState,
+                onSetRenderApi = { api ->
+                    if (api in setOf("auto", "vulkan", "opengl")) {
+                        renderApiState = api
+                        getSharedPreferences("horizon-renderer", MODE_PRIVATE).edit().putString("api", api).apply()
+                        runCatching { File(File(filesDir, "launcher").apply { mkdirs() }, "render-api.txt").writeText(api) }
+                        show("Rendering API set to ${api.uppercase()}. Restart Minecraft to apply.")
+                    }
+                },
                 minecraftReady = minecraftReadyState,
                 toolchainReady = toolchainReadyState,
                 instances = instancesState,
@@ -132,7 +149,6 @@ class MainActivity : ComponentActivity() {
                 mods = modsState,
                 versions = versionsState,
                 settings = settingsState,
-                renderApi = renderApiState,
                 playerName = playerNameState,
                 accounts = accountsState,
                 signInInfo = signInInfoState,
@@ -272,15 +288,6 @@ class MainActivity : ComponentActivity() {
                         Core.saveSettings(patch)
                         refreshDashboardState()
                         "Core settings saved."
-                    }
-                },
-                onSetRenderApi = { api ->
-                    if (api in setOf("auto", "vulkan", "opengl")) {
-                        runCatching {
-                            File(File(filesDir, "launcher").apply { mkdirs() }, "render-api.txt").writeText(api)
-                            renderApiState = api
-                        }.onFailure { show("Could not save renderer preference: ${it.message}") }
-                        show("Renderer preference saved. It applies the next time Minecraft starts.")
                     }
                 },
                 onSetTelemetry = { enabled ->

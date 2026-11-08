@@ -11,6 +11,9 @@ import dev.horizon.launcher.core.NativeLoader
 import org.json.JSONObject
 import java.io.File
 import java.io.InputStream
+import java.io.FileOutputStream
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.StandardCopyOption
 import java.nio.file.Files
 import java.security.MessageDigest
 
@@ -79,9 +82,49 @@ object Updater {
         val fallback = versions(files).firstOrNull { it.name != failed && it.name !in knownBad }
         write(files, "current", fallback?.name)
     }
+    private fun atomicReplace(source: File, destination: File) {
+        try {
+            Files.move(source.toPath(), destination.toPath(),
+                StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(source.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
+    }
+
+    private fun writeAtomically(file: File, value: String) {
+        val parent = file.parentFile
+        require(parent?.let { it.isDirectory || it.mkdirs() } == true) {
+            "Could not create ${file.name} parent directory."
+        }
+        val temporary = File(parent, "${file.name}.partial")
+        FileOutputStream(temporary).use { output ->
+            output.write(value.toByteArray(Charsets.UTF_8))
+            output.fd.sync()
+        }
+        atomicReplace(temporary, file)
+    }
+
     private fun write(files: File, name: String, value: String?) {
         val f = File(root(files), name)
-        if (value == null) f.delete() else f.writeText(value)
+        if (value == null) {
+            f.delete()
+            File(f.parentFile, "${f.name}.partial").delete()
+        } else {
+            writeAtomically(f, value)
+        }
+    }
+
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
     private fun bad(files: File): Set<String> = read(files, "bad")?.lines()?.toSet() ?: emptySet()
 
@@ -175,18 +218,45 @@ object Updater {
         val target = File(gameHome, DATA)
         val stamp = File(gameHome, ".engine-data.sha")
         val updated = dataPath(context.filesDir)
-        val digest = MessageDigest.getInstance("SHA-256")
-        val buffer = ByteArray(65536)
-        val input = updated?.inputStream() ?: context.assets.open(DATA)
-        input.use { while (true) { val n = it.read(buffer); if (n < 0) break; digest.update(buffer, 0, n) } }
-        val sum = digest.digest().joinToString("") { "%02x".format(it) }
-        val old = runCatching { stamp.readText().trim() }.getOrNull()
-        if (old == sum && target.isFile) return
-        (updated?.inputStream() ?: context.assets.open(DATA)).use { src ->
-            File(gameHome, "$DATA.partial").also { part ->
-                part.outputStream().use { src.copyTo(it) }
-                part.renameTo(target)
+        val sum = if (updated != null) sha256(updated) else {
+            val digest = MessageDigest.getInstance("SHA-256")
+            context.assets.open(DATA).use { input ->
+                val buffer = ByteArray(65536)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
             }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        }
+        val old = runCatching { stamp.readText().trim() }.getOrNull()
+        if (old == sum && target.isFile && runCatching { sha256(target) == sum }.getOrDefault(false)) return
+
+        val part = File(gameHome, "$DATA.partial")
+        try {
+            if (updated != null) {
+                updated.inputStream().use { input ->
+                    FileOutputStream(part).use { output ->
+                        input.copyTo(output)
+                        output.fd.sync()
+                    }
+                }
+            } else {
+                context.assets.open(DATA).use { input ->
+                    FileOutputStream(part).use { output ->
+                        input.copyTo(output)
+                        output.fd.sync()
+                    }
+                }
+            }
+            check(sha256(part) == sum) { "Engine data copy failed checksum verification." }
+            atomicReplace(part, target)
+            check(target.isFile && sha256(target) == sum) {
+                "Could not activate the verified engine data file."
+            }
+        } finally {
+            part.delete()
         }
         // A different table set than the installed game was prepared with: ask the installer to
         // redo just the tables (no Mojang download). Not "ready" until it has.
@@ -196,7 +266,7 @@ object Updater {
             }
             File(gameHome, ".engine-refresh").writeText("1")
         }
-        stamp.writeText(sum)
+        writeAtomically(stamp, sum)
     }
 
     /**
