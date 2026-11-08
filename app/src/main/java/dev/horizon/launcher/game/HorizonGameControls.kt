@@ -651,7 +651,9 @@ internal fun HorizonGameControls(
                                     }
                                     MenuTextButton(text = "Open full control editor") {
                                          quickSettings = false
-                                         activity?.startActivity(Intent(activity, TouchControlEditorActivity::class.java))
+                                         activity?.let { host ->
+                                             host.startActivity(Intent(host, TouchControlEditorActivity::class.java))
+                                         }
                                      }
                                     MenuListLayout(title = "Haptic feedback", items = listOf(0, 1, 2, 3), currentItem = hapticLevel, getItemText = { Haptics.labels[it] }) {
                                         hapticLevel = it; prefs.edit().putInt("haptic_level", it).apply(); haptics.level = it; haptics.tick()
