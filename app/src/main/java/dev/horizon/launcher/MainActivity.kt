@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var statusText by mutableStateOf("")
     private var darkModeState by mutableStateOf(false)
+    private var renderApiState by mutableStateOf("auto")
     private var minecraftReadyState by mutableStateOf(false)
     private var toolchainReadyState by mutableStateOf(false)
     private var instancesState by mutableStateOf<List<InstanceInfo>>(emptyList())
@@ -111,6 +112,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         darkModeState = getSharedPreferences("horizon-ui", MODE_PRIVATE).getBoolean("dark_mode", false)
+        renderApiState = getSharedPreferences("horizon-renderer", MODE_PRIVATE).getString("api", "auto")?.takeIf { it in setOf("auto", "vulkan", "opengl") } ?: "auto"
         dev.horizon.launcher.data.Updater.prepare(filesDir, this)
 
         val home = File(filesDir, "launcher").apply { mkdirs() }
@@ -126,6 +128,12 @@ class MainActivity : ComponentActivity() {
                 onSetDarkMode = { enabled ->
                     darkModeState = enabled
                     getSharedPreferences("horizon-ui", MODE_PRIVATE).edit().putBoolean("dark_mode", enabled).apply()
+                },
+                renderApi = renderApiState,
+                onSetRenderApi = { api ->
+                    renderApiState = api
+                    getSharedPreferences("horizon-renderer", MODE_PRIVATE).edit().putString("api", api).apply()
+                    show("Rendering API set to ${api.uppercase()}. Restart Minecraft to apply.")
                 },
                 minecraftReady = minecraftReadyState,
                 toolchainReady = toolchainReadyState,
