@@ -138,11 +138,21 @@ jobs:
             git -C .horizon-candidates checkout -q -f "$sha"
             git -C .horizon-candidates config core.fileMode false
 
-            if ! git -C .horizon-candidates apply --3way --whitespace=nowarn "$GITHUB_WORKSPACE/android/android.patch"; then
+            if [ -f .horizon-candidates/crates/horizon-client/src/game/window_handler.rs ]; then
+              android_patch="$GITHUB_WORKSPACE/android/android-next.patch"
+              next_layout=true
+            else
+              android_patch="$GITHUB_WORKSPACE/android/android.patch"
+              next_layout=false
+            fi
+            if ! git -C .horizon-candidates apply --3way --whitespace=nowarn "$android_patch"; then
               echo "PATCH_FAIL $sha"
               continue
             fi
             cp -a "$GITHUB_WORKSPACE/android/overlay/." .horizon-candidates/
+            if [ "$next_layout" = true ]; then
+              python3 "$GITHUB_WORKSPACE/android/apply-next-overlay.py" .horizon-candidates
+            fi
             mkdir -p horizon
             (cd .horizon-candidates && tar --exclude=.git -cf - .) | tar -x -C horizon
 
