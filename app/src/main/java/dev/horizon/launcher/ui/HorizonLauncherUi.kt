@@ -252,30 +252,6 @@ fun HorizonLauncherUi(
         }
         }
     }
-    if (status.isNotBlank() && !status.startsWith("CORE ")) {
-        Surface(
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 10.dp, start = 16.dp, end = 16.dp),
-            color = Ink.copy(alpha = .94f),
-            contentColor = White,
-            shape = RoundedCornerShape(18.dp),
-            shadowElevation = 8.dp
-        ) {
-            Row(
-                Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(9.dp)
-            ) {
-                Icon(Icons.Default.Info, null, tint = Sky, modifier = Modifier.size(16.dp))
-                Text(
-                    status.replace('\n', ' · '),
-                    color = White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-    }
-    }
-    }
 }
 
 @Composable
