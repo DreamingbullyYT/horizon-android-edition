@@ -43,6 +43,7 @@
         <activity
             android:name=".game.HorizonGameActivity"
             android:process=":game"
+            android:taskAffinity="${applicationId}.game"
             android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
             android:exported="false"
