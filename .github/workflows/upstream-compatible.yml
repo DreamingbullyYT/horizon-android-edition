@@ -91,6 +91,10 @@ jobs:
             git -C .horizon-candidates fetch -q --unshallow origin
           fi
           git -C .horizon-candidates fetch -q --tags -f origin
+          # Three-way apply needs the old source blob named by android.patch's index line.
+          # The history clone is blob-filtered, so explicitly hydrate the known-good base tree.
+          known_good="$(tr -d '[:space:]' < android/UPSTREAM_PIN)"
+          git -C .horizon-candidates fetch -q --no-filter origin "$known_good"
           newest_tag="$(git -C .horizon-candidates tag --list 'nightly-source/*' --sort=-creatordate | head -n 1)"
           echo "UPSTREAM_HEAD=$(git -C .horizon-candidates rev-list -n1 "$newest_tag")" >> "$GITHUB_ENV"
           echo "Newest Nightly: $newest_tag"
