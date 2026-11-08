@@ -37,6 +37,9 @@ class GameKeepAliveService : Service() {
         } else {
             startForeground(1, notification)
         }
-        return START_NOT_STICKY
+        // If Android reclaims the process under memory pressure, recreate the visible
+        // keep-alive notification. The notification's action opens the game Activity;
+        // it does not pretend to restore a native session that the OS already destroyed.
+        return START_STICKY
     }
 }

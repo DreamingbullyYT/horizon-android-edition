@@ -1,12 +1,15 @@
 package dev.horizon.launcher.game
 
 import android.app.Activity
+import android.app.Dialog
 import android.app.NativeActivity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
+import android.view.Gravity
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -58,6 +61,7 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     private var layoutImportCallback: ((ControlLayout) -> Unit)? = null
     private var pendingExport: ControlLayout? = null
     private var zalithOverlay: ComposeView? = null
+    private var overlayDialog: Dialog? = null
     private val overlayLayoutState = mutableStateOf<ObservableControlLayout?>(null)
     private var overlayLayoutSnapshot: String? = null
     override val savedStateRegistry: SavedStateRegistry get() = savedStateController.savedStateRegistry
@@ -152,20 +156,43 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
                 )
             }
         }
-        // Keep the Compose controls inside this Activity's existing decor/content tree.
-        // TYPE_APPLICATION_PANEL creates a second window with its own DecorView; that
-        // DecorView has no ViewTreeLifecycleOwner and crashes WindowRecomposer creation.
+        // NativeActivity's game surface can cover views attached with addContentView().
+        // Host the controls in a transparent application dialog instead, and install the
+        // Activity owners on the dialog DecorView BEFORE Compose attaches its WindowRecomposer.
         zalithOverlay = overlay
         runCatching {
-            addContentView(
-                overlay,
-                ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
+            val dialog = Dialog(this, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen)
+            val dialogWindow = requireNotNull(dialog.window) { "Control overlay window is unavailable" }
+            dialogWindow.decorView.setViewTreeLifecycleOwner(this)
+            dialogWindow.decorView.setViewTreeSavedStateRegistryOwner(this)
+            dialog.setContentView(overlay)
+            dialog.setCancelable(false)
+            dialog.setCanceledOnTouchOutside(false)
+            dialogWindow.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+            dialogWindow.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            dialogWindow.addFlags(
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
             )
+            dialogWindow.setLayout(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT
+            )
+            dialogWindow.decorView.systemUiVisibility = window.decorView.systemUiVisibility
+            dialogWindow.attributes = dialogWindow.attributes.apply {
+                gravity = Gravity.TOP or Gravity.START
+                dimAmount = 0f
+            }
+            dialog.show()
+            dialog.window?.setLayout(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT
+            )
+            overlayDialog = dialog
+            android.util.Log.i("HorizonZalith", "Touch overlay attached above NativeActivity surface")
         }.onFailure {
-            android.util.Log.e("HorizonZalith", "Could not attach Zalith overlay", it)
+            android.util.Log.e("HorizonZalith", "Could not attach Zalith overlay window", it)
         }
     }
 
@@ -199,7 +226,8 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
             // The player closed a game that had been running: the Vulkan start worked, do not blame it.
             if (lived > 8_000) File(launcherDir, "vulkan-pending").delete()
         }
-        zalithOverlay?.let { view -> (view.parent as? ViewGroup)?.removeView(view) }
+        runCatching { overlayDialog?.dismiss() }
+        overlayDialog = null
         zalithOverlay = null
         // Clear only the persistent running-session record. Keep the pending startup guard
         // so a crash during the first 20 seconds can still trigger updater rollback.
