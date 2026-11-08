@@ -229,12 +229,17 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         runCatching { overlayDialog?.dismiss() }
         overlayDialog = null
         zalithOverlay = null
-        // Clear only the persistent running-session record. Keep the pending startup guard
-        // so a crash during the first 20 seconds can still trigger updater rollback.
+        // Once NativeActivity is destroyed, its winit loop and JNI globals belong to a dead
+        // session. Do not leave :game alive only because its foreground service is still running:
+        // a second NativeActivity in that same process would reuse stale native app state.
         dev.horizon.launcher.data.Updater.clearGameSession(filesDir)
-        // Do not kill :game or stop its foreground service on an ordinary Activity teardown.
-        // The game Activity is hosted in its own task so the launcher can be reopened independently.
+        val terminateGameProcess = !isChangingConfigurations
+        runCatching { stopService(Intent(this, GameKeepAliveService::class.java)) }
         super.onDestroy()
+        if (terminateGameProcess) {
+            // A later Play must start a clean :game process with fresh NativeActivity/JNI state.
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }
     }
 
     /** Explicit player action: close the native game session and its keep-alive notification. */
