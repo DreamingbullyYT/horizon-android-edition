@@ -238,6 +238,7 @@ private class SkinModelRenderer : GLSurfaceView.Renderer {
     @Volatile private var slimArms = false
     @Volatile private var yaw = -22f
     @Volatile private var pitch = 8f
+    @Volatile private var meshesDirty = true
     private var uploadedBitmap: Bitmap? = null
     private var textureId = 0
     private var program = 0
@@ -254,7 +255,10 @@ private class SkinModelRenderer : GLSurfaceView.Renderer {
 
     fun setSkin(bitmap: Bitmap, slim: Boolean) {
         pendingBitmap = bitmap
-        slimArms = slim
+        if (slimArms != slim) {
+            slimArms = slim
+            meshesDirty = true
+        }
     }
 
     fun rotate(dx: Float, dy: Float) {
@@ -273,6 +277,7 @@ private class SkinModelRenderer : GLSurfaceView.Renderer {
         matrixLocation = GLES20.glGetUniformLocation(program, "uMvp")
         samplerLocation = GLES20.glGetUniformLocation(program, "uTexture")
         meshes = createPlayerMeshes(slimArms)
+        meshesDirty = false
         textureId = 0
         uploadedBitmap = null
         uploadPendingTexture()
@@ -289,7 +294,10 @@ private class SkinModelRenderer : GLSurfaceView.Renderer {
         uploadPendingTexture()
         if (textureId == 0 || program == 0) return
 
-        meshes = createPlayerMeshes(slimArms)
+        if (meshesDirty) {
+            meshes = createPlayerMeshes(slimArms)
+            meshesDirty = false
+        }
         Matrix.setIdentityM(model, 0)
         Matrix.translateM(model, 0, 0f, -16f, 0f)
         Matrix.rotateM(model, 0, pitch, 1f, 0f, 0f)
@@ -438,16 +446,36 @@ private class SkinModelRenderer : GLSurfaceView.Renderer {
                 SkinUv(SkinFace(36,52,4,12), SkinFace(44,52,4,12), SkinFace(32,52,4,12), SkinFace(40,52,4,12), SkinFace(36,48,4,4), SkinFace(40,48,4,4))
             }
             val head = SkinUv(SkinFace(8,8,8,8), SkinFace(24,8,8,8), SkinFace(0,8,8,8), SkinFace(16,8,8,8), SkinFace(8,0,8,8), SkinFace(16,0,8,8))
+            val headOverlay = SkinUv(SkinFace(40,8,8,8), SkinFace(56,8,8,8), SkinFace(32,8,8,8), SkinFace(48,8,8,8), SkinFace(40,0,8,8), SkinFace(48,0,8,8))
             val torso = SkinUv(SkinFace(20,20,8,12), SkinFace(32,20,8,12), SkinFace(16,20,4,12), SkinFace(28,20,4,12), SkinFace(20,16,8,4), SkinFace(28,16,8,4))
+            val jacket = SkinUv(SkinFace(20,36,8,12), SkinFace(32,36,8,12), SkinFace(16,36,4,12), SkinFace(28,36,4,12), SkinFace(20,32,8,4), SkinFace(28,32,8,4))
+            val rightSleeve = if (slim) {
+                SkinUv(SkinFace(44,36,3,12), SkinFace(52,36,3,12), SkinFace(40,36,4,12), SkinFace(47,36,4,12), SkinFace(44,32,3,4), SkinFace(47,32,3,4))
+            } else {
+                SkinUv(SkinFace(44,36,4,12), SkinFace(52,36,4,12), SkinFace(40,36,4,12), SkinFace(48,36,4,12), SkinFace(44,32,4,4), SkinFace(48,32,4,4))
+            }
+            val leftSleeve = if (slim) {
+                SkinUv(SkinFace(52,52,3,12), SkinFace(60,52,3,12), SkinFace(48,52,4,12), SkinFace(55,52,4,12), SkinFace(52,48,3,4), SkinFace(55,48,3,4))
+            } else {
+                SkinUv(SkinFace(52,52,4,12), SkinFace(60,52,4,12), SkinFace(48,52,4,12), SkinFace(56,52,4,12), SkinFace(52,48,4,4), SkinFace(56,48,4,4))
+            }
             val rightLeg = SkinUv(SkinFace(4,20,4,12), SkinFace(12,20,4,12), SkinFace(0,20,4,12), SkinFace(8,20,4,12), SkinFace(4,16,4,4), SkinFace(8,16,4,4))
             val leftLeg = SkinUv(SkinFace(20,52,4,12), SkinFace(28,52,4,12), SkinFace(16,52,4,12), SkinFace(24,52,4,12), SkinFace(20,48,4,4), SkinFace(24,48,4,4))
+            val rightPants = SkinUv(SkinFace(4,36,4,12), SkinFace(12,36,4,12), SkinFace(0,36,4,12), SkinFace(8,36,4,12), SkinFace(4,32,4,4), SkinFace(8,32,4,4))
+            val leftPants = SkinUv(SkinFace(4,52,4,12), SkinFace(12,52,4,12), SkinFace(0,52,4,12), SkinFace(8,52,4,12), SkinFace(4,48,4,4), SkinFace(8,48,4,4))
             return listOf(
                 createCube(-4f,24f,-4f,8f,8f,8f,head),
+                createCube(-4.25f,23.75f,-4.25f,8.5f,8.5f,8.5f,headOverlay),
                 createCube(-4f,12f,-2f,8f,12f,4f,torso),
+                createCube(-4.12f,11.88f,-2.12f,8.24f,12.24f,4.24f,jacket),
                 createCube(rightArmX,12f,-2f,arm,12f,4f,rightArmUv),
+                createCube(rightArmX-0.1f,11.9f,-2.1f,arm+0.2f,12.2f,4.2f,rightSleeve),
                 createCube(leftArmX,12f,-2f,arm,12f,4f,leftArmUv),
+                createCube(leftArmX-0.1f,11.9f,-2.1f,arm+0.2f,12.2f,4.2f,leftSleeve),
                 createCube(-4f,0f,-2f,4f,12f,4f,rightLeg),
-                createCube(0f,0f,-2f,4f,12f,4f,leftLeg)
+                createCube(-4.1f,-0.1f,-2.1f,4.2f,12.2f,4.2f,rightPants),
+                createCube(0f,0f,-2f,4f,12f,4f,leftLeg),
+                createCube(-0.1f,-0.1f,-2.1f,4.2f,12.2f,4.2f,leftPants)
             )
         }
     }
