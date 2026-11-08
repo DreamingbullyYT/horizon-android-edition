@@ -208,7 +208,8 @@ internal fun HorizonGameControls(
     val history = remember { ControlHistory() }
     var editSnapshot by remember { mutableStateOf<ControlLayout?>(null) }
     val occupied = remember { mutableSetOf<Long>() }
-    val controlPointers = remember { mutableStateMapOf<Long, Boolean>() }
+    // Pointer ownership is input-only; keep it non-observable to avoid recomposing the HUD on every touch.
+    val controlPointers = remember { mutableSetOf<Long>() }
     val tuner = remember { LookTuner() }
     val haptics = remember(view) { Haptics(view) }
 
@@ -309,13 +310,18 @@ internal fun HorizonGameControls(
         onDispose { inputManager?.unregisterInputDeviceListener(listener) }
     }
     LaunchedEffect(hapticLevel) { haptics.level = hapticLevel }
-    LaunchedEffect(showFps, showMemory) {
+    // Stats updates invalidate the overlay composition. Pause them while Quick Settings is
+    // open, and only collect graph samples when the graph is actually displayed.
+    LaunchedEffect(showFps, showMemory, fpsMode, quickSettings) {
+        if (quickSettings) return@LaunchedEffect
         val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         while (showFps || showMemory) {
             if (showFps) {
                 currentFps = runCatching { GameInput.nativeGameFps() }.getOrDefault(0)
-                fpsHistory.add(currentFps.toFloat())
-                while (fpsHistory.size > 30) fpsHistory.removeAt(0)
+                if (fpsMode == 1) {
+                    fpsHistory.add(currentFps.toFloat())
+                    while (fpsHistory.size > 30) fpsHistory.removeAt(0)
+                }
             }
             if (showMemory) currentMemoryMb = runCatching {
                 manager.getProcessMemoryInfo(intArrayOf(android.os.Process.myPid())).firstOrNull()?.totalPss?.div(1024) ?: 0
@@ -444,7 +450,7 @@ internal fun HorizonGameControls(
                                         tuner.reset()
                                         if (swipeLook) GameInput.nativeLookActive(true)
                                     }
-                                    if (gesturesEnabled && longPressAction in 1..2 && id !in tapSuppressed && occupied.isEmpty()) {
+                                    if (gesturesEnabled && longPressAction in 1..2 && id !in tapSuppressed && occupied.isEmpty() && controlPointers.isEmpty()) {
                                         longPressJobs[id] = pointerScope.launch {
                                             kotlinx.coroutines.delay(longPressDelay.toLong())
                                             if (id in gesturePointers && id !in tapSuppressed && occupied.isEmpty() && controlPointers.isEmpty() && gesturesEnabled && longPressAction in 1..2) {
@@ -598,7 +604,7 @@ internal fun HorizonGameControls(
                 onOccupiedPointer = { occupied += it.value },
                 onReleasePointer = { occupied -= it.value },
                 onControlPointerChanged = { pointer, pressed ->
-                    if (pressed) controlPointers[pointer.value] = true else controlPointers.remove(pointer.value)
+                    if (pressed) controlPointers.add(pointer.value) else controlPointers.remove(pointer.value)
                 },
                 opacity = { opacity },
                 hideLayerWhen = if (autoHideForPad && padConnected) HideLayerWhen.WhenGamepad else HideLayerWhen.None,
