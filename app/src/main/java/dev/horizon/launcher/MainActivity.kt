@@ -56,6 +56,7 @@ import java.io.File
 class MainActivity : ComponentActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var statusText by mutableStateOf("")
+    private var darkModeState by mutableStateOf(false)
     private var minecraftReadyState by mutableStateOf(false)
     private var toolchainReadyState by mutableStateOf(false)
     private var instancesState by mutableStateOf<List<InstanceInfo>>(emptyList())
@@ -109,6 +110,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        darkModeState = getSharedPreferences("horizon-ui", MODE_PRIVATE).getBoolean("dark_mode", false)
         dev.horizon.launcher.data.Updater.prepare(filesDir, this)
 
         val home = File(filesDir, "launcher").apply { mkdirs() }
@@ -120,6 +122,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             HorizonLauncherUi(
                 status = statusText,
+                darkMode = darkModeState,
+                onSetDarkMode = { enabled ->
+                    darkModeState = enabled
+                    getSharedPreferences("horizon-ui", MODE_PRIVATE).edit().putBoolean("dark_mode", enabled).apply()
+                },
                 minecraftReady = minecraftReadyState,
                 toolchainReady = toolchainReadyState,
                 instances = instancesState,
