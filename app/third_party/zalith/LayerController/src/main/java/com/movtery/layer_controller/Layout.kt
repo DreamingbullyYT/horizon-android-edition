@@ -217,7 +217,9 @@ private fun BoxWithConstraintsScope.BaseControlBoxLayout(
                                 markPointerAsMoveOnly = currentMarkPointerAsMoveOnly,
                             )
                             val isOwned = pointerEventBus.activeWidgets(pointerId).isNotEmpty()
-                            if (!wasOwned && isOwned) onControlPointerChanged(pointerId, true)
+                            // Keep the bridge in sync when a swipable button releases because the
+                            // pointer moved outside its bounds, not only when the finger is lifted.
+                            if (wasOwned != isOwned) onControlPointerChanged(pointerId, isOwned)
                         }
                     }
                 }
