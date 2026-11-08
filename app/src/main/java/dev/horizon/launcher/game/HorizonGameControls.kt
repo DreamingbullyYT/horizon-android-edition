@@ -3,6 +3,7 @@ package dev.horizon.launcher.game
 import android.app.Activity
 import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -198,7 +199,7 @@ internal fun HorizonGameControls(
     var padConnected by remember { mutableStateOf(false) }
 
     // ---- layout editor state ------------------------------------------------------------
-    var activeLayout by remember { mutableStateOf(layout) }
+    var activeLayout by remember(layout) { mutableStateOf(layout) }
     var selected by remember { mutableStateOf<ObservableWidget?>(null) }
     var selectedLayer by remember(activeLayout) { mutableStateOf(activeLayout.layers.value.firstOrNull()) }
     var panelOpen by remember { mutableStateOf(true) }
@@ -642,7 +643,10 @@ internal fun HorizonGameControls(
                                     MenuSliderLayout(title = "Control opacity", value = opacity, valueRange = 0.2f..1f, format = { "${(it * 100).toInt()}%" }) {
                                         opacity = it; prefs.edit().putFloat("opacity", it).apply()
                                     }
-                                    MenuTextButton(text = "Customize controls") { startEditing() }
+                                    MenuTextButton(text = "Open full control editor") {
+                                         quickSettings = false
+                                         activity?.startActivity(Intent(activity, TouchControlEditorActivity::class.java))
+                                     }
                                     MenuListLayout(title = "Haptic feedback", items = listOf(0, 1, 2, 3), currentItem = hapticLevel, getItemText = { Haptics.labels[it] }) {
                                         hapticLevel = it; prefs.edit().putInt("haptic_level", it).apply(); haptics.level = it; haptics.tick()
                                     }
