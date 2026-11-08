@@ -145,7 +145,13 @@ jobs:
               git -C .horizon-candidates diff --name-only --diff-filter=U || true
               for conflicted in $(git -C .horizon-candidates diff --name-only --diff-filter=U); do
                 echo "=== conflict details: $conflicted ==="
-                git -C .horizon-candidates diff --cc -- "$conflicted" | grep -n -C 10 -E '^(\+<<<<<<<|\+=======|\+>>>>>>>)' | head -n 240 || true
+                git -C .horizon-candidates diff --cc -- "$conflicted" | head -n 260 || true
+                for stage in 1 2 3; do
+                  echo "=== conflict stage $stage: $conflicted ==="
+                  git -C .horizon-candidates show ":$stage:$conflicted" 2>/dev/null | grep -n -A 55 -B 8 -E "impl ApplicationHandler for Game|fn resumed\(|fn window_event\(" | head -n 220 || true
+                done
+                echo "=== working file conflict markers: $conflicted ==="
+                grep -n -A 55 -B 8 -E '^(<<<<<<<|=======|>>>>>>>)' ".horizon-candidates/$conflicted" | head -n 220 || true
               done
               continue
             fi
