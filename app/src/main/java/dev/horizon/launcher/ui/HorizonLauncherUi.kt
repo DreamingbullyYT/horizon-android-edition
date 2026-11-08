@@ -578,6 +578,9 @@ private fun AccountsAtlas(
                 }
             }
         }
+        accounts?.accounts?.firstOrNull { it.uuid == accounts.selected }?.let { selectedAccount ->
+            AccountSkinPreview(uuid = selectedAccount.uuid, playerName = selectedAccount.name)
+        }
         Spacer(Modifier.height(15.dp))
         SectionHeading("Microsoft accounts", "${accounts?.accounts?.size ?: 0} linked")
         if (signInInfo?.configured == true) {
