@@ -108,6 +108,8 @@ fun HorizonLauncherUi(
     status: String,
     darkMode: Boolean,
     onSetDarkMode: (Boolean) -> Unit,
+    renderApi: String,
+    onSetRenderApi: (String) -> Unit,
     minecraftReady: Boolean,
     toolchainReady: Boolean,
     instances: List<InstanceInfo>,
@@ -228,7 +230,7 @@ fun HorizonLauncherUi(
             AtlasPage.ACCOUNTS -> AccountsAtlas(accounts, signInInfo, playerName, onSelectAccount, onAddOffline, onRemoveOffline, onRemoveAccount, onUseGameName, onSignIn)
             AtlasPage.CONTROLS -> ControlsAtlas(touchControls, onSaveTouchControls, onOpenControlsEditor)
             AtlasPage.SYSTEM -> SystemAtlas(
-                status, settings, platform, releases, telemetry, toolchainReady, darkMode, onSetDarkMode,
+                status, settings, platform, releases, telemetry, toolchainReady, darkMode, onSetDarkMode, renderApi, onSetRenderApi,
                 onSaveSettings, onSetNoAi, onSetTelemetry, onRefresh, onShowBuildLog, onInstallVersion
             )
         }
@@ -691,6 +693,7 @@ private fun ControlsAtlas(
 private fun SystemAtlas(
     status: String, settings: SettingsInfo?, platform: PlatformInfo?, releases: List<Release>,
     telemetry: TelemetryInfo?, toolchainReady: Boolean, darkMode: Boolean, onSetDarkMode: (Boolean) -> Unit,
+    renderApi: String, onSetRenderApi: (String) -> Unit,
     onSave: (JSONObject) -> Unit, onSetNoAi: (Boolean) -> Unit, onSetTelemetry: (Boolean) -> Unit,
     onRefresh: () -> Unit, onBuildLog: () -> Unit, onInstallVersion: (String) -> Unit
 ) {
@@ -721,6 +724,34 @@ private fun SystemAtlas(
         SectionHeading("Launcher appearance", "Stored on this device")
         SettingSwitch("Dark mode", darkMode, onSetDarkMode)
         Spacer(Modifier.height(12.dp))
+        SectionHeading("Rendering API", "Applied when Minecraft next starts")
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            listOf("auto" to "Auto", "vulkan" to "Vulkan", "opengl" to "OpenGL").forEach { (key, label) ->
+                if (renderApi == key) {
+                    Button(
+                        onClick = { onSetRenderApi(key) },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 9.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text(label, fontSize = 10.sp, maxLines = 1) }
+                } else {
+                    OutlinedButton(
+                        onClick = { onSetRenderApi(key) },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 9.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text(label, fontSize = 10.sp, maxLines = 1) }
+                }
+            }
+        }
+        Text(
+            "OpenGL uses the GLES 3.0+ backend (not OpenGL ES 2.0). Vulkan requires a compatible Android GPU driver. Auto lets Horizon choose.",
+            color = MutedInk, fontSize = 9.sp, lineHeight = 13.sp, modifier = Modifier.padding(top = 6.dp)
+        )
+        Spacer(Modifier.height(14.dp))
         SectionHeading("Launcher policy", "Saved by core")
         SettingSwitch("Install new engine versions automatically", installNew) { installNew = it }
         SettingSwitch("Prune old versions", prune) { prune = it }
