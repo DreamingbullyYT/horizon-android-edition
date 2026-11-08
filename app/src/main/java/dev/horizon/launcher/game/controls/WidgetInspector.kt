@@ -60,7 +60,7 @@ private fun PositionEditor(position: ButtonPosition, onChange: (ButtonPosition) 
 /** Size editor for percentage / dp sized rectangular widgets (buttons, labels). */
 @Composable
 private fun SizeEditor(size: ButtonSize, onChange: (ButtonSize) -> Unit) {
-    var square by remember { mutableStateOf(size.widthPercentage == size.heightPercentage && size.widthDp == size.heightDp) }
+    var square by remember(size) { mutableStateOf(size.widthPercentage == size.heightPercentage && size.widthDp == size.heightDp) }
     ChipChoice(ButtonSize.Type.values().toList(), size.type, { when (it) {
         ButtonSize.Type.Dp -> "Fixed (dp)"; ButtonSize.Type.Percentage -> "Screen %"; ButtonSize.Type.WrapContent -> "Fit text" } }) { onChange(size.copy(type = it)) }
     when (size.type) {
