@@ -129,7 +129,7 @@ jobs:
             echo "Testing candidate $sha"
             echo "============================================================"
 
-            # Apply the context patch directly; its preimage lines are kept aligned to the pinned source.
+            # The patch index hashes now name the pinned source blobs, so three-way apply can rebase edits.
             rm -rf horizon .compat-work/candidate
             git -C .horizon-candidates reset -q --hard
             git -C .horizon-candidates clean -fdq
@@ -137,7 +137,7 @@ jobs:
             git -C .horizon-candidates checkout -q -f "$sha"
             git -C .horizon-candidates config core.fileMode false
 
-            if ! git -C .horizon-candidates apply --whitespace=nowarn "$GITHUB_WORKSPACE/android/android.patch"; then
+            if ! git -C .horizon-candidates apply --3way --whitespace=nowarn "$GITHUB_WORKSPACE/android/android.patch"; then
               echo "PATCH_FAIL $sha"
               continue
             fi
