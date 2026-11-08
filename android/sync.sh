@@ -15,12 +15,22 @@ if [ "$ref" != "$pin" ]; then
 fi
 git -C .horizon-sync checkout -q "$ref"
 git -C .horizon-sync config core.fileMode false
-if ! git -C .horizon-sync apply --3way --whitespace=nowarn "$PWD/android/android.patch"; then
+if [ -f .horizon-sync/crates/horizon-client/src/game/window_handler.rs ]; then
+  patch="$PWD/android/android-next.patch"
+  next_layout=true
+else
+  patch="$PWD/android/android.patch"
+  next_layout=false
+fi
+if ! git -C .horizon-sync apply --3way --whitespace=nowarn "$patch"; then
   echo "::error::Android patch conflicts with upstream $ref" >&2
   git -C .horizon-sync diff --name-only --diff-filter=U >&2 || true
   exit 1
 fi
 cp -a android/overlay/. .horizon-sync/
+if [ "$next_layout" = true ]; then
+  python3 android/apply-next-overlay.py .horizon-sync
+fi
 git -C .horizon-sync rev-parse HEAD > android/.upstream-built
 rm -rf horizon .horizon-sync/.git
 mv .horizon-sync horizon
