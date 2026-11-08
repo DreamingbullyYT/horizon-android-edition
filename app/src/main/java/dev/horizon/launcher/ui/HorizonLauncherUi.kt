@@ -188,7 +188,10 @@ fun HorizonLauncherUi(
             AtlasPage.SYSTEM -> SystemAtlas(
                 status, settings, renderApi, darkMode, platform, releases, telemetry, toolchainReady,
                 onSaveSettings, onSetRenderApi,
-                onSetDarkMode = { enabled -> darkMode = enabled; onSaveSettings(JSONObject().put("appearance", if (enabled) "dark" else "light")) },
+                { enabled ->
+                    darkMode = enabled
+                    onSaveSettings(JSONObject().put("appearance", if (enabled) "dark" else "light"))
+                },
                 onSetNoAi, onSetTelemetry, onRefresh, onShowBuildLog, onInstallVersion
             )
         }
@@ -707,7 +710,6 @@ private fun SystemAtlas(
                 .put("language", language.takeIf { it.isNotBlank() })) },
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp), colors = ButtonDefaults.buttonColors(containerColor = Blue), shape = RoundedCornerShape(14.dp)
         ) { Text("SAVE CORE SETTINGS") }
-        Spacer(Modifier.height(18.dp))
         Spacer(Modifier.height(18.dp))
         SectionHeading("Graphics backend", "Applied the next time Minecraft starts")
         Text(
