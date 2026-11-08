@@ -118,7 +118,7 @@ class MainActivity : ComponentActivity() {
         val gameHome = File(home, "game").apply { mkdirs() }
         val resourceError = runCatching { dev.horizon.launcher.data.Updater.syncEngineData(this, gameHome) }.exceptionOrNull()?.message
         initError = Native.loadError ?: runCatching { Native.nativeInit(home.absolutePath) }.exceptionOrNull()?.message ?: resourceError
-        dev.horizon.launcher.data.Updater.armGuard(filesDir)
+        dev.horizon.launcher.data.Updater.armGuard(filesDir, "launcher")
 
         setContent {
             HorizonLauncherUi(
