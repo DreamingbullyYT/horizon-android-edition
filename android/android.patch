@@ -120,7 +120,7 @@ index 9f2cd3944303f7774bd7679e9d4f3ae3e499774e..e40bc70dc 100644
 +++ b/crates/horizon-client-render/src/audio.rs
 @@ -1174,2 +1174,7 @@
          };
-+        // Android: let the OS route an open stream; avoid probing devices every second.
++        // Android: let the OS route an open stream; skip background device probes between recovery events.
 +        // Still allow recovery when the stream itself reports that the device was lost.
 +        if cfg!(target_os = "android") && !lost {
 +            return false;
