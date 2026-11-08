@@ -32,16 +32,65 @@ import java.util.Locale
 
 // Horizon World Atlas: a warm, map-like launcher identity, deliberately unlike the previous
 // dark terminal / lime field-console direction.
-private val CanvasPaper = Color(0xFFF2F0E9)
-private val Ink = Color(0xFF171B2A)
-private val MutedInk = Color(0xFF777D8C)
-private val Blue = Color(0xFF5266E8)
-private val BlueDeep = Color(0xFF27378F)
-private val Sky = Color(0xFF8CD7E7)
-private val Coral = Color(0xFFFF987D)
-private val White = Color(0xFFFFFEFA)
-private val Border = Color(0xFFE2E0D8)
-private val Mint = Color(0xFFB9E6D0)
+private data class AtlasPalette(
+    val canvasPaper: Color,
+    val ink: Color,
+    val mutedInk: Color,
+    val blue: Color,
+    val blueDeep: Color,
+    val sky: Color,
+    val coral: Color,
+    val surface: Color,
+    val border: Color,
+    val mint: Color,
+    val cardTint: Color,
+    val emptyTint: Color,
+    val warningTint: Color
+)
+
+private val LightAtlasPalette = AtlasPalette(
+    canvasPaper = Color(0xFFF2F0E9), ink = Color(0xFF171B2A), mutedInk = Color(0xFF777D8C),
+    blue = Color(0xFF5266E8), blueDeep = Color(0xFF27378F), sky = Color(0xFF8CD7E7),
+    coral = Color(0xFFFF987D), surface = Color(0xFFFFFEFA), border = Color(0xFFE2E0D8),
+    mint = Color(0xFFB9E6D0), cardTint = Color(0xFFE5E9FF), emptyTint = Color(0xFFEAE8E0),
+    warningTint = Color(0xFFFFE0D7)
+)
+
+private val DarkAtlasPalette = AtlasPalette(
+    canvasPaper = Color(0xFF0E121B), ink = Color(0xFFF1F3FA), mutedInk = Color(0xFFA7B0C2),
+    blue = Color(0xFF9AA8FF), blueDeep = Color(0xFF697BE0), sky = Color(0xFF75D7E7),
+    coral = Color(0xFFFFA18B), surface = Color(0xFF1A202D), border = Color(0xFF30394A),
+    mint = Color(0xFF214B3B), cardTint = Color(0xFF242D42), emptyTint = Color(0xFF202735),
+    warningTint = Color(0xFF4B2D2A)
+)
+
+private val LocalAtlasPalette = staticCompositionLocalOf { LightAtlasPalette }
+private val CanvasPaper: Color
+    @Composable get() = LocalAtlasPalette.current.canvasPaper
+private val Ink: Color
+    @Composable get() = LocalAtlasPalette.current.ink
+private val MutedInk: Color
+    @Composable get() = LocalAtlasPalette.current.mutedInk
+private val Blue: Color
+    @Composable get() = LocalAtlasPalette.current.blue
+private val BlueDeep: Color
+    @Composable get() = LocalAtlasPalette.current.blueDeep
+private val Sky: Color
+    @Composable get() = LocalAtlasPalette.current.sky
+private val Coral: Color
+    @Composable get() = LocalAtlasPalette.current.coral
+private val White: Color
+    @Composable get() = LocalAtlasPalette.current.surface
+private val Border: Color
+    @Composable get() = LocalAtlasPalette.current.border
+private val Mint: Color
+    @Composable get() = LocalAtlasPalette.current.mint
+private val CardTint: Color
+    @Composable get() = LocalAtlasPalette.current.cardTint
+private val EmptyTint: Color
+    @Composable get() = LocalAtlasPalette.current.emptyTint
+private val WarningTint: Color
+    @Composable get() = LocalAtlasPalette.current.warningTint
 
 private enum class AtlasPage(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     HOME("Home", Icons.Default.Explore),
@@ -57,6 +106,8 @@ private enum class AtlasPage(val label: String, val icon: androidx.compose.ui.gr
 @Composable
 fun HorizonLauncherUi(
     status: String,
+    darkMode: Boolean,
+    onSetDarkMode: (Boolean) -> Unit,
     minecraftReady: Boolean,
     toolchainReady: Boolean,
     instances: List<InstanceInfo>,
@@ -112,8 +163,20 @@ fun HorizonLauncherUi(
     onInstallBrowse: (String, String) -> Unit,
     onRemoveBrowse: (String) -> Unit
 ) {
-    var page by remember { mutableStateOf(AtlasPage.HOME) }
-    Column(Modifier.fillMaxSize().background(CanvasPaper).statusBarsPadding()) {
+    CompositionLocalProvider(LocalAtlasPalette provides if (darkMode) DarkAtlasPalette else LightAtlasPalette) {
+        val scheme = if (darkMode) darkColorScheme(
+            primary = Blue, onPrimary = Color(0xFF111827), secondary = Sky,
+            background = CanvasPaper, onBackground = Ink, surface = White, onSurface = Ink,
+            surfaceVariant = Border, onSurfaceVariant = MutedInk, outline = Border
+        ) else lightColorScheme(
+            primary = Blue, onPrimary = Color.White, secondary = BlueDeep,
+            background = CanvasPaper, onBackground = Ink, surface = White, onSurface = Ink,
+            surfaceVariant = Border, onSurfaceVariant = MutedInk, outline = Border
+        )
+        MaterialTheme(colorScheme = scheme) {
+        var page by remember { mutableStateOf(AtlasPage.HOME) }
+        Box(Modifier.fillMaxSize().background(CanvasPaper).statusBarsPadding()) {
+        Column(Modifier.fillMaxSize()) {
         AtlasHeader(playerName = playerName, ready = minecraftReady, onRefresh = onRefresh)
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
@@ -165,9 +228,25 @@ fun HorizonLauncherUi(
             AtlasPage.ACCOUNTS -> AccountsAtlas(accounts, signInInfo, playerName, onSelectAccount, onAddOffline, onRemoveOffline, onRemoveAccount, onUseGameName, onSignIn)
             AtlasPage.CONTROLS -> ControlsAtlas(touchControls, onSaveTouchControls, onOpenControlsEditor)
             AtlasPage.SYSTEM -> SystemAtlas(
-                status, settings, platform, releases, telemetry, toolchainReady,
+                status, settings, platform, releases, telemetry, toolchainReady, darkMode, onSetDarkMode,
                 onSaveSettings, onSetNoAi, onSetTelemetry, onRefresh, onShowBuildLog, onInstallVersion
             )
+        }
+        }
+        if (status.isNotBlank()) {
+            Surface(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 14.dp, vertical = 12.dp),
+                shape = RoundedCornerShape(16.dp), color = White, tonalElevation = 7.dp,
+                border = androidx.compose.foundation.BorderStroke(1.dp, Border)
+            ) {
+                Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Sync, null, tint = Blue, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(status, color = Ink, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        }
         }
     }
 }
@@ -193,7 +272,7 @@ private fun AtlasHeader(playerName: String, ready: Boolean, onRefresh: () -> Uni
             Text("HORIZON", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
             Text("WORLD ATLAS  /  ANDROID", color = MutedInk, fontSize = 8.sp, letterSpacing = 1.1.sp)
         }
-        Surface(shape = CircleShape, color = if (ready) Mint else Color(0xFFFFE0D7)) {
+        Surface(shape = CircleShape, color = if (ready) Mint else WarningTint) {
             Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(6.dp).clip(CircleShape).background(if (ready) Color(0xFF398C69) else Color(0xFFD36B55)))
                 Spacer(Modifier.width(6.dp))
@@ -384,7 +463,7 @@ private fun ModsAtlas(
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp)) {
         PageHeading("Mod atelier", "Native mods, shaders and HNMod builds. Your game folder stays under core's control.")
-        Surface(color = Color(0xFFE5E9FF), shape = RoundedCornerShape(22.dp)) {
+        Surface(color = CardTint, shape = RoundedCornerShape(22.dp)) {
             Column(Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -516,7 +595,7 @@ private fun AccountsAtlas(
     var add by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp)) {
         PageHeading("Player identity", "Choose the identity the core will use when preparing your game session.")
-        Surface(color = Color(0xFFE5E9FF), shape = RoundedCornerShape(23.dp)) {
+        Surface(color = CardTint, shape = RoundedCornerShape(23.dp)) {
             Row(Modifier.padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(54.dp).clip(CircleShape).background(Blue), contentAlignment = Alignment.Center) {
                     Icon(Icons.Default.Person, null, tint = White, modifier = Modifier.size(30.dp))
@@ -611,7 +690,7 @@ private fun ControlsAtlas(
 @Composable
 private fun SystemAtlas(
     status: String, settings: SettingsInfo?, platform: PlatformInfo?, releases: List<Release>,
-    telemetry: TelemetryInfo?, toolchainReady: Boolean,
+    telemetry: TelemetryInfo?, toolchainReady: Boolean, darkMode: Boolean, onSetDarkMode: (Boolean) -> Unit,
     onSave: (JSONObject) -> Unit, onSetNoAi: (Boolean) -> Unit, onSetTelemetry: (Boolean) -> Unit,
     onRefresh: () -> Unit, onBuildLog: () -> Unit, onInstallVersion: (String) -> Unit
 ) {
@@ -639,6 +718,9 @@ private fun SystemAtlas(
             }
         }
         Spacer(Modifier.height(16.dp))
+        SectionHeading("Launcher appearance", "Stored on this device")
+        SettingSwitch("Dark mode", darkMode, onSetDarkMode)
+        Spacer(Modifier.height(12.dp))
         SectionHeading("Launcher policy", "Saved by core")
         SettingSwitch("Install new engine versions automatically", installNew) { installNew = it }
         SettingSwitch("Prune old versions", prune) { prune = it }
@@ -741,7 +823,7 @@ private fun ActionPill(label: String, icon: androidx.compose.ui.graphics.vector.
 
 @Composable
 private fun EmptyState(title: String, detail: String) {
-    Surface(Modifier.fillMaxWidth().padding(bottom = 8.dp), color = Color(0xFFEAE8E0), shape = RoundedCornerShape(17.dp)) {
+    Surface(Modifier.fillMaxWidth().padding(bottom = 8.dp), color = EmptyTint, shape = RoundedCornerShape(17.dp)) {
         Column(Modifier.padding(15.dp)) {
             Text(title, color = Ink, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             Text(detail, color = MutedInk, fontSize = 9.sp, lineHeight = 14.sp, modifier = Modifier.padding(top = 3.dp))
