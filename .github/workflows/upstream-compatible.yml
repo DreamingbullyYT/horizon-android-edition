@@ -87,7 +87,9 @@ jobs:
       - name: Fetch upstream history
         run: |
           git clone -q --filter=blob:none https://github.com/horizon-rust/horizon.git .horizon-candidates
-          git -C .horizon-candidates fetch -q --unshallow || true
+          if [[ "$(git -C .horizon-candidates rev-parse --is-shallow-repository)" == "true" ]]; then
+            git -C .horizon-candidates fetch -q --unshallow origin
+          fi
           git -C .horizon-candidates fetch -q --tags -f origin
           newest_tag="$(git -C .horizon-candidates tag --list 'nightly-source/*' --sort=-creatordate | head -n 1)"
           echo "UPSTREAM_HEAD=$(git -C .horizon-candidates rev-list -n1 "$newest_tag")" >> "$GITHUB_ENV"
