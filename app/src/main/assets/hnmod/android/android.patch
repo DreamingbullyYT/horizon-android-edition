@@ -118,13 +118,13 @@ diff --git a/crates/horizon-client-render/src/audio.rs b/crates/horizon-client-r
 index 9f2cd3944303f7774bd7679e9d4f3ae3e499774e..e40bc70dc 100644
 --- a/crates/horizon-client-render/src/audio.rs
 +++ b/crates/horizon-client-render/src/audio.rs
-@@ -1182,1 +1182,6 @@
-+        // Android: listing devices crosses into the platform audio service and can stall the
-+        // render loop; the system re-routes an open stream and the error callback flags a lost one.
+@@ -1186,1 +1186,6 @@
+         self.device_ticks = 0;
++        // Android: the system owns output-device routing; do not enumerate devices on
++        // the render loop or start a background probe on every game session.
 +        if cfg!(target_os = "android") {
 +            return false;
 +        }
-         self.device_ticks += 1;
 diff --git a/crates/horizon-client-render/src/gfx.rs b/crates/horizon-client-render/src/gfx.rs
 index 2999b1de796892fd23f503503c239e511d7d594a..ca5ef1c2f 100644
 --- a/crates/horizon-client-render/src/gfx.rs
