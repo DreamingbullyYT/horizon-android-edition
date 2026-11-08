@@ -366,6 +366,21 @@ internal fun HorizonGameControls(
                 val hotbarPointers = mutableSetOf<Long>()
                 val longPressJobs = mutableMapOf<Long, kotlinx.coroutines.Job>()
                 val heldButtons = mutableMapOf<Long, String>()
+                // A pointer claimed by a HUD widget must never become a world tap on release.
+                val controlPointers = mutableSetOf<Long>()
+                fun cancelTrackedPointer(id: Long) {
+                    longPressJobs.remove(id)?.cancel()
+                    heldButtons.remove(id)?.let { GameInput.nativeSendControl(it, false) }
+                    if (lookPointers.remove(id) && swipeLook) {
+                        GameInput.nativeLookActive(lookPointers.isNotEmpty())
+                    }
+                    gesturePointers.remove(id)
+                    positions.remove(id)
+                    starts.remove(id)
+                    downAt.remove(id)
+                    ignored.remove(id)
+                    hotbarPointers.remove(id)
+                }
                 /** Zalith-style hotbar: index 0..8 of the slot under [p], or -1. Geometry comes from the game's HUD. */
                 fun hotbarSlotAt(p: Offset): Int {
                     val r = runCatching { GameInput.nativeHotbarRect() }.getOrNull() ?: return -1
@@ -384,13 +399,25 @@ internal fun HorizonGameControls(
                         heldButtons.values.forEach { GameInput.nativeSendControl(it, false) }
                         if (swipeLook) GameInput.nativeLookActive(false)
                         heldButtons.clear()
-                        positions.clear(); starts.clear(); downAt.clear(); lookPointers.clear(); gesturePointers.clear(); ignored.clear(); tuner.reset()
+                        positions.clear(); starts.clear(); downAt.clear(); lookPointers.clear(); gesturePointers.clear(); ignored.clear(); controlPointers.clear(); hotbarPointers.clear(); tuner.reset()
                         continue
                     }
                     val areaStart = when (lookArea) { 1 -> 0.3f; 2 -> 0.5f; else -> 0f }
                     event.changes.forEach { change ->
                         val id = change.id.value
-                        if (change.pressed && !change.isConsumed && id !in occupied) {
+                        // Track ownership for the entire pointer stream, not just DOWN. A HUD
+                        // widget may claim the pointer between DOWN and UP (e.g. joystick + jump).
+                        if (id in controlPointers) {
+                            if (!change.pressed) controlPointers.remove(id)
+                            return@forEach
+                        }
+                        if (change.isConsumed || id in occupied) {
+                            if (change.pressed) controlPointers.add(id)
+                            else controlPointers.remove(id)
+                            cancelTrackedPointer(id)
+                            return@forEach
+                        }
+                        if (change.pressed) {
                             if (id in hotbarPointers) return@forEach
                             if (hotbarTouch && grabbing && id !in positions) {
                                 val slot = hotbarSlotAt(change.position)
@@ -594,9 +621,9 @@ internal fun HorizonGameControls(
                     if (showMemory) Text("${currentMemoryMb} MB", color = Color.White)
                 }
             }
-            ZalithTheme {
+            if (quickSettings) ZalithTheme {
                 DualMenuSubscreen(
-                    state = if (quickSettings) MenuState.SHOW else MenuState.HIDE,
+                    state = MenuState.SHOW,
                     closeScreen = { quickSettings = false },
                     leftMenuContent = {
                         MenuIconTabs(QUICK_ICONS, quickTab) { quickTab = it }
