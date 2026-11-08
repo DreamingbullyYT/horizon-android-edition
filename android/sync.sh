@@ -15,7 +15,7 @@ if [ "$ref" != "$pin" ]; then
 fi
 git -C .horizon-sync checkout -q "$ref"
 git -C .horizon-sync config core.fileMode false
-if ! git -C .horizon-sync apply --3way --whitespace=nowarn "$PWD/android/android.patch"; then
+if ! git -C .horizon-sync apply --whitespace=nowarn "$PWD/android/android.patch"; then
   echo "::error::Android patch conflicts with upstream $ref" >&2
   git -C .horizon-sync diff --name-only --diff-filter=U >&2 || true
   exit 1
