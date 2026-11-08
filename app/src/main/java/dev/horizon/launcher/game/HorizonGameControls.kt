@@ -428,9 +428,17 @@ internal fun HorizonGameControls(
                         positions.clear(); starts.clear(); downAt.clear(); lookPointers.clear(); gesturePointers.clear(); ignored.clear(); tapSuppressed.clear(); controlPointers.clear(); hotbarPointers.clear(); tuner.reset()
                         continue
                     }
-                    // Once a control owns any pointer, a separate empty-screen touch must not
-                    // turn into a world click. Keep camera swipes, but cancel tap/long-press actions.
-                    if ((occupied.isNotEmpty() || controlPointers.isNotEmpty()) && gesturePointers.isNotEmpty()) {
+                    // Arbitrate every pointer before processing this frame. Compose dispatches the
+                    // same multi-touch frame to the parent and HUD children; inspecting only the
+                    // currently visited change makes the result depend on pointer iteration order.
+                    // Any second finger (HUD control OR empty-world touch) cancels world tap actions.
+                    val activePointerIds = mutableSetOf<Long>()
+                    event.changes.filter { it.pressed }.forEach { activePointerIds += it.id.value }
+                    activePointerIds.addAll(positions.keys)
+                    activePointerIds.addAll(occupied)
+                    activePointerIds.addAll(controlPointers)
+                    val multiTouchActive = activePointerIds.size > 1
+                    if (multiTouchActive && gesturePointers.isNotEmpty()) {
                         tapSuppressed.addAll(gesturePointers)
                         longPressJobs.values.forEach { it.cancel() }
                         longPressJobs.clear()
@@ -470,14 +478,19 @@ internal fun HorizonGameControls(
                             }
                             if (grabbing) {
                                 if (prior == null) {
-                                    if (occupied.isNotEmpty() || controlPointers.isNotEmpty()) tapSuppressed += id
+                                    if (multiTouchActive || occupied.isNotEmpty() || controlPointers.isNotEmpty()) {
+                                        tapSuppressed += id
+                                    }
                                     gesturePointers += id
                                     if (change.position.x >= size.width * areaStart) {
                                         lookPointers += id
                                         tuner.reset()
                                         if (swipeLook) GameInput.nativeLookActive(true)
                                     }
-                                    if (gesturesEnabled && longPressAction in 1..2 && id !in tapSuppressed && occupied.isEmpty() && controlPointers.isEmpty()) {
+                                    if (gesturesEnabled && longPressAction in 1..2 &&
+                                        id !in tapSuppressed && !multiTouchActive &&
+                                        occupied.isEmpty() && controlPointers.isEmpty()
+                                    ) {
                                         longPressJobs[id] = pointerScope.launch {
                                             kotlinx.coroutines.delay(longPressDelay.toLong())
                                             if (id in gesturePointers && id !in tapSuppressed && occupied.isEmpty() && controlPointers.isEmpty() && gesturesEnabled && longPressAction in 1..2) {
