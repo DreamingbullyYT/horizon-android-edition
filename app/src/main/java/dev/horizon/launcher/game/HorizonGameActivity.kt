@@ -64,7 +64,25 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
 
     private val currentLayoutFile: File get() = File(File(filesDir, "launcher"), "touch-layout.json")
 
+    private val launcherDir: File get() = File(filesDir, "launcher")
+    private var startedAt = 0L
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        // So the launcher can tell why the game stopped: "start" with no "end" means the process died.
+        startedAt = android.os.SystemClock.elapsedRealtime()
+        runCatching {
+            launcherDir.mkdirs()
+            File(launcherDir, "game-session.txt").writeText("start")
+            val previous = Thread.getDefaultUncaughtExceptionHandler()
+            Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+                runCatching {
+                    File(launcherDir, "game-log.txt").appendText(
+                        "\nJAVA CRASH in ${thread.name}:\n${android.util.Log.getStackTraceString(error)}\n"
+                    )
+                }
+                previous?.uncaughtException(thread, error)
+            }
+        }
         // Choose the wgpu backend (Vulkan or GLES) before NativeActivity starts loading the engine.
         // Launcher settings write both render-api.txt and the "horizon-renderer" preference; either is accepted.
         val renderChoices = setOf("auto", "vulkan", "opengl")
@@ -175,6 +193,12 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
 
     override fun onDestroy() {
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
+        val lived = android.os.SystemClock.elapsedRealtime() - startedAt
+        runCatching {
+            File(launcherDir, "game-session.txt").writeText("end $lived")
+            // The player closed a game that had been running: the Vulkan start worked, do not blame it.
+            if (lived > 8_000) File(launcherDir, "vulkan-pending").delete()
+        }
         zalithOverlay?.let { view -> (view.parent as? ViewGroup)?.removeView(view) }
         zalithOverlay = null
         // Clear only the persistent running-session record. Keep the pending startup guard

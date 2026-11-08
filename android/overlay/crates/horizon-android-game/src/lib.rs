@@ -154,10 +154,17 @@ fn choose_graphics_api(launcher: &std::path::Path) -> &'static str {
         }
     }
     let marker = launcher.join("vulkan-pending");
+    let failed = launcher.join("vulkan-failed");
+    if failed.exists() {
+        // Vulkan died on this phone before: stay on OpenGL (graphics-api.txt = vulkan overrides).
+        return "opengl";
+    }
     if marker.exists() {
-        // The last Vulkan start died within its first seconds.
+        // The last Vulkan start died within its first seconds, and the launcher did not see the
+        // game close on purpose. Remember it, or Vulkan would be retried (and fail) every second launch.
         let _ = std::fs::remove_file(&marker);
-        log::warn!("Horizon Android: previous Vulkan start failed, using OpenGL");
+        let _ = std::fs::write(&failed, b"");
+        log::warn!("Horizon Android: previous Vulkan start failed, using OpenGL from now on");
         return "opengl";
     }
     let ids = [
@@ -180,6 +187,33 @@ fn choose_graphics_api(launcher: &std::path::Path) -> &'static str {
 }
 
 #[cfg(target_os = "android")]
+unsafe extern "C" {
+    fn dup2(old_fd: i32, new_fd: i32) -> i32;
+}
+
+/// The engine reports a failed start with `eprintln!`, which Android throws away, so the player only
+/// saw a black screen and then the launcher. Send stdout/stderr (and panics) to launcher/game-log.txt,
+/// reset on every start, so the launcher can show why the game stopped.
+#[cfg(target_os = "android")]
+fn install_game_log(launcher: &std::path::Path) {
+    use std::os::fd::AsRawFd;
+    let _ = std::fs::create_dir_all(launcher);
+    if let Ok(file) = std::fs::File::create(launcher.join("game-log.txt")) {
+        let fd = file.as_raw_fd();
+        unsafe {
+            dup2(fd, 1);
+            dup2(fd, 2);
+        }
+    }
+    std::panic::set_hook(Box::new(|info| {
+        let trace = std::backtrace::Backtrace::force_capture();
+        let text = format!("PANIC: {info}\n{trace}");
+        eprintln!("{text}");
+        log::error!("{text}");
+    }));
+}
+
+#[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
     android_logger::init_once(
@@ -192,6 +226,7 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
         return;
     };
     let launcher = files.join("launcher");
+    install_game_log(&launcher);
     // Android's process executable is app_process, not the installed game library.
     // Resolve post-build data beside the active local HNMod build instead.
     unsafe { std::env::remove_var("HORIZON_NATIVE_DATA_ROOT"); }
@@ -219,9 +254,18 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
         // others get Vulkan (much faster than their GLES drivers). A `graphics-api.txt`
         // beside the game folder (auto, vulkan or opengl) overrides the choice, and a
         // Vulkan start that never got going falls back to GLES on the next launch.
-        if std::env::var_os("HORIZON_GRAPHICS_API").is_none() {
+        //
+        // The launcher exports its renderer setting in HORIZON_GRAPHICS_API, always, even for
+        // "Auto". Only an explicit vulkan/opengl is a forced choice; "auto" (or nothing) must still
+        // go through the per-phone pick above, otherwise Auto would skip the Adreno/Mali guard.
+        let forced = matches!(
+            std::env::var("HORIZON_GRAPHICS_API").as_deref(),
+            Ok("vulkan") | Ok("opengl")
+        );
+        if !forced {
             let api = choose_graphics_api(&launcher);
             log::info!("Horizon Android: graphics API {api}");
+            eprintln!("Horizon Android: graphics API {api}");
             std::env::set_var("HORIZON_GRAPHICS_API", api);
         }
     }
@@ -245,4 +289,5 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
     // returns on failure instead of exiting the shared process.
     horizon_client::entry::main_with(Default::default());
     log::info!("Horizon Android: game loop ended");
+    eprintln!("Horizon Android: game loop ended");
 }

@@ -180,6 +180,7 @@ class MainActivity : ComponentActivity() {
                     }
                 },
                 onShowBuildLog = { showLiveHnmodLog() },
+                onShowGameLog = { showGameLog("Last game log", includeLogcat = true) },
                 onRefresh = { refreshDashboard() },
                 onCreateInstance = { name ->
                     run("Creating instance") {
@@ -342,9 +343,70 @@ class MainActivity : ComponentActivity() {
         startUpdateMonitor()
     }
 
+    override fun onResume() {
+        super.onResume()
+        reportFailedGameStart()
+    }
+
     override fun onDestroy() {
         scope.cancel()
         super.onDestroy()
+    }
+
+    /**
+     * Back from the game: if it stopped within seconds (or its process died), show why. The game writes
+     * launcher/game-log.txt (engine errors, panics, Java crashes); a native crash leaves only logcat.
+     */
+    private fun reportFailedGameStart() {
+        val home = File(filesDir, "launcher")
+        val session = File(home, "game-session.txt")
+        if (!session.isFile) return
+        val text = runCatching { session.readText().trim() }.getOrDefault("")
+        val lived = text.removePrefix("end ").toLongOrNull()
+        if (lived == null) {
+            // Still "start": either the game is running right now or its process died.
+            val alive = (getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager)
+                .runningAppProcesses?.any { it.processName.endsWith(":game") } == true
+            if (alive) return
+        } else if (lived > 15_000) {
+            session.delete()
+            return
+        }
+        session.delete()
+        showGameLog("Minecraft stopped ${if (lived == null) "(the game process crashed)" else "after ${lived / 1000}s"}", includeLogcat = lived == null)
+    }
+
+    private fun showGameLog(title: String, includeLogcat: Boolean = false) {
+        scope.launch {
+            val body = withContext(Dispatchers.IO) {
+                val file = File(File(filesDir, "launcher"), "game-log.txt")
+                val log = if (file.isFile) runCatching { file.readText() }.getOrDefault("") else ""
+                val system = if (includeLogcat) runCatching {
+                    val proc = ProcessBuilder("logcat", "-d", "-t", "300", "*:W").redirectErrorStream(true).start()
+                    proc.inputStream.bufferedReader().readText().also { proc.destroy() }
+                }.getOrDefault("") else ""
+                buildString {
+                    append(if (log.isBlank()) "(no game log yet)" else log.takeLast(6000))
+                    if (system.isNotBlank()) append("\n\n--- system log ---\n").append(system.takeLast(6000))
+                }
+            }
+            val view = TextView(this@MainActivity).apply {
+                textSize = 11f
+                typeface = android.graphics.Typeface.MONOSPACE
+                setPadding(20, 16, 20, 16)
+                setTextIsSelectable(true)
+                text = body
+            }
+            AlertDialog.Builder(this@MainActivity)
+                .setTitle(title)
+                .setView(ScrollView(this@MainActivity).apply { addView(view) })
+                .setPositiveButton("Close", null)
+                .setNeutralButton("Copy") { _, _ ->
+                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Horizon game log", body))
+                }
+                .show()
+        }
     }
 
     private fun show(text: String) { statusText = text }

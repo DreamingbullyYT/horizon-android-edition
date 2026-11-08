@@ -138,6 +138,7 @@ fun HorizonLauncherUi(
     onImportBuild: () -> Unit,
     onExportBackup: () -> Unit,
     onShowBuildLog: () -> Unit,
+    onShowGameLog: () -> Unit,
     onRefresh: () -> Unit,
     onCreateInstance: (String) -> Unit,
     onSelectInstance: (String) -> Unit,
@@ -231,7 +232,7 @@ fun HorizonLauncherUi(
             AtlasPage.CONTROLS -> ControlsAtlas(touchControls, onSaveTouchControls, onOpenControlsEditor)
             AtlasPage.SYSTEM -> SystemAtlas(
                 status, settings, platform, releases, telemetry, toolchainReady, darkMode, onSetDarkMode, renderApi, onSetRenderApi,
-                onSaveSettings, onSetNoAi, onSetTelemetry, onRefresh, onShowBuildLog, onInstallVersion
+                onSaveSettings, onSetNoAi, onSetTelemetry, onRefresh, onShowBuildLog, onShowGameLog, onInstallVersion
             )
         }
         }
@@ -725,7 +726,7 @@ private fun SystemAtlas(
     telemetry: TelemetryInfo?, toolchainReady: Boolean, darkMode: Boolean, onSetDarkMode: (Boolean) -> Unit,
     renderApi: String, onSetRenderApi: (String) -> Unit,
     onSave: (JSONObject) -> Unit, onSetNoAi: (Boolean) -> Unit, onSetTelemetry: (Boolean) -> Unit,
-    onRefresh: () -> Unit, onBuildLog: () -> Unit, onInstallVersion: (String) -> Unit
+    onRefresh: () -> Unit, onBuildLog: () -> Unit, onGameLog: () -> Unit, onInstallVersion: (String) -> Unit
 ) {
     var installNew by remember(settings) { mutableStateOf(settings?.installNewVersions ?: true) }
     var prune by remember(settings) { mutableStateOf(settings?.pruneOldVersions ?: true) }
@@ -748,6 +749,7 @@ private fun SystemAtlas(
                 Text(status, color = MutedInk, fontSize = 9.sp, modifier = Modifier.padding(top = 7.dp))
                 TextButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, null); Text("Refresh runtime") }
                 TextButton(onClick = onBuildLog) { Icon(Icons.Default.Terminal, null); Text("Open HNMod build log") }
+                TextButton(onClick = onGameLog) { Icon(Icons.Default.Terminal, null); Text("View last game log") }
             }
         }
         Spacer(Modifier.height(16.dp))
