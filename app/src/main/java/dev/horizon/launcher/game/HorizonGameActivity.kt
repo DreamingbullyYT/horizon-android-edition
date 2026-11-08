@@ -16,6 +16,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -58,6 +59,8 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     private var layoutImportCallback: ((ControlLayout) -> Unit)? = null
     private var pendingExport: ControlLayout? = null
     private var zalithOverlay: ComposeView? = null
+    private val overlayLayoutState = mutableStateOf<ObservableControlLayout?>(null)
+    private var overlayLayoutSnapshot: String? = null
     override val savedStateRegistry: SavedStateRegistry get() = savedStateController.savedStateRegistry
 
     private val currentLayoutFile: File get() = File(File(filesDir, "launcher"), "touch-layout.json")
@@ -102,6 +105,8 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
             or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
 
         val initialLayout = loadLayout()
+        overlayLayoutState.value = initialLayout
+        overlayLayoutSnapshot = runCatching { currentLayoutFile.takeIf { it.isFile }?.readText() }.getOrNull()
         val profiles = LayoutProfiles(this)
         val overlay = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@HorizonGameActivity)
@@ -111,7 +116,7 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 HorizonGameControls(
-                    layout = initialLayout,
+                    layout = overlayLayoutState.value ?: initialLayout,
                     profiles = profiles,
                     defaultLayout = { defaultLayout() },
                     setKeepAwake = { enabled ->
@@ -146,7 +151,18 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     }
 
     override fun onStart() { super.onStart(); lifecycleRegistry.currentState = Lifecycle.State.STARTED }
-    override fun onResume() { super.onResume(); lifecycleRegistry.currentState = Lifecycle.State.RESUMED }
+    override fun onResume() {
+        super.onResume()
+        lifecycleRegistry.currentState = Lifecycle.State.RESUMED
+        // The standalone Zalith editor writes the canonical Horizon layout file. Reload only
+        // when its contents changed so normal pause/resume does not recreate the live HUD.
+        val snapshot = runCatching { currentLayoutFile.takeIf { it.isFile }?.readText() }.getOrNull()
+        if (snapshot != null && snapshot != overlayLayoutSnapshot) {
+            runCatching { loadLayout() }
+                .onSuccess { overlayLayoutState.value = it; overlayLayoutSnapshot = snapshot }
+                .onFailure { android.util.Log.e("HorizonZalith", "Could not reload edited control layout", it) }
+        }
+    }
     override fun onPause() { lifecycleRegistry.currentState = Lifecycle.State.STARTED; super.onPause() }
     override fun onStop() { lifecycleRegistry.currentState = Lifecycle.State.CREATED; super.onStop() }
     override fun onDestroy() {
@@ -184,6 +200,7 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
             val temp = File(file.parentFile, "${file.name}.tmp")
             temp.writeText(ControlJson.encode(packed))
             if (!temp.renameTo(file)) { temp.copyTo(file, overwrite = true); temp.delete() }
+            overlayLayoutSnapshot = file.readText()
         }.onFailure { toast("Could not save control layout: ${it.message}") }
     }
 
