@@ -63,6 +63,11 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     private val currentLayoutFile: File get() = File(File(filesDir, "launcher"), "touch-layout.json")
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // wgpu already supports Vulkan and GLES 3.0+ on Android in the pinned engine.
+        // The engine reads HORIZON_GRAPHICS_API before creating its first renderer.
+        val renderApi = getSharedPreferences("horizon-renderer", MODE_PRIVATE)
+            .getString("api", "auto")?.takeIf { it in setOf("auto", "vulkan", "opengl") } ?: "auto"
+        runCatching { android.system.Os.setenv("HORIZON_GRAPHICS_API", renderApi, true) }
         // NativeActivity loads the game inside super.onCreate: tell the boot stub which one.
         dev.horizon.launcher.data.Updater.gamePath(filesDir)?.let {
             runCatching { android.system.Os.setenv("HORIZON_GAME_LIB", it, true) }
