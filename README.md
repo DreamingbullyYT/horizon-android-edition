@@ -1,3 +1,6 @@
+# Warning this repository is planned to be shutdown,why? I'm working on a better launcher than this one,I'll make an announcement soon about the new launcher,untill then install the last release available, thank you for the patience
+
+
 Horizon Android Edition
 
 «Horizon — on Android. A native Android edition of "Horizon" (https://github.com/horizon-rust/horizon), bringing the Rust-based Minecraft: Java Edition client to ARM64 Android devices with a mobile-first launcher, touch controls, file import/backup tools, and an Android game runtime.»
