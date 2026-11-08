@@ -118,7 +118,7 @@ diff --git a/crates/horizon-client-render/src/audio.rs b/crates/horizon-client-r
 index 9f2cd3944303f7774bd7679e9d4f3ae3e499774e..e40bc70dc 100644
 --- a/crates/horizon-client-render/src/audio.rs
 +++ b/crates/horizon-client-render/src/audio.rs
-@@ -1174,2 +1174,5 @@
+@@ -1174,2 +1174,7 @@
          };
 +        // Android: let the OS route an open stream; avoid probing devices every second.
 +        // Still allow recovery when the stream itself reports that the device was lost.
