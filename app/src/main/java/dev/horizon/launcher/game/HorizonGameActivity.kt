@@ -29,6 +29,30 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.movtery.layer_controller.data.ButtonShape
 import com.movtery.layer_controller.data.DefaultButtonStyleConfig
 import com.movtery.layer_controller.data.DefaultJoystickStyleConfig
@@ -63,6 +87,8 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     private var zalithOverlay: ComposeView? = null
     private var overlayDialog: Dialog? = null
     private val overlayLayoutState = mutableStateOf<ObservableControlLayout?>(null)
+    // This UI is hosted by the NativeActivity itself; toggling it never launches another Activity.
+    private val launcherOverlayVisibleState = mutableStateOf(false)
     private var overlayLayoutSnapshot: String? = null
     override val savedStateRegistry: SavedStateRegistry get() = savedStateController.savedStateRegistry
 
@@ -149,7 +175,8 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
                 .invoke(null, this, this@HorizonGameActivity)
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
-                HorizonGameControls(
+                Box(Modifier.fillMaxSize()) {
+                    HorizonGameControls(
                     layout = overlayLayoutState.value ?: initialLayout,
                     profiles = profiles,
                     defaultLayout = { defaultLayout() },
@@ -162,8 +189,15 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
                         attributes.preferredRefreshRate = if (enabled) windowManager.defaultDisplay.refreshRate else 0f
                         window.attributes = attributes
                     },
-                    save = { packed -> saveCurrentLayout(packed) }
-                )
+                        save = { packed -> saveCurrentLayout(packed) }
+                    )
+                    if (launcherOverlayVisibleState.value) {
+                        HorizonSessionLauncherOverlay(
+                            onResume = { launcherOverlayVisibleState.value = false },
+                            onExit = { closeGame() }
+                        )
+                    }
+                }
             }
         }
         // NativeActivity's game surface can cover views attached with addContentView().
@@ -210,12 +244,17 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         openLauncherWithoutClosingGame()
     }
 
+    /**
+     * Show Horizon's in-session launcher panel without starting MainActivity.
+     * The NativeActivity, its surface, and the current Minecraft process remain the same.
+     * Pressing Back again (or tapping Return to Minecraft) simply hides this panel.
+     */
     private fun openLauncherWithoutClosingGame() {
-        android.util.Log.i("HorizonSession", "Back requested: showing launcher above the live game Activity")
-        startActivity(
-            Intent(this, dev.horizon.launcher.MainActivity::class.java).addFlags(
-                Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            )
+        launcherOverlayVisibleState.value = !launcherOverlayVisibleState.value
+        android.util.Log.i(
+            "HorizonSession",
+            if (launcherOverlayVisibleState.value) "Showing in-session launcher overlay; native game remains active"
+            else "Hiding in-session launcher overlay; resuming the same native game session"
         )
     }
 
@@ -237,14 +276,14 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     override fun onStop() { lifecycleRegistry.currentState = Lifecycle.State.CREATED; super.onStop() }
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        // Fallback for Android versions that do not dispatch the predictive-back callback.
+        // Back toggles the in-session launcher overlay; it never finishes or relaunches Minecraft.
         openLauncherWithoutClosingGame()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        android.util.Log.i("HorizonSession", "Existing game Activity received a return intent; no new game launch")
+        android.util.Log.i("HorizonSession", "Existing game Activity received an intent; native session is unchanged")
     }
 
     override fun onDestroy() {
@@ -578,5 +617,104 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
             "dpad_up" to "GLFW_KEY_W", "dpad_down" to "GLFW_KEY_S",
             "dpad_left" to "GLFW_KEY_A", "dpad_right" to "GLFW_KEY_D"
         )
+    }
+}
+
+/**
+ * Lightweight launcher surface for a live game session. It intentionally does not initialize the
+ * launcher core or start MainActivity: all actions stay in the existing NativeActivity process.
+ */
+@Composable
+private fun HorizonSessionLauncherOverlay(
+    onResume: () -> Unit,
+    onExit: () -> Unit
+) {
+    val confirmExit = remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xE609101B))
+            // Consume taps on the backdrop so touch controls underneath cannot move the player.
+            .clickable { },
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.86f).widthIn(max = 640.dp),
+            color = Color(0xFF111D2B),
+            shape = RoundedCornerShape(26.dp),
+            border = BorderStroke(1.dp, Color(0xFF34485E)),
+            shadowElevation = 18.dp
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 26.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "H O R I Z O N",
+                    color = Color(0xFF8FB9FF),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Black
+                )
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    text = if (confirmExit.value) "End this Minecraft session?" else "Minecraft is still running",
+                    color = Color.White,
+                    fontSize = 25.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(9.dp))
+                Text(
+                    text = if (confirmExit.value)
+                        "Exiting closes the live game. Your session will not be restarted automatically."
+                    else
+                        "Your current world and game process are being kept alive. Returning to Minecraft will reveal this exact session — no restore, download, or second launch.",
+                    color = Color(0xFFB2C0D0),
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+                Spacer(Modifier.height(24.dp))
+                if (!confirmExit.value) {
+                    Button(
+                        onClick = onResume,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF6D9EFF),
+                            contentColor = Color(0xFF071426)
+                        )
+                    ) {
+                        Text("RETURN TO MINECRAFT", fontWeight = FontWeight.Black)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = { confirmExit.value = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("EXIT GAME", color = Color(0xFFFFB6B6), fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Button(
+                        onClick = onExit,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFB94B58),
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text("CONFIRM EXIT", fontWeight = FontWeight.Black)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { confirmExit.value = false },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("CANCEL", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
     }
 }
