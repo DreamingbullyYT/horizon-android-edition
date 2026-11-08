@@ -6,7 +6,13 @@ on:
   push:
     paths:
       - ".github/workflows/upstream-compatible.yml"
+      - "android/UPSTREAM_PIN"
+      - "android/STABLE_ANDROID_PIN"
       - "android/android.patch"
+      - "android/android-next.patch"
+      - "android/apply-next-overlay.py"
+      - "android/apply-legacy-overlay.py"
+      - "android/sync.sh"
       - "android/overlay/**"
   workflow_dispatch:
     inputs:

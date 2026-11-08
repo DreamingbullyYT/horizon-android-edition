@@ -9,13 +9,14 @@ ref=${1:-$(tr -d '[:space:]' < android/UPSTREAM_PIN)}
 rm -rf .horizon-sync
 git clone -q --filter=blob:none https://github.com/horizon-rust/horizon.git .horizon-sync
 pin=$(tr -d '[:space:]' < android/UPSTREAM_PIN)
-if [ "$ref" != "$pin" ]; then
-  # 3-way merging needs the files the patch was made against: check them out once so git fetches them.
-  git -C .horizon-sync checkout -q "$pin"
+stable_pin=$(tr -d '[:space:]' < android/STABLE_ANDROID_PIN)
+if [ "$ref" != "$stable_pin" ]; then
+  # Keep the original patch base in the object database even after UPSTREAM_PIN advances.
+  git -C .horizon-sync checkout -q "$stable_pin"
 fi
 git -C .horizon-sync checkout -q "$ref"
 git -C .horizon-sync config core.fileMode false
-if [ "$ref" = "$pin" ]; then
+if [ "$ref" = "$stable_pin" ]; then
   patch="$PWD/android/android.patch"
   android_layout=stable
 else
