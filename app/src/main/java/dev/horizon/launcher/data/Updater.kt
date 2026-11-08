@@ -140,7 +140,8 @@ object Updater {
                 continue
             }
             val alive = context?.let { isProcessAlive(it, guard, role) } ?: (guard.pid == Process.myPid())
-            if (!alive) rollbackFailedStart(files, guard.version)
+            if (alive) continue
+            rollbackFailedStart(files, guard.version)
             marker.delete()
         }
 
