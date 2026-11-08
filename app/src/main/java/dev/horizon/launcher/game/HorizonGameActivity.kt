@@ -74,7 +74,7 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         }
         // Disable the legacy Rust HUD; Zalith owns the touch layer in this Activity.
         runCatching { android.system.Os.setenv("HORIZON_ANDROID_ZALITH_CONTROLS", "1", true) }
-        dev.horizon.launcher.data.Updater.armGuard(filesDir)
+        dev.horizon.launcher.data.Updater.armGuard(filesDir, "game")
         super.onCreate(savedInstanceState)
         runCatching {
             if (android.os.Build.VERSION.SDK_INT >= 33 &&
@@ -153,6 +153,9 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         zalithOverlay?.let { view -> runCatching { windowManager.removeView(view) } }
         zalithOverlay = null
+        // Clear only the persistent running-session record. Keep the pending startup guard
+        // so a crash during the first 20 seconds can still trigger updater rollback.
+        dev.horizon.launcher.data.Updater.clearGameSession(filesDir)
         // Do not kill :game or stop its foreground service on an ordinary Activity teardown.
         // The game Activity is hosted in its own task so the launcher can be reopened independently.
         super.onDestroy()
@@ -160,6 +163,7 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
 
     /** Explicit player action: close the native game session and its keep-alive notification. */
     fun closeGame() {
+        dev.horizon.launcher.data.Updater.clearGameSession(filesDir, clearStartupGuard = true)
         stopService(Intent(this, GameKeepAliveService::class.java))
         finish()
     }
