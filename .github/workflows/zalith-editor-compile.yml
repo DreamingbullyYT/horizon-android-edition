@@ -3,7 +3,7 @@ name: Zalith editor compile check
 on:
   push:
     branches:
-      - feat/zalith-control-editor-integration
+      - main
     paths:
       - "app/third_party/zalith/**"
       - "app/build.gradle.kts"

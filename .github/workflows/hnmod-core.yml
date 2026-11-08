@@ -2,7 +2,7 @@ name: HNMod core tests
 
 on:
   push:
-    branches: [feature/hnmod-core]
+    branches: [main]
     paths:
       - "hnmod-core/**"
       - "android/termux/**"
