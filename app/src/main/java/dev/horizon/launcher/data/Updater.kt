@@ -75,7 +75,7 @@ object Updater {
         // Do not roll back a different version that may have been activated while this process ran.
         if (activeVersion(files) != failed) return
         val knownBad = bad(files) + failed
-        write(files, "bad", knownBad.joinToString("\\n"))
+        write(files, "bad", knownBad.joinToString("\n"))
         val fallback = versions(files).firstOrNull { it.name != failed && it.name !in knownBad }
         write(files, "current", fallback?.name)
     }
@@ -207,7 +207,7 @@ object Updater {
         require(role == "launcher" || role == "game") { "Unknown update guard role: $role" }
         val active = activeVersion(files) ?: return
         val pid = Process.myPid()
-        val value = "$pid\\n$active"
+        val value = "$pid\n$active"
         val marker = startupMarker(files, role)
         marker.writeText(value)
         if (role == "game") runningGameMarker(files).writeText(value)
