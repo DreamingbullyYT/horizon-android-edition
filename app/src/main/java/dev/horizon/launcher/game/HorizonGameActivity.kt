@@ -196,6 +196,24 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
                             onResume = { launcherOverlayVisibleState.value = false },
                             onExit = { closeGame() }
                         )
+                    } else {
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(12.dp)
+                                .clickable { launcherOverlayVisibleState.value = true },
+                            color = Color(0xB30D1624),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color(0x665F83B5))
+                        ) {
+                            Text(
+                                text = "HORIZON",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
                     }
                 }
             }
