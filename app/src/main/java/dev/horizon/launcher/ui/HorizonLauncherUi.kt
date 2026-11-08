@@ -255,6 +255,7 @@ fun HorizonLauncherUi(
 
 @Composable
 private fun AtlasHeader(playerName: String, ready: Boolean, onRefresh: () -> Unit) {
+    val palette = LocalAtlasPalette.current
     Row(
         Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -265,8 +266,8 @@ private fun AtlasHeader(playerName: String, ready: Boolean, onRefresh: () -> Uni
             contentAlignment = Alignment.Center
         ) {
             Canvas(Modifier.fillMaxSize().padding(9.dp)) {
-                drawCircle(Sky, radius = size.minDimension * .43f, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
-                drawLine(White, Offset(size.width * .12f, size.height * .65f), Offset(size.width * .78f, size.height * .25f), 2.dp.toPx())
+                drawCircle(palette.sky, radius = size.minDimension * .43f, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
+                drawLine(palette.surface, Offset(size.width * .12f, size.height * .65f), Offset(size.width * .78f, size.height * .25f), 2.dp.toPx())
             }
         }
         Spacer(Modifier.width(11.dp))
