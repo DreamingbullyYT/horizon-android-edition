@@ -112,6 +112,16 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         savedStateController.performAttach()
         savedStateController.performRestore(savedInstanceState)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            runCatching {
+                onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                    returnToLauncherCallback
+                )
+            }.onFailure {
+                android.util.Log.w("HorizonSession", "Could not register predictive-back handler", it)
+            }
+        }
         // Supply owners on the decor tree before Compose creates its WindowRecomposer.
         window.decorView.setViewTreeLifecycleOwner(this)
         window.decorView.setViewTreeSavedStateRegistryOwner(this)
@@ -196,9 +206,23 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
         }
     }
 
+    private val returnToLauncherCallback = android.window.OnBackInvokedCallback {
+        openLauncherWithoutClosingGame()
+    }
+
+    private fun openLauncherWithoutClosingGame() {
+        android.util.Log.i("HorizonSession", "Back requested: showing launcher above the live game Activity")
+        startActivity(
+            Intent(this, dev.horizon.launcher.MainActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            )
+        )
+    }
+
     override fun onStart() { super.onStart(); lifecycleRegistry.currentState = Lifecycle.State.STARTED }
     override fun onResume() {
         super.onResume()
+        android.util.Log.i("HorizonSession", "Game Activity resumed; reusing existing native session")
         lifecycleRegistry.currentState = Lifecycle.State.RESUMED
         // The standalone Zalith editor writes the canonical Horizon layout file. Reload only
         // when its contents changed so normal pause/resume does not recreate the live HUD.
@@ -213,12 +237,20 @@ class HorizonGameActivity : NativeActivity(), LifecycleOwner, SavedStateRegistry
     override fun onStop() { lifecycleRegistry.currentState = Lifecycle.State.CREATED; super.onStop() }
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        // Keep NativeActivity alive: Minecraft's native session is tied to this Activity/process.
-        // A launcher screen above it lets Play bring this same singleTask Activity back.
-        startActivity(Intent(this, dev.horizon.launcher.MainActivity::class.java))
+        // Fallback for Android versions that do not dispatch the predictive-back callback.
+        openLauncherWithoutClosingGame()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        android.util.Log.i("HorizonSession", "Existing game Activity received a return intent; no new game launch")
     }
 
     override fun onDestroy() {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            runCatching { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(returnToLauncherCallback) }
+        }
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         val lived = android.os.SystemClock.elapsedRealtime() - startedAt
         runCatching {
