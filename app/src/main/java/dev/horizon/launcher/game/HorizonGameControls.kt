@@ -378,8 +378,9 @@ internal fun HorizonGameControls(
                 }
                 while (true) {
                     val event = awaitPointerEvent(PointerEventPass.Final)
-                    if (editing) {
-                        // Release any synthetic mouse button before the editor takes over input.
+                    if (editing || quickSettings) {
+                        // Editor and Quick Settings own the screen; do not route touches into Minecraft.
+                        // Release any synthetic mouse button before the panel takes over input.
                         longPressJobs.values.forEach { it.cancel() }
                         longPressJobs.clear()
                         heldButtons.values.forEach { GameInput.nativeSendControl(it, false) }
