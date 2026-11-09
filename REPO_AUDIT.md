@@ -35,7 +35,7 @@ At the audited branch head:
 - Five included Zalith Android library modules: InputMap, LayerController, Guide, ColorPicker, ControlEditor.
 - The upstream horizon/ checkout is created by android/sync.sh during CI and is ignored locally.
 
-The current branch is eight commits ahead of main and zero commits behind it (including this audit and safe bytecode cleanup). The branch contains the cleanup/UI work, RUSTMC_SPEC.md and REPO_AUDIT.md; it has not been merged.
+The current branch is nine commits ahead of main and zero commits behind it (including this audit and safe bytecode cleanup). The branch contains the cleanup/UI work, RUSTMC_SPEC.md and REPO_AUDIT.md; it has not been merged.
 
 ## 3. Feature-by-feature status
 
