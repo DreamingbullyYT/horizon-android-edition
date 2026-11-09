@@ -94,7 +94,7 @@ private val WarningTint: Color
 
 private enum class AtlasPage(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     HOME("Home", Icons.Default.Explore),
-    INSTANCES("Instances", Icons.Default.Inventory2),
+    LIBRARY("Library", Icons.Default.Folder),
     MODS("Mods", Icons.Default.Extension),
     DISCOVER("Discover", Icons.Default.Search),
     SERVERS("Servers", Icons.Default.Public),
@@ -112,8 +112,6 @@ fun HorizonLauncherUi(
     onSetRenderApi: (String) -> Unit,
     minecraftReady: Boolean,
     toolchainReady: Boolean,
-    instances: List<InstanceInfo>,
-    selectedInstance: InstanceInfo?,
     worlds: List<WorldInfo>,
     servers: List<ServerInfo>,
     mods: List<ModInfo>,
@@ -140,9 +138,6 @@ fun HorizonLauncherUi(
     onShowBuildLog: () -> Unit,
     onShowGameLog: () -> Unit,
     onRefresh: () -> Unit,
-    onCreateInstance: (String) -> Unit,
-    onSelectInstance: (String) -> Unit,
-    onDeleteInstance: (String) -> Unit,
     onAddServer: (String, String) -> Unit,
     onRemoveServer: (Int) -> Unit,
     onImportMod: () -> Unit,
@@ -204,18 +199,14 @@ fun HorizonLauncherUi(
         when (page) {
             AtlasPage.HOME -> HomeAtlas(
                 ready = minecraftReady, toolchainReady = toolchainReady, status = status,
-                selected = selectedInstance, instances = instances, worlds = worlds,
-                mods = mods, servers = servers, playerName = playerName,
+                worlds = worlds, mods = mods, servers = servers, playerName = playerName,
                 onPlay = onPlay, onInstall = onInstall, onRefresh = onRefresh,
-                onSelectInstance = onSelectInstance, onCreateInstance = onCreateInstance,
                 onNavigate = { page = it }
             )
-            AtlasPage.INSTANCES -> InstancesAtlas(
-                ready = minecraftReady, instances = instances, selected = selectedInstance,
-                worlds = worlds, versions = versions, onInstall = onInstall,
+            AtlasPage.LIBRARY -> LibraryAtlas(
+                ready = minecraftReady, worlds = worlds, versions = versions, onInstall = onInstall,
                 onImport = onImportFolder, onRestore = onRestoreBackup, onExport = onExportBackup,
-                onCreate = onCreateInstance, onSelect = onSelectInstance, onDelete = onDeleteInstance,
-                onInstallVersion = onInstallVersion, onRemoveVersion = onRemoveVersion
+                onRemoveVersion = onRemoveVersion
             )
             AtlasPage.MODS -> ModsAtlas(
                 mods = mods, installed = browseInstalled, toolchainReady = toolchainReady,
@@ -289,13 +280,11 @@ private fun AtlasHeader(playerName: String, ready: Boolean, onRefresh: () -> Uni
 
 @Composable
 private fun HomeAtlas(
-    ready: Boolean, toolchainReady: Boolean, status: String, selected: InstanceInfo?,
-    instances: List<InstanceInfo>, worlds: List<WorldInfo>, mods: List<ModInfo>,
+    ready: Boolean, toolchainReady: Boolean, status: String,
+    worlds: List<WorldInfo>, mods: List<ModInfo>,
     servers: List<ServerInfo>, playerName: String, onPlay: () -> Unit, onInstall: () -> Unit,
-    onRefresh: () -> Unit, onSelectInstance: (String) -> Unit, onCreateInstance: (String) -> Unit,
-    onNavigate: (AtlasPage) -> Unit
+    onRefresh: () -> Unit, onNavigate: (AtlasPage) -> Unit
 ) {
-    var create by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 8.dp)) {
         Text("YOUR NEXT ADVENTURE", color = MutedInk, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.8.sp)
         Spacer(Modifier.height(10.dp))
@@ -309,9 +298,9 @@ private fun HomeAtlas(
                     Text(if (ready) "WORLD LINK ESTABLISHED" else "YOUR WORLD IS WAITING", color = White, fontSize = 8.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp))
                 }
                 Spacer(Modifier.height(13.dp))
-                Text(selected?.name ?: "Find your\nHorizon.", color = White, fontSize = 29.sp, lineHeight = 31.sp, fontWeight = FontWeight.Black)
+                Text("Minecraft Java", color = White, fontSize = 29.sp, lineHeight = 31.sp, fontWeight = FontWeight.Black)
                 Spacer(Modifier.height(4.dp))
-                Text(selected?.version ?: if (ready) "Default Minecraft profile" else "Install or import Minecraft to begin", color = Color(0xFFDCE3FF), fontSize = 10.sp, maxLines = 2)
+                Text(if (ready) "Ready to play" else "Install or import Minecraft to begin", color = Color(0xFFDCE3FF), fontSize = 10.sp, maxLines = 2)
                 Spacer(Modifier.height(15.dp))
                 Button(
                     onClick = if (ready) onPlay else onInstall,
@@ -332,7 +321,7 @@ private fun HomeAtlas(
             AtlasMetric("SERVERS", servers.size.toString(), Color(0xFFDDF2E7), Modifier.weight(1f))
         }
         Spacer(Modifier.height(22.dp))
-        SectionHeading("Continue where you left off", "Your worlds", onClick = { onNavigate(AtlasPage.INSTANCES) })
+        SectionHeading("Continue playing", "Your worlds", onClick = { onNavigate(AtlasPage.LIBRARY) })
         if (worlds.isEmpty()) EmptyState("No saved worlds yet", "Worlds found by the native core will appear here.")
         else worlds.take(4).forEach { world ->
             Surface(Modifier.fillMaxWidth().padding(bottom = 8.dp), color = White, shape = RoundedCornerShape(18.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Border)) {
@@ -349,31 +338,6 @@ private fun HomeAtlas(
                 }
             }
         }
-        Spacer(Modifier.height(13.dp))
-        SectionHeading("Your setup", "Active instance", onClick = { onNavigate(AtlasPage.INSTANCES) })
-        Surface(Modifier.fillMaxWidth(), color = White, shape = RoundedCornerShape(20.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Border)) {
-            Column(Modifier.padding(15.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(selected?.name ?: "Default profile", color = Ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Text(selected?.version ?: "No version selected", color = MutedInk, fontSize = 10.sp)
-                    }
-                    TextButton(onClick = onRefresh) { Text("SYNC", color = Blue, fontWeight = FontWeight.Bold) }
-                }
-                if (instances.isNotEmpty()) {
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        instances.forEach { instance ->
-                            FilterChip(
-                                selected = instance.id == selected?.id,
-                                onClick = { onSelectInstance(instance.id) },
-                                label = { Text(instance.name, maxLines = 1) }
-                            )
-                        }
-                    }
-                }
-                TextButton(onClick = { create = true }) { Icon(Icons.Default.Add, null); Text("Create instance") }
-            }
-        }
         Spacer(Modifier.height(17.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FeatureTile("Mod studio", "Compile HNMods and manage add-ons", Icons.Default.Extension, Modifier.weight(1f)) { onNavigate(AtlasPage.MODS) }
@@ -385,7 +349,6 @@ private fun HomeAtlas(
         if (status.isNotBlank()) Text(status, color = MutedInk, fontSize = 9.sp, lineHeight = 13.sp, modifier = Modifier.padding(top = 8.dp))
         Spacer(Modifier.height(28.dp))
     }
-    if (create) NameDialog("Create instance", "Instance name", { create = false }, { create = false; onCreateInstance(it) })
 }
 
 @Composable
@@ -406,56 +369,41 @@ private fun AtlasLandscape(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun InstancesAtlas(
-    ready: Boolean, instances: List<InstanceInfo>, selected: InstanceInfo?, worlds: List<WorldInfo>,
-    versions: List<InstalledVersion>, onInstall: () -> Unit, onImport: () -> Unit,
-    onRestore: () -> Unit, onExport: () -> Unit, onCreate: (String) -> Unit,
-    onSelect: (String) -> Unit, onDelete: (String) -> Unit,
-    onInstallVersion: (String) -> Unit, onRemoveVersion: (String) -> Unit
+private fun LibraryAtlas(
+    ready: Boolean, worlds: List<WorldInfo>, versions: List<InstalledVersion>,
+    onInstall: () -> Unit, onImport: () -> Unit, onRestore: () -> Unit,
+    onExport: () -> Unit, onRemoveVersion: (String) -> Unit
 ) {
-    var create by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp)) {
-        PageHeading("Your library", "Profiles, worlds and engine versions in one place.")
+        PageHeading("Worlds & files", "Your Minecraft data and installed engine versions.")
         Surface(color = White, shape = RoundedCornerShape(22.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Border)) {
             Column(Modifier.padding(14.dp)) {
-                Text(if (ready) "MINECRAFT INSTALLED" else "MINECRAFT NOT INSTALLED", color = if (ready) Color(0xFF388563) else Coral, fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                Text("Manage game files", color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.padding(top = 5.dp))
+                Text(if (ready) "MINECRAFT READY" else "MINECRAFT NOT INSTALLED", color = if (ready) Color(0xFF388563) else Coral, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                Text("Game files", color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.padding(top = 5.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(top = 12.dp)) {
                     ActionPill("Install", Icons.Default.Download, onInstall, Modifier.weight(1f))
-                    ActionPill("Import folder", Icons.Default.FolderOpen, onImport, Modifier.weight(1f))
+                    ActionPill("Import", Icons.Default.FolderOpen, onImport, Modifier.weight(1f))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(top = 7.dp)) {
                     ActionPill("Restore", Icons.Default.Restore, onRestore, Modifier.weight(1f))
-                    ActionPill("Export backup", Icons.Default.Archive, onExport, Modifier.weight(1f))
+                    ActionPill("Backup", Icons.Default.Archive, onExport, Modifier.weight(1f))
                 }
             }
         }
         Spacer(Modifier.height(18.dp))
-        SectionHeading("Instances", "${instances.size} profiles", onClick = { create = true })
-        if (instances.isEmpty()) EmptyState("No instances registered", "Create one to start separating game setups.")
-        instances.forEach { instance ->
-            DataSurface(
-                title = instance.name,
-                detail = "${instance.version ?: "Version not assigned"} · ${formatPlayTime(instance.playedSecs)}",
-                tag = if (instance.id == selected?.id) "ACTIVE" else "SELECT",
-                onClick = { onSelect(instance.id) },
-                trailing = { IconButton(onClick = { onDelete(instance.id) }) { Icon(Icons.Default.DeleteOutline, "Delete instance", tint = Coral) } }
-            )
+        SectionHeading("Saved worlds", "${worlds.size}")
+        if (worlds.isEmpty()) EmptyState("No worlds yet", "Imported or created worlds will appear here.")
+        worlds.forEach { world ->
+            DataSurface(world.name, "${world.version ?: "Unknown version"} · ${world.mode} · ${formatBytesAtlas(world.size)}", null)
         }
-        OutlinedButton(onClick = { create = true }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Add, null); Text("New instance") }
         Spacer(Modifier.height(18.dp))
-        SectionHeading("Saved worlds", "${worlds.size} worlds")
-        if (worlds.isEmpty()) EmptyState("Nothing to show yet", "The world list comes directly from Horizon core.")
-        worlds.forEach { DataSurface(it.name, "${it.version ?: "Unknown version"} · ${it.mode} · ${formatBytesAtlas(it.size)}", null) }
-        Spacer(Modifier.height(18.dp))
-        SectionHeading("Installed engine versions", "${versions.size} installed")
-        if (versions.isEmpty()) EmptyState("No versions installed", "Available versions are listed below when core provides them.")
+        SectionHeading("Engine versions", "${versions.size} installed")
+        if (versions.isEmpty()) EmptyState("No extra versions", "Installed engine updates will appear here.")
         versions.forEach { version ->
             DataSurface(version.version, "Tag ${version.tag} · prepared ${version.prepared} · sounds ${version.sounds}", "REMOVE", onClick = { onRemoveVersion(version.tag) })
         }
         Spacer(Modifier.height(25.dp))
     }
-    if (create) NameDialog("Create instance", "A name for this profile", { create = false }, { create = false; onCreate(it) })
 }
 
 @Composable
