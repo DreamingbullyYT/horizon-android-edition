@@ -1,374 +1,185 @@
-# Warning this repository is planned to be shutdown,why? I'm working on a better launcher than this one,I'll make an announcement soon about the new launcher,untill then install the last release available, thank you for the patience
+# Horizon Android Edition
 
+**A native Android edition of [Horizon](https://github.com/horizon-rust/horizon), bringing the Rust-based Minecraft: Java Edition client to ARM64 Android devices.**
 
-Horizon Android Edition
+[![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)](#requirements)
+[![ABI](https://img.shields.io/badge/ABI-arm64--v8a-blue)](#requirements)
+[![UI](https://img.shields.io/badge/UI-Jetpack%20Compose%20%2B%20Material%203-6750A4)](#launcher)
+[![Core](https://img.shields.io/badge/Core-Rust-orange?logo=rust&logoColor=white)](#architecture)
 
-«Horizon — on Android. A native Android edition of "Horizon" (https://github.com/horizon-rust/horizon), bringing the Rust-based Minecraft: Java Edition client to ARM64 Android devices with a mobile-first launcher, touch controls, file import/backup tools, and an Android game runtime.»
+Horizon Android Edition is an unofficial community Android port. It is not affiliated with Mojang Studios, Microsoft, or Zalith Launcher 2.
 
-""Android" (https://img.shields.io/badge/Android-8%2B-3DDC84?logo=android&logoColor=white)" (#requirements)
-""ARM64" (https://img.shields.io/badge/ABI-arm64--v8a-blue)" (#requirements)
-""Rust" (https://img.shields.io/badge/core-Rust-orange?logo=rust&logoColor=white)" (#architecture)
-""License" (https://img.shields.io/badge/Horizon-MIT-informational)" (HORIZON-LICENSE.txt)
+> **Minecraft files are not included.** You must provide game files that you are legally entitled to use.
 
-Horizon Android Edition is an unofficial community Android port/edition of Horizon. It is not affiliated with Mojang, Microsoft, or Zalith Launcher 2.
+## Project status
 
-«Important: This project does not include Minecraft assets or game files. You must provide game files that you are licensed to use.»
+This repository is actively maintained as an Android adaptation of upstream Horizon. Android compatibility is checked against upstream changes before they are accepted; a newer upstream revision is not considered Android-compatible merely because it builds on desktop.
 
----
+The project is a preview and still requires testing across more Android devices and GPUs.
 
-What is Horizon?
+## Launcher
 
-"Horizon" (https://github.com/horizon-rust/horizon) is a Rust rewrite of Minecraft: Java Edition 26.3. The original project focuses on reproducing vanilla behaviour while providing a modern Rust engine, launcher, native mods, optional extras, and extensive differential testing against Java Edition.
+The launcher is built with **Kotlin, Jetpack Compose and Material 3**. On Android 12 and newer it can use the device's wallpaper-derived Material You colors; older Android versions use the built-in Horizon light/dark palettes.
 
-Horizon Android Edition takes that foundation and adapts it for phones and tablets.
+Current launcher sections include:
 
-Instead of trying to make the desktop launcher UI work unchanged on a touchscreen, this project provides an Android-native launcher shell around the shared Horizon backend and an Android game activity with mobile input support.
+- **Home** — game readiness, selected instance, saved worlds and launch/setup actions.
+- **Instances** — create, select and delete instances; manage installed engine versions; import folders and restore/export backups.
+- **Mods** — import and remove Horizon mods and shader packs; compile HNMods with the embedded Android toolchain; view build logs and import compiled game libraries.
+- **Discover** — browse the native add-on catalog when the upstream core provides catalog data.
+- **Servers** — manage saved multiplayer server entries.
+- **Accounts** — Microsoft/offline account management and the account skin preview.
+- **Controls** — open the full touch-control editor and configure available touch preferences.
+- **System** — engine/runtime information, settings, update diagnostics and supported Android rendering options.
 
-The goal
+The Android launcher is separate from Horizon's desktop GPUI interface. It uses the shared Rust backend through the Android JNI/JSON bridge instead of trying to load the desktop UI on Android.
 
-- 📱 Make Horizon practical to run on Android ARM64 devices.
-- 🎮 Provide comfortable touchscreen controls instead of relying on a physical keyboard and mouse.
-- 📦 Make Minecraft file import, backups, and restores understandable on Android.
-- 🔄 Keep the Android fork maintainable as upstream Horizon evolves.
-- 🦀 Keep the game/runtime based on Horizon's Rust architecture.
-- 🧩 Leave room for Android-specific features without changing the upstream project's core direction.
+## Game and touch controls
 
----
+The game runtime is Horizon's Rust-based Android runtime, packaged for ARM64 (arm64-v8a).
 
-Features
+The touch-control system incorporates licensed components from Zalith Launcher 2, including the control layout/editor and the Android-side layer renderer. Horizon keeps its Android input bridge as the route into the game; the launcher UI does not replace the engine's input semantics.
 
-🚀 Android-native launcher
+Available control features depend on the bundled Zalith components and the current Android integration. They include editable layouts, virtual keyboard/mouse controls, joystick and camera input, configurable widgets and gamepad-related mappings.
 
-The launcher uses Jetpack Compose for the Android UI while communicating with the Horizon Rust core through a small JNI/JSON bridge.
+## Mods and HNMod compiler
 
-Current launcher areas include:
+The launcher supports Horizon-native content rather than treating Java mod-loader packages as native Horizon mods:
 
-- Home — play, instances, accounts, Minecraft setup and user-data tools.
-- Mods — Horizon mod and shader-pack importing/removal.
-- Servers — saved server management and Android-side joining integration points.
-- Updates — launcher/build information and Android-compatible release handling.
-- Settings — launcher and Android-specific configuration.
+- .hmod — Horizon native mods.
+- .hshader — Horizon shader packs.
+- HNMod archives — compiled through the embedded Android toolchain, with build output streamed to the launcher.
+- Compiled native game libraries — can be imported through the launcher.
 
-The Android launcher is deliberately separate from Horizon's desktop GPUI launcher UI. The goal is a UI that behaves naturally on phones and tablets while still using the shared Rust backend.
+Compatibility is determined by the engine and mod build metadata. A shader inventory, ping measurement or other feature is shown only when the native interface actually provides that information.
 
-🎮 Touch controls
+## Minecraft data
 
-The game runtime includes a mobile touch HUD based on the licensed Zalith Launcher 2 control components.
+Android app storage is sandboxed, so the launcher uses Android's Storage Access Framework for user-selected folders and files.
 
-Available controls include:
+- Import an existing Minecraft folder.
+- Restore a ZIP backup.
+- Export a backup of supported user data.
+- Keep the game data inside the app's managed storage.
 
-- Virtual joystick
-- Keyboard/mouse-style buttons
-- Relative camera/look input
-- Adjustable HUD layout
-- Button/joystick positioning and resizing
-- Touch control editing
-- Camera sensitivity and inversion
-- Mouse/action configuration
-- Gesture configuration
-- Gyroscope look support
-- Gamepad mappings and deadzone settings
-- Quick settings panel
-- FPS and process-memory overlays
-- Keep-awake and display/refresh-rate options
+The project does not redistribute Minecraft assets or game files.
 
-The Android layer also forwards appropriate touch/menu gestures into Horizon's existing Winit input path, so menus remain usable with touch rather than treating every screen as gameplay input.
+## Requirements
 
-📂 Minecraft import & file browser
+### Device
 
-Android does not give applications unrestricted access to the normal filesystem, so the launcher provides Android-compatible import flows.
+- Android 8.0 / API 26 or newer.
+- ARM64 device (arm64-v8a).
+- Free storage for the application, game resources, worlds and imported content.
+- Minecraft Java Edition files that you are licensed to use.
 
-The Home screen can handle Minecraft setup through a unified Browse / Import flow, including folder-based import and ZIP backup restoration.
+The Android renderer currently uses the GLES path as the supported default. GPU behaviour and performance vary by device; Vulkan should not be assumed to work on every Android GPU.
 
-The project is designed around Android's Storage Access Framework rather than assuming direct filesystem access.
+### Build environment
 
-💾 Backup & restore
+The Android build uses:
 
-The Android launcher includes Minecraft user-data backup and restore support.
+- JDK 17.
+- Android SDK (compile SDK 34).
+- Android NDK 26.3.11579264.
+- Kotlin 2.0.21 and Android Gradle Plugin 8.5.2.
+- Rust toolchain for the JNI core, authentication bridge and Android game runtime.
+- Gradle 8.7 in CI.
 
-The intent is to preserve player-created data while avoiding unnecessary generated/cache data. This makes it possible to move a Minecraft setup between Android installations without manually digging through protected app directories.
+For the complete environment setup and local build procedure, see [ANDROID_BUILD.md](ANDROID_BUILD.md).
 
-🧩 Mods & shaders
+## Build
 
-The launcher has Android import paths for Horizon content:
+The CI Android workflow prepares the pinned upstream source and generated Android engine data before running the Gradle build. From a prepared checkout, the debug APK task is:
 
-- Horizon ".hmod" packages
-- Horizon ".hshader" packs
-- Compatible shader ZIPs containing a "shaders/" directory
+~~~bash
+gradle assembleDebug --stacktrace --no-daemon
+~~~
 
-Java/Fabric/NeoForge mod JARs are not treated as native Horizon mods. Horizon's own mod system is different from the Java mod-loader ecosystem.
+The APK is produced under:
 
-👤 Microsoft account support
+~~~text
+app/build/outputs/apk/debug/app-debug.apk
+~~~
 
-The Android project contains native Microsoft device-code authentication support through a dedicated "horizon_msa" library, using Horizon's existing Rust account implementation.
+A successful desktop build alone is not sufficient validation. Changes affecting the Android port must pass the Android build and the relevant Rust/Android integration checks.
 
-Builds need the appropriate Horizon Microsoft client configuration for this functionality to be available. Authentication storage and Android security hardening remain an area of active work, so production-grade credential persistence should not be assumed from an early build.
+## Architecture
 
-🔄 Safer upstream updates
+~~~text
+┌────────────────────────────────────────────────────┐
+│               Android launcher UI                  │
+│            Kotlin · Compose · Material 3            │
+├────────────────────────────────────────────────────┤
+│          Android platform integrations              │
+│       Storage · Auth · Backup · Game Activity       │
+├────────────────────────────────────────────────────┤
+│                JNI / JSON bridge                    │
+├────────────────────────────────────────────────────┤
+│                 Horizon Rust core                   │
+│          Launcher · Client · Mods · Engine          │
+├────────────────────────────────────────────────────┤
+│             Android graphics and input              │
+│                GLES · Winit · Touch                 │
+└────────────────────────────────────────────────────┘
+~~~
 
-One of the most important differences from a simple Android fork is the compatibility pipeline.
+### Main repository areas
 
-Upstream Horizon changes quickly. An upstream commit that builds on desktop is not automatically guaranteed to build or run on Android.
+| Path | Responsibility |
+| --- | --- |
+| app/ | Android launcher, Compose UI, game activity and platform integrations |
+| app/third_party/zalith/ | Vendored Zalith control/editor modules and their supporting modules |
+| core/ | JNI bridge between Kotlin and the Horizon Rust code |
+| android-auth/ | Microsoft device-code authentication bridge |
+| android/ | Android patching, overlays, upstream preparation and build helpers |
+| horizon/ | Prepared/pinned upstream Horizon source tree |
+| hnmod-core/ | HNMod build and compatibility tooling |
+| .github/workflows/ | Android builds, HNMod tests and upstream compatibility checks |
 
-The Android repository therefore has a compatibility workflow that can:
+The horizon/ directory is synchronized from upstream. Android-specific changes should normally live in the Android patch/overlay and adapter layers, rather than becoming permanent edits to upstream engine code.
 
-1. Check newer upstream commits.
-2. Apply the Android port patch.
-3. Regenerate Android engine data.
-4. Build the Android project with Gradle.
-5. Accept only candidates that pass the Android build gate.
-6. Keep the Android fork on the last known-good upstream base when a candidate breaks compatibility.
+## Upstream compatibility
 
-This prevents an upstream change from silently becoming an Android release just because it exists on "main".
+The repository contains automation to check newer upstream Horizon revisions, prepare the Android patch, regenerate required engine data and run Android build validation. Only a candidate that passes the Android compatibility gate should become the new pinned base.
 
----
+See the workflows in .github/workflows/ and the Android build documentation for the exact process.
 
-Architecture
+## Installation
 
-┌──────────────────────────────────────────────┐
-│              Android Launcher UI             │
-│          Jetpack Compose / Kotlin            │
-├──────────────────────────────────────────────┤
-│        Android services & integrations        │
-│  SAF • Backup • Import • Auth • Game Activity│
-├──────────────────────────────────────────────┤
-│              JNI / JSON bridge                │
-├──────────────────────────────────────────────┤
-│               Horizon Rust core               │
-│       launcher • client • engine • mods       │
-├──────────────────────────────────────────────┤
-│             Android graphics/input            │
-│           OpenGL ES • Winit • touch           │
-└──────────────────────────────────────────────┘
-
-Main Android pieces
-
-Area| Purpose
-"app/"| Android launcher UI, screens, game activity and Android integrations
-"core/"| JNI bridge between Kotlin and the Rust launcher/game environment
-"android-auth/"| Native Microsoft account authentication bridge
-"android/"| Android-specific patching, synchronization and build helpers
-"horizon/"| Generated/pinned upstream Horizon source tree
-".github/workflows/"| Android builds and upstream compatibility checks
-
-The "horizon/" tree is synchronized from upstream and should not be treated as a permanently hand-edited fork of every upstream source file. Android-specific changes are kept in the Android patch/integration layer wherever possible.
-
----
-
-Requirements
-
-Runtime
-
-- Android 8.0 / API 26 or newer
-- ARM64 ("arm64-v8a") device
-- Sufficient free storage for Horizon, Minecraft resources, worlds and imported content
-- Minecraft Java Edition files that you are licensed to use
-
-The project is primarily targeting modern ARM64 Android phones and tablets. Device performance, GPU support, RAM and Android vendor behaviour can still affect compatibility.
-
-Current graphics path
-
-The Android runtime selects OpenGL ES on Android.
-
-Vulkan is not currently treated as the default Android path because the tested Adreno 740 device encountered a Horizon sky-pipeline linking failure under Vulkan while GLES successfully created the renderer and presented a frame.
-
----
-
-Installation
-
-1. Download an Android build from the project's Releases page.
-2. Install the APK on an ARM64 Android device.
+1. Download an APK from [GitHub Actions artifacts](https://github.com/DreamingbullyYT/horizon-android-edition/actions) or the project's [Releases](https://github.com/DreamingbullyYT/horizon-android-edition/releases).
+2. Install it on a supported ARM64 Android device.
 3. Open Horizon Android Edition.
-4. Import or prepare the Minecraft files you are licensed to use.
-5. Create/select an instance or player profile as required.
-6. Start the game.
-7. Configure the touch HUD from the in-game controls/quick settings.
+4. Import or install the Minecraft files you are licensed to use.
+5. Select or create an instance and configure an account.
+6. Launch the game and adjust the touch controls.
 
-APK notes
+Preview/debug APKs may be debug-signed. They are intended for testing and should not be treated as a stable production update channel.
 
-Development/preview builds may be debug-signed. A debug APK is suitable for testing but should not be treated as a production release/update channel.
+## Known limitations
 
-The APK itself does not contain Minecraft's copyrighted game assets.
+- Android hardware, drivers and GPU capabilities differ; compatibility still needs broader device testing.
+- Microsoft authentication requires the appropriate client configuration in builds.
+- Some upstream or desktop-only features do not yet have Android-native implementations.
+- Android download lifecycle, credential hardening and broader multiplayer validation remain ongoing work.
+- A successful CI build does not replace real-device testing.
 
----
+## Development principles
 
-Building from source
+- **Upstream first:** reuse Horizon's existing behaviour whenever possible.
+- **Android where necessary:** keep platform-specific code in Android adapters and services.
+- **Preserve input semantics:** do not change the existing game input bridge for UI-only work.
+- **No invented functionality:** only expose controls and status that are backed by real native operations.
+- **Test before shipping:** validate the Android build and exercise important flows on a physical device.
+- **Respect player data:** preserve worlds and user data during updates, imports and cleanup.
 
-The Android project uses:
+## Credits and licensing
 
-- Android Gradle Plugin 8.5.2
-- Kotlin 2.0.21
-- Rust for the native core/game libraries
-- Android NDK for ARM64 native builds
+- [Horizon](https://github.com/horizon-rust/horizon) — upstream Rust project.
+- Zalith Launcher 2 — source of the licensed Android touch-control components included in this repository.
 
-The Rust JNI core and game "cdylib" are built as part of the Android build rather than relying on archived prebuilt native libraries as build inputs.
+This repository contains components with different licenses. Review [HORIZON-LICENSE.txt](HORIZON-LICENSE.txt), [LICENSE-ZalithLauncher2-GPL-3.0.txt](LICENSE-ZalithLauncher2-GPL-3.0.txt), and the license notices accompanying third-party dependencies before redistributing modified source or builds.
 
-For the detailed build environment and commands, see [ANDROID_BUILD.md](ANDROID_BUILD.md).
+## Disclaimer
 
-The Android synchronization process is documented in the "android/" tooling and keeps a pinned upstream Horizon revision rather than silently following arbitrary upstream changes.
-
----
-
-Upstream Horizon
-
-This project is based on the upstream Horizon project:
-
-"horizon-rust/horizon" (https://github.com/horizon-rust/horizon)
-
-Horizon is an unofficial Rust implementation/rewrite of Minecraft: Java Edition. The upstream project provides the core game, launcher, native mod system, tooling, tests and documentation.
-
-Horizon Android Edition adds the Android platform layer around that foundation.
-
-For upstream architecture, parity work, mods, server support and developer documentation, see the original Horizon repository and its "docs/" directory.
-
----
-
-Android-specific differences
-
-Horizon Android Edition is not simply a recompiled desktop build.
-
-Android introduces several constraints that do not exist on desktop:
-
-- Application-scoped storage
-- Activity lifecycle and pause/resume
-- Touch-first input
-- Virtual mouse/keyboard controls
-- Android file pickers and Storage Access Framework permissions
-- Mobile display and refresh-rate behaviour
-- Android audio focus
-- Foreground/background process limits
-- ARM64-only native packaging
-- GPU/API differences between Android devices
-
-The Android layer exists to solve those problems while keeping the actual Horizon game/runtime as close to upstream as practical.
-
----
-
-Current status
-
-This is an active Android port/preview, not a finished replacement for the desktop Horizon experience.
-
-The current source has reached the point where the Android launcher, native Rust game runtime, touch HUD, Minecraft import/backup flows and Android-specific integration can be built and exercised on ARM64 hardware.
-
-Real Android-device testing has reached the Horizon 26.3 title/world screens and verified the touch HUD, quick settings panel and menu touch/scroll path.
-
-Some hardware-specific features — especially physical gamepads, gyro behaviour and exhaustive audio validation — still need broader device testing.
-
-Known limitations
-
-- Android-specific download handling still needs a more complete foreground-service/resumable-download implementation before large installs should be considered fully polished.
-- Android Keystore-backed credential storage is still needed for hardened persistent Microsoft authentication.
-- Some Zalith-style functionality is not yet reproduced, including virtual cursor modes, advanced IME controls, custom resolution handling and the game log viewer.
-- Android multiplayer joining and other platform integrations continue to evolve with upstream compatibility.
-- Hardware behaviour can differ substantially between Android vendors and GPUs.
-
-
----
-
-Roadmap
-
-Near term
-
-- [ ] Harden Microsoft account storage with Android Keystore.
-- [ ] Finish Android foreground/resumable download service.
-- [ ] Expand physical gamepad and gyro testing.
-- [ ] Improve touch-layout editing and import/export.
-- [ ] Add Android-specific resolution and virtual cursor options.
-- [ ] Improve pause/resume, audio focus and process-lifecycle handling.
-- [ ] Expand ARM64 Android CI coverage.
-
-Longer term
-
-- [ ] Keep the Android fork continuously compatible with upstream Horizon.
-- [ ] Improve performance and memory behaviour on mobile GPUs.
-- [ ] Expand Android-specific launcher polish for phones and tablets.
-- [ ] Improve multiplayer and server integration on Android.
-- [ ] Make Android releases easier to install, update and migrate between devices.
-
-The roadmap will change as upstream Horizon changes and as real-device testing reveals new Android-specific problems.
-
----
-
-Development philosophy
-
-Upstream first, Android where necessary
-
-When Horizon already provides the correct game behaviour, Android should use it rather than implementing a second version.
-
-Android-specific code should exist where Android genuinely needs a different integration: UI, lifecycle, storage, input, graphics setup, packaging and platform services.
-
-Test before shipping
-
-A successful desktop build is not enough to call an Android commit compatible.
-
-The Android compatibility workflow exists specifically to catch failures in:
-
-- Android patch application
-- Generated engine data
-- Rust native compilation
-- Gradle configuration
-- ARM64 packaging
-- Android-specific integration
-
-No Minecraft redistribution
-
-This project does not intend to redistribute Minecraft's proprietary game files, code or assets. Users are responsible for supplying files they are legally entitled to use.
-
----
-
-Credits
-
-Horizon
-
-The Android edition is based on the work of the Horizon project and its contributors.
-
-- Upstream: "horizon-rust/horizon" (https://github.com/horizon-rust/horizon)
-- Horizon website: "playhorizon.dev" (https://playhorizon.dev/)
-
-Zalith Launcher 2
-
-The Android touch-control layer incorporates GPL-3.0 components derived from Zalith Launcher 2, with the applicable license and notices included in this repository.
-
-- License notice: ""LICENSE-ZalithLauncher2-GPL-3.0.txt"" (LICENSE-ZalithLauncher2-GPL-3.0.txt)
-
-Fonts and other third-party components
-
-Third-party licenses and notices are kept in the repository alongside the components they cover.
-
----
-
-Licensing
-
-Horizon Android Edition contains multiple components with their own licensing terms.
-
-- Original Horizon work: MIT, subject to the upstream project's license and third-party notices.
-- Android touch-control components derived from Zalith Launcher 2: GPL-3.0, with the applicable additional terms/notices.
-- Fonts and other dependencies retain their own licenses.
-
-See ""HORIZON-LICENSE.txt"" (HORIZON-LICENSE.txt), ""LICENSE-ZalithLauncher2-GPL-3.0.txt"" (LICENSE-ZalithLauncher2-GPL-3.0.txt), and the other license files in the repository before redistributing builds or modified source.
-
----
-
-Disclaimer
-
-Horizon Android Edition is unofficial.
-
-It is not affiliated with, endorsed by, or sponsored by Mojang Studios or Microsoft.
-
-Minecraft is a trademark of Mojang Synergies AB. This project does not include or redistribute Minecraft's proprietary code or assets.
-
----
-
-Project links
-
-- Android repository: https://github.com/DreamingbullyYT/horizon-android-edition
-- Upstream Horizon: https://github.com/horizon-rust/horizon
-- Upstream documentation: https://github.com/horizon-rust/horizon/tree/main/docs
-- Discord server: https://discord.gg/EbWKRES4kT
-
----
-
-<p align="center">
-  <b>Horizon Android Edition</b><br>
-  Rust-powered Minecraft Java on Android — with a mobile-first launcher.
-</p>
+Horizon Android Edition is an unofficial project. It is not affiliated with, endorsed by, or sponsored by Mojang Studios or Microsoft. Minecraft is a trademark of Mojang Synergies AB. The project does not include or redistribute Minecraft's proprietary code or assets.

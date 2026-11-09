@@ -1,5 +1,6 @@
 package dev.horizon.launcher.ui
 
+import android.os.Build
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -166,16 +167,49 @@ fun HorizonLauncherUi(
     onInstallBrowse: (String, String) -> Unit,
     onRemoveBrowse: (String) -> Unit
 ) {
-    CompositionLocalProvider(LocalAtlasPalette provides if (darkMode) DarkAtlasPalette else LightAtlasPalette) {
-        val scheme = if (darkMode) darkColorScheme(
-            primary = Blue, onPrimary = Color(0xFF111827), secondary = Sky,
-            background = CanvasPaper, onBackground = Ink, surface = White, onSurface = Ink,
-            surfaceVariant = Border, onSurfaceVariant = MutedInk, outline = Border
-        ) else lightColorScheme(
-            primary = Blue, onPrimary = Color.White, secondary = BlueDeep,
-            background = CanvasPaper, onBackground = Ink, surface = White, onSurface = Ink,
-            surfaceVariant = Border, onSurfaceVariant = MutedInk, outline = Border
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Android 12+ supplies the wallpaper-derived Material You palette. Older versions use
+    // the built-in Horizon light/dark palettes so the launcher remains compatible with API 26.
+    val scheme = when {
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+            if (darkMode) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        darkMode -> darkColorScheme(
+            primary = DarkAtlasPalette.blue, onPrimary = Color(0xFF101522),
+            secondary = DarkAtlasPalette.blueDeep, tertiary = DarkAtlasPalette.sky,
+            error = DarkAtlasPalette.coral, background = DarkAtlasPalette.canvasPaper,
+            onBackground = DarkAtlasPalette.ink, surface = DarkAtlasPalette.surface,
+            onSurface = DarkAtlasPalette.ink, surfaceVariant = DarkAtlasPalette.emptyTint,
+            onSurfaceVariant = DarkAtlasPalette.mutedInk, outline = DarkAtlasPalette.border,
+            outlineVariant = DarkAtlasPalette.border, primaryContainer = DarkAtlasPalette.cardTint,
+            tertiaryContainer = DarkAtlasPalette.mint, errorContainer = DarkAtlasPalette.warningTint
         )
+        else -> lightColorScheme(
+            primary = LightAtlasPalette.blue, onPrimary = Color.White,
+            secondary = LightAtlasPalette.blueDeep, tertiary = LightAtlasPalette.sky,
+            error = LightAtlasPalette.coral, background = LightAtlasPalette.canvasPaper,
+            onBackground = LightAtlasPalette.ink, surface = LightAtlasPalette.surface,
+            onSurface = LightAtlasPalette.ink, surfaceVariant = LightAtlasPalette.emptyTint,
+            onSurfaceVariant = LightAtlasPalette.mutedInk, outline = LightAtlasPalette.border,
+            outlineVariant = LightAtlasPalette.border, primaryContainer = LightAtlasPalette.cardTint,
+            tertiaryContainer = LightAtlasPalette.mint, errorContainer = LightAtlasPalette.warningTint
+        )
+    }
+    val palette = AtlasPalette(
+        canvasPaper = scheme.background,
+        ink = scheme.onBackground,
+        mutedInk = scheme.onSurfaceVariant,
+        blue = scheme.primary,
+        blueDeep = scheme.secondary,
+        sky = scheme.tertiary,
+        coral = scheme.error,
+        surface = scheme.surface,
+        border = scheme.outlineVariant,
+        mint = scheme.tertiaryContainer,
+        cardTint = scheme.primaryContainer,
+        emptyTint = scheme.surfaceVariant,
+        warningTint = scheme.errorContainer
+    )
+    CompositionLocalProvider(LocalAtlasPalette provides palette) {
         MaterialTheme(colorScheme = scheme) {
         var page by remember { mutableStateOf(AtlasPage.HOME) }
         Box(Modifier.fillMaxSize().background(CanvasPaper).statusBarsPadding()) {

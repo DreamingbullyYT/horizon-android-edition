@@ -5,10 +5,6 @@ import android.content.Intent
 import android.net.Uri as AndroidUri
 import android.app.AlertDialog
 import android.os.Bundle
-import android.view.Gravity
-import android.view.ViewGroup
-import android.widget.Button
-import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -50,8 +46,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Temporary launcher shell with no UI toolkit: just enough buttons to install, restore, export and play
- * while the real launcher UI is rebuilt piece by piece. All behaviour lives in [GameSetup].
+ * Android launcher activity. Compose renders the launcher while GameSetup and the native bridge
+ * remain responsible for installation, storage and game launch behaviour.
  */
 class MainActivity : ComponentActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -78,7 +74,6 @@ class MainActivity : ComponentActivity() {
     private var browseItemsState by mutableStateOf<List<BrowseItem>>(emptyList())
     private var browseInstalledState by mutableStateOf<List<BrowseEntry>>(emptyList())
     private var browseProgressState by mutableStateOf<BrowseProgress?>(null)
-    private val buttons = mutableListOf<Button>()
     private var busy = false
     private var initError: String? = null
 
@@ -676,16 +671,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Runs one setup action with the buttons locked and the result (or the error) shown as status. */
+    /** Runs one setup action at a time and publishes its result (or error) to the Compose status UI. */
     private fun run(label: String, action: suspend () -> String) {
         if (busy) return
         busy = true
-        buttons.forEach { it.isEnabled = false }
         show("$label…")
         scope.launch {
             val message = try { action() } catch (e: Exception) { e.message ?: "$label failed" }
             busy = false
-            buttons.forEach { it.isEnabled = true }
             // Keep the final result visible. refreshStatus() launched asynchronously here could
             // overwrite a compiler/download error immediately after the dialog closes.
             statusText = "$label\n$message"
