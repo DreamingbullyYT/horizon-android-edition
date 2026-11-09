@@ -51,12 +51,13 @@ jobs:
           assert "pack.threads=1" in script
           assert "index.threads=1" in script
           assert "restore_github_snapshot()" in script
-          assert 'restore_github_snapshot "$SRC" "$PIN" "horizon-rust/horizon"' in script
+          assert 'restore_github_snapshot "$src" "$ref" "horizon-rust/horizon"' in script
+          assert 'prepare_engine "$STABLE_PIN"' in script, "newest pin that cannot be patched must fall back to the stable pin"
           assert 'restore_github_snapshot "$SRC" "$BEST_PIN" "horizon-rust/horizon"' in script
           assert 'git clone -q --filter=blob:none --no-checkout' in script
           assert 'git -C "$SRC" reset --hard' not in script
           assert 'git -C "$SRC" checkout' not in script
-          assert 'git_fetch_revision "$SRC" "$PIN"' in script
+          assert 'git_fetch_revision "$src" "$ref"' in script
           assert 'core.createObject=rename' in script, "Git under PRoot --link2symlink needs rename-based object creation"
           assert Path("android/UPSTREAM_PIN").read_text() == Path("app/src/main/assets/hnmod/android/UPSTREAM_PIN").read_text(), "the phone builds from the bundled pin"
           assert 'git_fetch_revision "$SRC" "$candidate"' in script
