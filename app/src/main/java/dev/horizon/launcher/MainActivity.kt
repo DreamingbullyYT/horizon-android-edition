@@ -33,7 +33,6 @@ import dev.horizon.launcher.data.TelemetryInfo
 import dev.horizon.launcher.data.TouchControlsInfo
 import dev.horizon.launcher.auth.MicrosoftAuth
 import dev.horizon.launcher.game.TouchControlEditorActivity
-import dev.horizon.launcher.data.InstanceInfo
 import dev.horizon.launcher.data.InstalledVersion
 import dev.horizon.launcher.data.ModInfo
 import dev.horizon.launcher.data.ServerInfo
@@ -60,8 +59,6 @@ class MainActivity : ComponentActivity() {
     private var renderApiState by mutableStateOf("auto")
     private var minecraftReadyState by mutableStateOf(false)
     private var toolchainReadyState by mutableStateOf(false)
-    private var instancesState by mutableStateOf<List<InstanceInfo>>(emptyList())
-    private var selectedInstanceState by mutableStateOf<InstanceInfo?>(null)
     private var worldsState by mutableStateOf<List<WorldInfo>>(emptyList())
     private var serversState by mutableStateOf<List<ServerInfo>>(emptyList())
     private var modsState by mutableStateOf<List<ModInfo>>(emptyList())
@@ -142,8 +139,6 @@ class MainActivity : ComponentActivity() {
                 },
                 minecraftReady = minecraftReadyState,
                 toolchainReady = toolchainReadyState,
-                instances = instancesState,
-                selectedInstance = selectedInstanceState,
                 worlds = worldsState,
                 servers = serversState,
                 mods = modsState,
@@ -182,27 +177,6 @@ class MainActivity : ComponentActivity() {
                 onShowBuildLog = { showLiveHnmodLog() },
                 onShowGameLog = { showGameLog("Last game log", includeLogcat = true) },
                 onRefresh = { refreshDashboard() },
-                onCreateInstance = { name ->
-                    run("Creating instance") {
-                        val created = Core.createInstance(name)
-                        refreshDashboardState()
-                        "Created ${created.name}."
-                    }
-                },
-                onSelectInstance = { id ->
-                    run("Selecting instance") {
-                        val selected = Core.selectInstance(id).firstOrNull { it.id == id }
-                        refreshDashboardState()
-                        "Selected ${selected?.name ?: "instance"}."
-                    }
-                },
-                onDeleteInstance = { id ->
-                    run("Deleting instance") {
-                        Core.deleteInstance(id)
-                        refreshDashboardState()
-                        "Instance deleted."
-                    }
-                },
                 onAddServer = { name, address ->
                     run("Saving server") {
                         Core.addServer(name, address)
@@ -561,7 +535,6 @@ class MainActivity : ComponentActivity() {
         val toolchain = runCatching {
             dev.horizon.launcher.data.EmbeddedToolchain.status(this@MainActivity)
         }.getOrNull()
-        val instances = runCatching { Core.instances() }.getOrDefault(emptyList())
         val settings = runCatching { Core.settings() }.getOrNull()
         val worlds = runCatching { Core.worlds() }.getOrDefault(emptyList())
         val servers = runCatching { Core.servers() }.getOrDefault(emptyList())
@@ -579,11 +552,7 @@ class MainActivity : ComponentActivity() {
 
         minecraftReadyState = ready
         toolchainReadyState = toolchain?.installed == true
-        instancesState = instances
         settingsState = settings
-        selectedInstanceState = instances.firstOrNull {
-            it.id == settings?.instance || it.name == settings?.instance
-        } ?: instances.firstOrNull()
         worldsState = worlds
         serversState = servers
         modsState = mods
