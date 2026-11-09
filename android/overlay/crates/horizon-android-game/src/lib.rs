@@ -244,11 +244,29 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
         log::error!("Horizon Android: cannot create game directory: {error}");
         return;
     }
+    // Match the working NativeActivity boot environment: Horizon resolves resources,
+    // user files and temporary files before creating Game and its worker threads.
+    for dir in ["resources", "saves", "resourcepacks", "mods", "shaderpacks"] {
+        if let Err(error) = std::fs::create_dir_all(game_home.join(dir)) {
+            log::error!("Horizon Android: cannot create {dir} directory: {error}");
+            return;
+        }
+    }
+    let cache_home = files.join("horizon-cache");
+    let temp_home = files.join("tmp");
+    if let Err(error) = std::fs::create_dir_all(&cache_home).and_then(|_| std::fs::create_dir_all(&temp_home)) {
+        log::error!("Horizon Android: cannot prepare cache/temp directories: {error}");
+        return;
+    }
     // The NativeActivity shares the launcher process. Set the game paths before Horizon starts
     // worker threads so saves and logs stay in app-private storage.
     unsafe {
         std::env::set_var("HORIZON_LAUNCHER_HOME", &launcher);
         std::env::set_var("HORIZON_HOME", &game_home);
+        std::env::set_var("HORIZON_RESOURCES", game_home.join("resources"));
+        std::env::set_var("HOME", &game_home);
+        std::env::set_var("HORIZON_CACHE", &cache_home);
+        std::env::set_var("TMPDIR", &temp_home);
         // Qualcomm's Adreno Vulkan driver fails to link Horizon's sky pipeline during the
         // first missing-resources frame, so Snapdragon stays on GLES. MediaTek/Mali and
         // others get Vulkan (much faster than their GLES drivers). A `graphics-api.txt`
