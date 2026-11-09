@@ -69,25 +69,24 @@ replace_once(game,
                         }
                         self.android_publish_stats();
 """)
-replace_once(game,
-"""    let mut app = App::Loading(Box::new(loading));
+# The ordinary launch moved from game.rs into game/resource_loader.rs (run_loading); accept either.
+_launch_old = """    let mut app = App::Loading(Box::new(loading));
     let result = EventLoop::new()?.run_app(&mut app);
-""",
-"""    let mut app = App::Loading(Box::new(loading));
+"""
+_launch_new = """    let mut app = App::Loading(Box::new(loading));
     let result = android_new_event_loop()?.run_app(&mut app);
-""")
+"""
+_loader = "crates/horizon-client/src/game/resource_loader.rs"
+replace_once(_loader if (root / game).read_text(encoding="utf-8").count(_launch_old) == 0 else game,
+             _launch_old, _launch_new)
 
 window = "crates/horizon-client/src/game/window_handler.rs"
+# Anchored on follow_keymap alone: newer upstream puts the locks_out/held_focus checks between
+# `if !ours { return; }` and it, and the Android intercept belongs right before the keymap either way.
 replace_once(window,
-"""        if !ours {
-            return;
-        }
-        follow_keymap(&mut event);
+"""        follow_keymap(&mut event);
 """,
-"""        if !ours {
-            return;
-        }
-        match self.android_intercept(event_loop, id, origin, event) {
+"""        match self.android_intercept(event_loop, id, origin, event) {
             Some(translated) => event = translated,
             None => return,
         }
@@ -158,6 +157,32 @@ replace_once(loading,
     }
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
 """)
+
+# One frame in flight on Android, so touch input reaches the screen a frame sooner. Upstream moved the
+# surface configuration out of gfx.rs into gfx/surface_setup.rs, so this is anchored, not patched.
+_surface_setup = "crates/horizon-client-render/src/gfx/surface_setup.rs"
+if (root / _surface_setup).is_file():
+    replace_once(_surface_setup,
+"""        .ok_or("surface has no supported configuration")?;
+    config.format = surface_format(&caps.formats, config.format);""",
+"""        .ok_or("surface has no supported configuration")?;
+    // Android: one frame in flight, so touch input reaches the screen a frame sooner.
+    #[cfg(target_os = "android")]
+    {
+        config.desired_maximum_frame_latency = 1;
+    }
+    config.format = surface_format(&caps.formats, config.format);""")
+else:
+    replace_once("crates/horizon-client-render/src/gfx.rs",
+"""                .ok_or("surface has no supported configuration")?;
+            let caps = surface.get_capabilities(&adapter);""",
+"""                .ok_or("surface has no supported configuration")?;
+            // Android: one frame in flight, so touch input reaches the screen a frame sooner.
+            #[cfg(target_os = "android")]
+            {
+                config.desired_maximum_frame_latency = 1;
+            }
+            let caps = surface.get_capabilities(&adapter);""")
 
 # Worker threads run chunk/mesh generation with large stack arrays. Rust's default 2 MiB thread stack is
 # enough on desktop but a stack overflow shows up on Android as a SIGSEGV inside memcpy on a

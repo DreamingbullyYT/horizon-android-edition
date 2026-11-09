@@ -118,19 +118,7 @@ diff --git a/crates/horizon-client-render/src/gfx.rs b/crates/horizon-client-ren
 index cf62c2528..ca5ef1c2f 100644
 --- a/crates/horizon-client-render/src/gfx.rs
 +++ b/crates/horizon-client-render/src/gfx.rs
-@@ -2268,6 +2268,11 @@ impl Renderer {
-                     size.height.clamp(1, max_side),
-                 )
-                 .ok_or("surface has no supported configuration")?;
-+            // Android: one frame in flight, so touch input reaches the screen a frame sooner.
-+            #[cfg(target_os = "android")]
-+            {
-+                config.desired_maximum_frame_latency = 1;
-+            }
-             let caps = surface.get_capabilities(&adapter);
-             config.format = surface_format(&caps.formats, config.format);
-             config.view_formats = vec![config.format.remove_srgb_suffix()];
-@@ -4580,6 +4585,15 @@ impl Renderer {
+@@ -4580,6 +4580,15 @@ impl Renderer {
              .unwrap_or_else(std::sync::PoisonError::into_inner) =
              self.surface.take().and_then(|s| Arc::try_unwrap(s).ok());
      }

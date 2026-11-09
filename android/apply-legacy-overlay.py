@@ -155,6 +155,32 @@ replace_once(game,
 replace_once(game, "    let result = EventLoop::new()?.run_app(&mut app);",
              "    let result = android_new_event_loop()?.run_app(&mut app);")
 
+# One frame in flight on Android, so touch input reaches the screen a frame sooner. Upstream moved the
+# surface configuration out of gfx.rs into gfx/surface_setup.rs, so this is anchored, not patched.
+_surface_setup = "crates/horizon-client-render/src/gfx/surface_setup.rs"
+if (root / _surface_setup).is_file():
+    replace_once(_surface_setup,
+"""        .ok_or("surface has no supported configuration")?;
+    config.format = surface_format(&caps.formats, config.format);""",
+"""        .ok_or("surface has no supported configuration")?;
+    // Android: one frame in flight, so touch input reaches the screen a frame sooner.
+    #[cfg(target_os = "android")]
+    {
+        config.desired_maximum_frame_latency = 1;
+    }
+    config.format = surface_format(&caps.formats, config.format);""")
+else:
+    replace_once("crates/horizon-client-render/src/gfx.rs",
+"""                .ok_or("surface has no supported configuration")?;
+            let caps = surface.get_capabilities(&adapter);""",
+"""                .ok_or("surface has no supported configuration")?;
+            // Android: one frame in flight, so touch input reaches the screen a frame sooner.
+            #[cfg(target_os = "android")]
+            {
+                config.desired_maximum_frame_latency = 1;
+            }
+            let caps = surface.get_capabilities(&adapter);""")
+
 # Worker threads run chunk/mesh generation with large stack arrays. Rust's default 2 MiB thread stack is
 # enough on desktop but a stack overflow shows up on Android as a SIGSEGV inside memcpy on a
 # "horizon_threads::jobs::work" thread right after the loading screen. Reserve a larger (lazily
