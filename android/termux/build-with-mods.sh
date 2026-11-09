@@ -125,43 +125,69 @@ if [ "${HORIZON_EMBEDDED:-0}" != "1" ] && command -v termux-wake-lock >/dev/null
   trap 'termux-wake-unlock || true' EXIT
 fi
 
-# ---- 1. the engine: upstream at our pin + our Android patch -------------------------------------
+# ---- 1. the engine: newest upstream that our Android patch applies to ---------------------------
+# UPSTREAM_PIN is the newest upstream commit the compatibility bot built green. Newer upstream layouts
+# use android-next.patch plus an overlay script; STABLE_ANDROID_PIN is the older commit android.patch fits.
+# If the Android integration does not apply to the newest pin, fall back to the stable pin instead of failing.
 PIN=$(tr -d '[:space:]' < "$REPO/android/UPSTREAM_PIN")
-PATCH_SUM=$(sha256sum "$REPO/android/android.patch" | cut -c1-12)
+STABLE_PIN=$(tr -d '[:space:]' < "$REPO/android/STABLE_ANDROID_PIN")
+INTEGRATION_SUM=$( { cat "$REPO/android/android.patch" "$REPO/android/android-next.patch" "$REPO/android/apply-next-overlay.py" "$REPO/android/apply-legacy-overlay.py"; \
+  find "$REPO/android/overlay" -type f -print0 | sort -z | xargs -0 sha256sum; } | sha256sum | cut -c1-12)
+[ -d "$REPO/android/overlay" ] || die "the Android overlay is missing from the embedded build assets"
+PATCH_SUM=$(cat "$REPO/android/android.patch" "$REPO/android/android-next.patch" "$REPO/android/apply-next-overlay.py" "$REPO/android/apply-legacy-overlay.py" | sha256sum | cut -c1-12)
 OVERLAY_SUM=$(find "$REPO/android/overlay" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-12)
-SRC="$WORK/src/$PIN-$PATCH_SUM-$OVERLAY_SUM-pc"
-if [ ! -f "$SRC/.horizon-revision" ]; then
-  say "Engine $PIN + Android patch (once)"
-  rm -rf "$SRC.partial"; mkdir -p "$WORK/src"
-  git clone -q --filter=blob:none --no-checkout https://github.com/horizon-rust/horizon.git "$SRC.partial"
-  git_fetch_revision "$SRC.partial" "$PIN" || die "could not fetch Horizon revision metadata $PIN"
-  restore_github_snapshot "$SRC.partial" "$PIN" "horizon-rust/horizon"
-  git -C "$SRC.partial" config core.fileMode false
-  git -C "$SRC.partial" apply --whitespace=nowarn "$REPO/android/android.patch" \
-    || die "the Android patch does not apply to $PIN"
-  [ -d "$REPO/android/overlay" ] || die "the Android overlay is missing from the embedded build assets"
-  cp -a "$REPO/android/overlay/." "$SRC.partial/"
-  printf '%s' "$PIN" > "$SRC.partial/.horizon-revision"
-  # horizon-mixins refuses symlinks (the PC launcher's source archive leaves them out too).
-  find "$SRC.partial" -type l -delete
-  mv "$SRC.partial" "$SRC"
-else
-  # A previous build may have selected a newer mod-pinned revision in this shared
-  # source directory. Always restore the app's base pin before resolving this build.
-  CURRENT_SRC=$(tr -d '[:space:]' < "$SRC/.horizon-revision")
-  if [ "$CURRENT_SRC" != "$PIN" ]; then
-    say "Restoring base engine revision $PIN before resolving selected mods"
-    git_fetch_revision "$SRC" "$PIN" \
-      || die "could not fetch base engine revision metadata $PIN"
-    git -C "$SRC" cat-file -e "$PIN^{commit}" 2>/dev/null \
-      || die "base engine revision $PIN is missing from Git metadata"
-    restore_github_snapshot "$SRC" "$PIN" "horizon-rust/horizon"
-    git -C "$SRC" apply --whitespace=nowarn "$REPO/android/android.patch" \
-      || die "the Android patch does not apply to base revision $PIN"
-    cp -a "$REPO/android/overlay/." "$SRC/"
-    find "$SRC" -type l -delete
-    printf '%s' "$PIN" > "$SRC/.horizon-revision"
+
+# Applies our Android changes to an unpacked upstream tree for $2 (same rules as android/sync.sh).
+apply_android_integration() {
+  local dir="$1" ref="$2" patch layout=stable
+  if [ "$ref" = "$STABLE_PIN" ]; then
+    patch="$REPO/android/android.patch"
+  else
+    patch="$REPO/android/android-next.patch"
+    if [ -f "$dir/crates/horizon-client/src/game/window_handler.rs" ]; then layout=modules; else layout=legacy; fi
   fi
+  git -C "$dir" apply --whitespace=nowarn "$patch" || return 1
+  cp -a "$REPO/android/overlay/." "$dir/"
+  case $layout in
+    modules) python3 "$REPO/android/apply-next-overlay.py" "$dir" || return 1;;
+    legacy) python3 "$REPO/android/apply-legacy-overlay.py" "$dir" || return 1;;
+  esac
+  find "$dir" -type l -delete
+  printf '%s' "$ref" > "$dir/.horizon-revision"
+}
+
+# Prepares the engine source for revision $1 into $SRC; returns 1 when the Android integration does not apply.
+prepare_engine() {
+  local ref="$1" src="$WORK/src/$1-$INTEGRATION_SUM-pc"
+  if [ ! -f "$src/.horizon-revision" ]; then
+    say "Engine $ref + Android patch (once)"
+    rm -rf "$src.partial"; mkdir -p "$WORK/src"
+    git clone -q --filter=blob:none --no-checkout https://github.com/horizon-rust/horizon.git "$src.partial"
+    git_fetch_revision "$src.partial" "$ref" || die "could not fetch Horizon revision metadata $ref"
+    restore_github_snapshot "$src.partial" "$ref" "horizon-rust/horizon"
+    git -C "$src.partial" config core.fileMode false
+    if ! apply_android_integration "$src.partial" "$ref"; then rm -rf "$src.partial"; return 1; fi
+    mv "$src.partial" "$src"
+  else
+    # A previous build may have selected a newer mod-pinned revision in this shared
+    # source directory. Always restore the app's base revision before resolving this build.
+    local current
+    current=$(tr -d '[:space:]' < "$src/.horizon-revision")
+    if [ "$current" != "$ref" ]; then
+      say "Restoring base engine revision $ref before resolving selected mods"
+      git_fetch_revision "$src" "$ref" || die "could not fetch base engine revision metadata $ref"
+      git -C "$src" cat-file -e "$ref^{commit}" 2>/dev/null || die "base engine revision $ref is missing from Git metadata"
+      restore_github_snapshot "$src" "$ref" "horizon-rust/horizon"
+      apply_android_integration "$src" "$ref" || return 1
+    fi
+  fi
+  SRC="$src"; PIN="$ref"
+}
+
+if ! prepare_engine "$PIN"; then
+  [ "$PIN" != "$STABLE_PIN" ] || die "the Android patch does not apply to $PIN"
+  say "The Android patch does not apply to the newest engine $PIN; using the last compatible one, $STABLE_PIN"
+  prepare_engine "$STABLE_PIN" || die "the Android patch does not apply to $STABLE_PIN either"
 fi
 
 # ---- 2. validate and extract .hnmod bundles through the shared Rust core ------------------------
@@ -230,12 +256,9 @@ if [ "$PLAIN" = 0 ]; then
   if [ "$BEST_PIN" != "$PIN" ]; then
     say "Selecting newest mod-compatible Horizon revision $BEST_PIN (by Git commit date)"
     restore_github_snapshot "$SRC" "$BEST_PIN" "horizon-rust/horizon"
-    git -C "$SRC" apply --whitespace=nowarn "$REPO/android/android.patch" \
+    apply_android_integration "$SRC" "$BEST_PIN" \
       || die "the Android patch does not apply to selected mod revision $BEST_PIN"
-    cp -a "$REPO/android/overlay/." "$SRC/"
-    find "$SRC" -type l -delete
     PIN="$BEST_PIN"
-    printf '%s' "$PIN" > "$SRC/.horizon-revision"
   fi
 
   HOOKS_API=$(sed -n 's/^pub(crate) const NATIVE_HOOKS_API: u32 = \([0-9]*\);.*/\1/p' \

@@ -72,6 +72,10 @@ jobs:
           diff -qr android/overlay app/src/main/assets/hnmod/android/overlay
           cmp -s android/UPSTREAM_PIN app/src/main/assets/hnmod/android/UPSTREAM_PIN
           cmp -s android/android.patch app/src/main/assets/hnmod/android/android.patch
+          cmp -s android/android-next.patch app/src/main/assets/hnmod/android/android-next.patch
+          cmp -s android/apply-next-overlay.py app/src/main/assets/hnmod/android/apply-next-overlay.py
+          cmp -s android/apply-legacy-overlay.py app/src/main/assets/hnmod/android/apply-legacy-overlay.py
+          cmp -s android/STABLE_ANDROID_PIN app/src/main/assets/hnmod/android/STABLE_ANDROID_PIN
           cmp -s hnmod-core/README.md app/src/main/assets/hnmod/hnmod-core/README.md
           cmp -s android/termux/build-with-mods.sh app/src/main/assets/hnmod/android/termux/build-with-mods.sh
           cmp -s hnmod-core/Cargo.toml app/src/main/assets/hnmod/hnmod-core/Cargo.toml
