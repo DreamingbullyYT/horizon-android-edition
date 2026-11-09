@@ -155,4 +155,17 @@ replace_once(game,
 replace_once(game, "    let result = EventLoop::new()?.run_app(&mut app);",
              "    let result = android_new_event_loop()?.run_app(&mut app);")
 
+# Worker threads run chunk/mesh generation with large stack arrays. Rust's default 2 MiB thread stack is
+# enough on desktop but a stack overflow shows up on Android as a SIGSEGV inside memcpy on a
+# "horizon_threads::jobs::work" thread right after the loading screen. Reserve a larger (lazily
+# committed) stack for the pool workers.
+replace_once("crates/horizon-threads/src/jobs.rs",
+"""                .name(format!("{name}-{i}"))
+                .spawn(move || {
+                    // Ticks and frames come first.""",
+"""                .name(format!("{name}-{i}"))
+                .stack_size(32 << 20)
+                .spawn(move || {
+                    // Ticks and frames come first.""")
+
 print("Android integration applied to monolithic upstream game.rs.")
