@@ -173,8 +173,15 @@ fn choose_graphics_api(launcher: &std::path::Path) -> &'static str {
         system_property("ro.board.platform"),
     ]
     .join(" ");
-    let qualcomm = ["qualcomm", "qcom", "snapdragon"].iter().any(|k| ids.contains(k));
-    if qualcomm {
+    // Adreno (Qualcomm) and Mali phones (MediaTek, Exynos, Kirin, Unisoc, Tensor) start the engine reliably
+    // on OpenGL ES; their Vulkan drivers crash it during the first streaming jobs. Other chips try Vulkan.
+    let opengl_first = [
+        "qualcomm", "qcom", "snapdragon", "mediatek", "mt6", "mt8", "exynos", "samsungexynos",
+        "kirin", "hisilicon", "unisoc", "spreadtrum", "tensor", "zuma", "gs101", "gs201",
+    ]
+    .iter()
+    .any(|k| ids.contains(k));
+    if opengl_first {
         return "opengl";
     }
     // Survived 20 seconds: Vulkan works here.
